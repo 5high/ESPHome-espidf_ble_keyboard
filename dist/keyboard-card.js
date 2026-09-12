@@ -867,7 +867,7 @@ class BleKeyboardCard extends HTMLElement {
     header.innerHTML = `
       <svg viewBox="0 0 24 24"><path d="M19 10h-2V8h2v2zm0 4h-2v-2h2v2zm-4-4h-2V8h2v2zm0 4h-2v-2h2v2zm0 4H9v-2h6v2zm-8-8H5V8h2v2zm0 4H5v-2h2v2zM20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2z"/></svg>
       <span class="header-name">${this._config.name || defaultName}</span>
-      <span class="header-ver" title="Card version — from the ?v= its importer used">${CARD_VER}</span>
+      <span class="header-ver" title="Card version — from the ?v= its importer used">${CARD_VER === 'unversioned' ? CARD_VER : 'v' + CARD_VER}</span>
     `;
     // Host switcher in header
     if (this._config.host_slots > 1) {

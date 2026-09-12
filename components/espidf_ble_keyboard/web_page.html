@@ -261,6 +261,14 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
    icons and labels, the gaps, the d-pad's grid and the rockers together — button
    sizes are set in a dozen coupled places, and a single size knob would pull them
    apart. Note `maxw` is in pre-zoom units, so it scales along with everything else. */
+/* The page resets this globally at the top of the file, but that rule is not a
+   .rmt- one so it is not lifted into the card's stylesheet — and a shadow root
+   inherits no box-sizing. Without this the card drew every border and padding
+   *outside* the width the style asked for, making the whole remote wider than
+   the same style on this page. Stated here so both surfaces measure alike;
+   it is a no-op on the page itself. Must stay above the rules below, which
+   share its specificity and have to win. */
+.rmt-body,.rmt-body *{box-sizing:border-box}
 .rmt-body{zoom:var(--rb-zoom,1);background:var(--rb-bg,transparent);border:1px solid var(--rb-border,transparent);border-radius:var(--rb-radius,0);padding:var(--rb-pad,0);max-width:var(--rb-maxw,none);margin:0 auto;box-shadow:var(--rb-shadow,none);clip-path:var(--rb-clip,none)}
 .rmt-section{margin-bottom:10px}
 .rmt-section:last-child{margin-bottom:0}

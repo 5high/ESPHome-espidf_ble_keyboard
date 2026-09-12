@@ -508,6 +508,7 @@ export const RMT_VER =
 // --border, --muted, --active, --accent), so whatever hosts this must map those
 // onto its own theme — inside a shadow root there is no :root to inherit from.
 export const RMT_CSS = `
+.rmt-body,.rmt-body *{box-sizing:border-box}
 .rmt-body{zoom:var(--rb-zoom,1);background:var(--rb-bg,transparent);border:1px solid var(--rb-border,transparent);border-radius:var(--rb-radius,0);padding:var(--rb-pad,0);max-width:var(--rb-maxw,none);margin:0 auto;box-shadow:var(--rb-shadow,none);clip-path:var(--rb-clip,none)}
 .rmt-section{margin-bottom:10px}
 .rmt-section:last-child{margin-bottom:0}

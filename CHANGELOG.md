@@ -26,6 +26,11 @@ web control page shows the matching version badge.
   in the rotation, and a single-slot setup ignores it rather than dropping its link.
 
 ### Fixed
+- **The Home Assistant remote now draws the same size as the web page's.** The page resets box-sizing
+  globally, which never reached the card's shadow root, so every border and padding landed outside
+  the width a style asked for and the whole remote came out wider. A style with its own width now
+  measures identically in both places.
+
 - **Backing up with custom styles no longer churns the heap.** The size estimate the backup reserves
   from left the styles out entirely, so a device holding several of them grew the document by
   repeated reallocation instead — on the one heap that has the Bluetooth stack in it.
