@@ -109,7 +109,8 @@ btn_radius:'--rb-btn-radius',ok_bg:'--rb-ok-bg',ok_fg:'--rb-ok-fg',
 ring_bg:'--rb-ring-bg',ring_fg:'--rb-ring-fg',light_bg:'--rb-light-bg',light_fg:'--rb-light-fg',shadow:'--rb-shadow',
 label:'--rb-label',divider:'--rb-divider',clip:'--rb-clip',
 lcd_bg:'--rb-lcd-bg',lcd_fg:'--rb-lcd-fg',lcd_label:'--rb-lcd-label',
-lcd_border:'--rb-lcd-border',lcd_radius:'--rb-lcd-radius'};
+lcd_border:'--rb-lcd-border',lcd_radius:'--rb-lcd-radius',
+lit_bg:'--rb-lit-bg',lit_fg:'--rb-lit-fg'};
 
 const RMT_BUILTIN=[
 {id:'default',name:'Full remote',theme:{},sections:[
@@ -184,7 +185,7 @@ const RMT_BUILTIN=[
  ['apps',['spare8','App 4','light wide']]]},
 // The one built-in with a screen. It reads @host and @state, which the firmware
 // always knows, so it says something useful the moment it is picked — no
-// lcd_sources, no sensor, nothing to configure. 16 characters wide so it sits
+// sources, no sensor, nothing to configure. 16 characters wide so it sits
 // in the body as a display rather than a banner, and two reserved rows so it
 // holds its height as a host name changes length.
 {id:'style6',name:'Style 6',theme:{bg:'#17181d',border:'#2a2c33',radius:'34px',pad:'22px 12px',
@@ -246,7 +247,7 @@ function btnHtml(item){
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const face=(lab!=null&&lab!=='')?esc(lab):(b.i?icon(b.i):(b.x||''));
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='';
+    let cls='',css='',lit='';
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -254,11 +255,23 @@ function btnHtml(item){
         // matched against a strict hex pattern and nothing else — a token that
         // got this far already passed the same test at import.
         if(RMT_HEX.test(tok))css='background:'+tok+';border-color:'+tok;
+        // lit:<source> — the key goes to its lit colour while that source reads
+        // "on". An optional third part colours this one button; without it the
+        // style's lit_bg/lit_fg apply. It rides the same map the panels use, so
+        // both surfaces already receive the value.
+        else if(tok.indexOf('lit:')===0){
+          const bits=tok.split(':');
+          lit=bits[1]||'';
+          // A scoped custom property rather than a second rule: the per-button
+          // colour and the theme default then meet in one place, the CSS.
+          if(bits[2]&&RMT_HEX.test(bits[2]))css+=(css?';':'')+'--rb-lit-bg:'+bits[2];
+        }
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
     return '<button class="rmt-btn'+(b.c?' '+b.c:'')+cls+'" data-action="'+a+'"'+
-           (b.r?' data-repeat="1"':'')+(css?' style="'+css+'"':'')+
+           (b.r?' data-repeat="1"':'')+(lit?' data-lit="'+esc(lit)+'"':'')+
+           (css?' style="'+css+'"':'')+
            ' title="'+tip+'">'+face+'</button>';
   }
 
@@ -464,7 +477,7 @@ function validateTpl(t){
               return 'Unknown built-in value "'+g[1]+'" — use '+RMT_LCD_KEYS.join(', ');
           }else if(g[1]&&!/^[a-z0-9_]{1,16}$/.test(g[1])){
             // Only the spelling of a declared key can be checked: whether the
-            // node actually has an lcd_sources entry by that name is something
+            // node actually has a sources entry by that name is something
             // the browser cannot know. One that names nothing draws as "--",
             // which is what a real display does with a missing reading.
             return 'An lcd key is 1-16 characters of a-z, 0-9 or _, or a built-in such as @host';
@@ -500,8 +513,18 @@ function validateTpl(t){
             // the renderer is broken. The hex test here is the same one
             // btnHtml applies, and is what keeps arbitrary CSS out of the
             // inline style attribute it builds.
+            if(tok.indexOf('lit:')===0){
+              // lit:<source>[:#hex] — lights the key while that source reads on.
+              const bits=tok.split(':');
+              if(bits.length>3)return 'lit: takes a source and an optional #hex colour — "'+tok+'"';
+              if(!/^[a-z0-9_]{1,16}$/.test(bits[1]||''))
+                return 'lit: needs a source name of 1-16 characters, a-z, 0-9 or _ — "'+tok+'"';
+              if(bits[2]!==undefined&&!RMT_HEX.test(bits[2]))
+                return 'lit: colour must be a #hex value — "'+tok+'"';
+              continue;
+            }
             if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-              return 'Unknown button option "'+tok+'" — use a #hex colour or '+RMT_OPTS.join(', ');
+              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source> or '+RMT_OPTS.join(', ');
           }
         }
         const a=arr?it[0]:it;
@@ -612,6 +635,8 @@ export const RMT_CSS = `
 .rmt-btn.xl svg{width:26px;height:26px}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
+.rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
+  color:var(--rb-lit-fg,#fff);border-color:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)))}
 .rmt-btn.light{background:var(--rb-light-bg,#e9e9ee);color:var(--rb-light-fg,#16161a);border-color:var(--rb-light-bg,#e9e9ee)}
 .rmt-btn.light:active,.rmt-btn.light.p{background:#fff;color:#000}
 .popout .rmt-body{box-shadow:var(--rb-shadow,0 0 #0000),0 4px 0 var(--rb-bg,transparent)}

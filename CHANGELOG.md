@@ -10,10 +10,16 @@ web control page shows the matching version badge.
 - **The remote can show a small screen.** A style may place an `lcd` section carrying a few
   label-and-value lines — temperature, what is playing, which host is live — on the web page and on
   the Home Assistant card alike. Values beginning `@` are the keyboard's own and need nothing
-  configured; anything else names an entity listed in the component's new `lcd_sources:`, which the
+  configured; anything else names an entity listed in the component's new `sources:`, which the
   device reads and formats itself, or a Home Assistant entity named on the card. A panel can be
   specified the way a real display is — so many characters across by so many lines down, in its own
   colours — and each line takes size, justification and colour tokens like a button's.
+
+- **A button can follow real state instead of guessing.** `if:<source>: a || b` branches on something
+  the device actually knows, so a power key stays right even when the monitor is switched off by its
+  own remote — the case `alternate:`'s blind counter gets wrong. A `lit:<source>` token lights the key
+  while that source is on, in the style's colour or its own. Sources now take `binary_sensor:` entries,
+  which a `homeassistant` platform sensor can point at anything Home Assistant knows.
 
 - **A panel can say which button was just pressed.** `@last` names any press and `@station` only the
   spares, so a volume tap doesn't wipe which station you chose — both named the way the current style
@@ -31,6 +37,12 @@ web control page shows the matching version badge.
   in the rotation, and a single-slot setup ignores it rather than dropping its link.
 
 ### Fixed
+- **A button pressed from the web page no longer risks rebooting the device.** Action strings ran on
+  the web server's task, which has 4352 bytes: a power button nesting an override, a conditional, a
+  macro and a multi-step chain measured seven frames deep with 52 bytes left, and one frame more
+  overflowed it. They now run on a task of their own with room to spare — which also stops `delay:`
+  holding the web server for the length of a chain.
+
 - **The popped-out remote is the width its style asks for.** It sized its window from the widest row
   rather than from the style's own width, so a style stating one drew narrower there than anywhere
   else — and a remote too tall for the screen was shrunk on both axes, throwing that width away
@@ -46,6 +58,9 @@ web control page shows the matching version badge.
   repeated reallocation instead — on the one heap that has the Bluetooth stack in it.
 
 ### Changed
+- **`lcd_sources:` is now `sources:`.** It feeds panels, `if:` branches and button colours, so the
+  name no longer fits. Renamed before release rather than after; anyone on a dev build renames the key.
+
 - **Exported styles wrap their longest sections.** A section too wide for the box now breaks between
   whole groups instead of running off the side, so an app row or a display panel is a short stack of
   lines that can be moved or deleted one at a time. Short sections still print one per line.

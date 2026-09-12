@@ -18,6 +18,9 @@
 #include <string>
 #include <vector>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "esp_bt.h"
 #include "esp_bt_main.h"
@@ -390,6 +393,15 @@ class EspidfBleKeyboard : public Component
   bool commit_template(uint8_t index);   // staged bytes -> storage slot
   bool delete_template(uint8_t index);
 
+  /// Run an action string on the component's own action task instead of the
+  /// caller's. The web server's task has 4352 bytes, and a chain measured on
+  /// device went seven execute_action frames deep with 52 bytes left — one more
+  /// frame overflowed it and rebooted the device. The main loop is not an
+  /// option either: `delay:` blocks with vTaskDelay, so a chain with delays in
+  /// it would stall ESPHome for its whole duration. Returns immediately; the
+  /// caller does not learn whether the action ran.
+  void queue_action(const std::string &action);
+
   /// Execute an action string (combo:, consumer:, named actions, or literal text).
   /// Used by buttons, macros, web API, and YAML automations.
   void execute_action(const std::string &action);
@@ -634,15 +646,22 @@ class EspidfBleKeyboard : public Component
   // That leaves this list as the only statement of what to format and publish,
   // and it is what bounds both the /status payload and the 255-character state
   // Home Assistant will carry.
-  static const uint8_t MAX_LCD_SOURCES = 8;
+  static const uint8_t MAX_SOURCES = 8;
   /// Longest text an `lcd:` action may put on a panel. Generous against a
   /// 16-character line, mean against the 255 a Home Assistant state holds.
   static const uint8_t MAX_LCD_MSG_LEN = 64;
-  void add_lcd_sensor(const std::string &key, sensor::Sensor *s,
+  void add_source_sensor(const std::string &key, sensor::Sensor *s,
                       const std::string &unit, int8_t decimals);
-  void add_lcd_text_sensor(const std::string &key, text_sensor::TextSensor *s);
+  void add_source_text_sensor(const std::string &key, text_sensor::TextSensor *s);
+  /// A boolean source, published as the literal "on"/"off". This is the one the
+  /// `if:` action branches on and a button's `lit:` token colours from — point
+  /// it at a `homeassistant` platform binary sensor to follow Home Assistant.
+  void add_source_binary_sensor(const std::string &key, binary_sensor::BinarySensor *s);
+  /// True/false for a boolean source, or no value when it has none yet — which
+  /// is what makes `if:` sit still rather than guess before HA has connected.
+  bool source_bool(const std::string &key, bool &out) const;
 #ifdef USE_TEXT
-  void add_lcd_text(const std::string &key, text::Text *t);
+  void add_source_text(const std::string &key, text::Text *t);
 #endif
   /// Every value a panel can name, already formatted — unit, decimals and all —
   /// so neither the web page nor the card has to know what kind of entity is
@@ -651,6 +670,11 @@ class EspidfBleKeyboard : public Component
   std::vector<std::pair<std::string, std::string>> lcd_values() const;
   /// The same map as compact JSON, clamped to what a HA state can hold.
   std::string lcd_json() const;
+  /// The unclamped map as a JSON object, rebuilt on the main loop. /status
+  /// serves this rather than building it per request: the web task has 4352
+  /// bytes of stack and about 860 spare, and walking every source there meant a
+  /// call chain of string-building frames on the thinnest stack in the system.
+  const std::string &lcd_status_json() const { return lcd_status_json_; }
   /// Optional text sensor carrying lcd_json() to the Lovelace card — the same
   /// reason the hidden, hold and repeat lists travel as sensors: a dashboard on
   /// https cannot fetch this device's API at all.
@@ -866,17 +890,18 @@ class EspidfBleKeyboard : public Component
   // source raises a flag on change rather than publishing from whatever task
   // updated it; loop() coalesces those into at most one publish a second, so a
   // fast sensor cannot flood the API connection.
-  struct LcdSource {
+  struct Source {
     std::string key;
     sensor::Sensor *num{nullptr};
     text_sensor::TextSensor *txt{nullptr};
+    binary_sensor::BinarySensor *flag{nullptr};
 #ifdef USE_TEXT
     text::Text *fld{nullptr};
 #endif
     std::string unit;       // empty = whatever the sensor declares
     int8_t decimals{-1};    // <0 = whatever the sensor declares
   };
-  std::vector<LcdSource> lcd_sources_;
+  std::vector<Source> sources_;
   // What a panel can say about what was just pressed. Held in RAM only: a
   // station key gets pressed many times an hour and none of this is worth a
   // flash write. last_action_ is every outermost press, last_spare_ only the
@@ -884,9 +909,34 @@ class EspidfBleKeyboard : public Component
   // is whatever an `lcd:` action put there.
   std::string last_action_, last_spare_, lcd_msg_;
   std::string last_lcd_json_;
+  std::string lcd_status_json_{"{}"};
+  std::string lcd_sensor_json_{"{}"};
+  UBaseType_t lcd_stack_low_{0};
+  void rebuild_lcd_status_();
   uint32_t lcd_last_publish_ms_{0};
-  std::atomic<bool> pending_lcd_publish_{false};
+  // True at boot so the /status cache is built on the first loop.
+  std::atomic<bool> pending_lcd_publish_{true};
   void publish_lcd_();
+
+  // The two branch-running verbs, kept out of execute_action's own frame. That
+  // function recurses, and a frame reserves every branch's locals whether or not
+  // it takes them — which is what ran the 4352-byte web task down to 484 bytes.
+  void run_alternate_(const std::string &body);
+  void run_if_(const std::string &action);
+  void run_steps_(const std::string &action);
+  // Stack accounting for a whole action chain — see report_action_stack_().
+  void report_action_stack_();
+
+  // The action task and its work queue. Sized from the measurement above:
+  // ~240 bytes a frame, seven frames on the deepest real chain, so 6 KB leaves
+  // room for roughly twice that depth.
+  static const uint32_t ACTION_TASK_STACK = 6144;
+  static const uint8_t ACTION_QUEUE_DEPTH = 8;
+  QueueHandle_t action_queue_{nullptr};
+  TaskHandle_t action_task_{nullptr};
+  static void action_task_entry_(void *arg);
+  UBaseType_t act_low_{(UBaseType_t) -1};
+  uint8_t act_deepest_{0};
 
   // Per-host hold-to-repeat (NVS key "rpt<slot>", "<delay>,<rate>,name,name").
   RepeatCfg repeat_[MAX_HOST_SLOTS];

@@ -384,7 +384,9 @@ class BleRemoteCard extends HTMLElement {
   _applyLcd(force) {
     if (!this._hass || !this.shadowRoot) return;
     const spans = this.shadowRoot.querySelectorAll('[data-lcd]');
-    if (!spans.length) return;      // no panel drawn: nothing to read or to paint
+    // A style may light a button without drawing a panel at all, so the early
+    // return has to consider both consumers of the map.
+    if (!spans.length && !this.shadowRoot.querySelector('[data-lit]')) return;
 
     const raw = this._entityState(this._config.lcd_entity);
     const keys = Object.keys(this._config.lcd_entities);
@@ -417,6 +419,10 @@ class BleRemoteCard extends HTMLElement {
       const v = this._entityState(this._config.lcd_entities[k]);
       if (v) vals[k] = v;
     }
+    // Buttons that light while their source is on — same map, same moment.
+    this.shadowRoot.querySelectorAll('[data-lit]').forEach(el => {
+      el.classList.toggle('lit', vals[el.dataset.lit] === 'on');
+    });
     spans.forEach(el => {
       let v = vals[el.dataset.lcd];
       if (v && RMT_LCD_LABELLED.includes(el.dataset.lcd)) v = lcdLabel(this._drawnStyle, v);

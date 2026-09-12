@@ -6,7 +6,7 @@ from pathlib import Path
 import esphome.codegen as cg
 import esphome.config_validation as cv
 import esphome.final_validate as fv
-from esphome.components import button, sensor, text, text_sensor
+from esphome.components import binary_sensor, button, sensor, text, text_sensor
 from esphome.const import CONF_ID
 from esphome.core import EsphomeError, HexInt
 from esphome import automation
@@ -52,16 +52,17 @@ CONF_PRIMARY = "primary"
 CONF_HOSTS = "hosts"
 CONF_SLOT = "slot"
 CONF_CUSTOM_TEXT_ID = "custom_text_id"
-CONF_LCD_SOURCES = "lcd_sources"
+CONF_SOURCES = "sources"
 CONF_KEY = "key"
 CONF_UNIT = "unit"
 CONF_DECIMALS = "decimals"
-# The three entity kinds an lcd source may name. Spelled out rather than reusing
-# esphome.const, because these are the YAML keys inside an lcd_sources entry and
+# The entity kinds a source may name. Spelled out rather than reusing
+# esphome.const, because these are the YAML keys inside a sources entry and
 # they have to match the platform names a user already knows.
-CONF_LCD_SENSOR = "sensor"
-CONF_LCD_TEXT_SENSOR = "text_sensor"
-CONF_LCD_TEXT = "text"
+CONF_SRC_SENSOR = "sensor"
+CONF_SRC_TEXT_SENSOR = "text_sensor"
+CONF_SRC_TEXT = "text"
+CONF_SRC_BINARY_SENSOR = "binary_sensor"
 CONF_EXPOSE_BUTTONS = "expose_buttons"
 CONF_HIDE_BUTTONS = "hide_buttons"
 CONF_KEYBOARD_LAYOUT = "keyboard_layout"
@@ -277,28 +278,33 @@ HOST_SCHEMA = cv.Schema({
 # opaque JSON and never parses it — so this list is the only statement of which
 # entities are worth formatting, and it is what bounds the /status payload and
 # the 255-character Home Assistant state that carries them to the card.
-MAX_LCD_SOURCES = 8
-LCD_KIND_KEYS = (CONF_LCD_SENSOR, CONF_LCD_TEXT_SENSOR, CONF_LCD_TEXT)
+MAX_SOURCES = 8
+SOURCE_KIND_KEYS = (CONF_SRC_SENSOR, CONF_SRC_TEXT_SENSOR, CONF_SRC_TEXT,
+                    CONF_SRC_BINARY_SENSOR)
 
-def _lcd_key(value):
+def _source_key(value):
     """The name a style writes to show this value, so its spelling is fixed by
     what the style validator in the browser will accept."""
     value = cv.string_strict(value)
     if re.fullmatch(r"[a-z0-9_]{1,16}", value) is None:
         raise cv.Invalid(
-            f"'{value}' cannot be an lcd key — use 1-16 characters of a-z, 0-9 or _. "
+            f"'{value}' cannot be a source key — use 1-16 characters of a-z, 0-9 or _. "
             "A style names the value with exactly this string."
         )
     return value
 
 
-LCD_SOURCE_SCHEMA = cv.Schema({
+SOURCE_SCHEMA = cv.Schema({
     # The name a style uses for this value. Defaults to the entity's own id,
     # which is usually what you would have typed anyway.
-    cv.Optional(CONF_KEY): _lcd_key,
-    cv.Optional(CONF_LCD_SENSOR): cv.use_id(sensor.Sensor),
-    cv.Optional(CONF_LCD_TEXT_SENSOR): cv.use_id(text_sensor.TextSensor),
-    cv.Optional(CONF_LCD_TEXT): cv.use_id(text.Text),
+    cv.Optional(CONF_KEY): _source_key,
+    cv.Optional(CONF_SRC_SENSOR): cv.use_id(sensor.Sensor),
+    cv.Optional(CONF_SRC_TEXT_SENSOR): cv.use_id(text_sensor.TextSensor),
+    cv.Optional(CONF_SRC_TEXT): cv.use_id(text.Text),
+    # Publishes the literal "on" / "off", which is the one rule `if:` and a
+    # button's `lit:` token both test. Point it at a `homeassistant` platform
+    # binary sensor to follow something Home Assistant knows.
+    cv.Optional(CONF_SRC_BINARY_SENSOR): cv.use_id(binary_sensor.BinarySensor),
     # Both default to whatever the sensor itself declares, so "21.4 °C" needs
     # no format string anywhere.
     cv.Optional(CONF_UNIT): cv.string,
@@ -306,25 +312,25 @@ LCD_SOURCE_SCHEMA = cv.Schema({
 })
 
 
-def _validate_lcd_source(value):
-    value = LCD_SOURCE_SCHEMA(value)
-    named = [k for k in LCD_KIND_KEYS if k in value]
+def _validate_source(value):
+    value = SOURCE_SCHEMA(value)
+    named = [k for k in SOURCE_KIND_KEYS if k in value]
     if len(named) != 1:
         raise cv.Invalid(
-            "An lcd_sources entry names exactly one of "
-            f"{', '.join(repr(k) for k in LCD_KIND_KEYS)}."
+            "A sources entry names exactly one of "
+            f"{', '.join(repr(k) for k in SOURCE_KIND_KEYS)}."
         )
-    if named[0] != CONF_LCD_SENSOR and (CONF_UNIT in value or CONF_DECIMALS in value):
+    if named[0] != CONF_SRC_SENSOR and (CONF_UNIT in value or CONF_DECIMALS in value):
         raise cv.Invalid(
-            f"'{CONF_UNIT}' and '{CONF_DECIMALS}' only apply to a numeric '{CONF_LCD_SENSOR}'."
+            f"'{CONF_UNIT}' and '{CONF_DECIMALS}' only apply to a numeric '{CONF_SRC_SENSOR}'."
         )
     if CONF_KEY not in value:
         key = str(value[named[0]].id)
         try:
-            key = _lcd_key(key)
+            key = _source_key(key)
         except cv.Invalid as err:
             raise cv.Invalid(
-                f"'{key}' cannot be used as an lcd key by itself ({err}) — "
+                f"'{key}' cannot be used as a source key by itself ({err}) — "
                 f"give the entry its own '{CONF_KEY}:'."
             ) from err
         value = {**value, CONF_KEY: key}
@@ -487,11 +493,11 @@ CONFIG_SCHEMA = cv.All(
         # is still advertised and reports a fixed 100%.
         cv.Optional(CONF_BATTERY_LEVEL): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_CUSTOM_TEXT_ID): cv.ensure_list(cv.use_id(cg.EntityBase)),
-        cv.Optional(CONF_LCD_SOURCES): cv.All(
-            cv.ensure_list(_validate_lcd_source),
+        cv.Optional(CONF_SOURCES): cv.All(
+            cv.ensure_list(_validate_source),
             cv.Length(
-                max=MAX_LCD_SOURCES,
-                msg=f"At most {MAX_LCD_SOURCES} lcd sources — "
+                max=MAX_SOURCES,
+                msg=f"At most {MAX_SOURCES} sources — "
                     "they all travel in one 255-character Home Assistant state",
             ),
         ),
@@ -565,21 +571,24 @@ async def to_code(config):
             cg.add(var.add_custom_text(text_entity))
             cg.add(var.register_button(f"Send {text_id.id}", f"send_custom_text:{i}"))
 
-    for src in config.get(CONF_LCD_SOURCES, []):
+    for src in config.get(CONF_SOURCES, []):
         key = src[CONF_KEY]
-        if CONF_LCD_SENSOR in src:
-            ent = await cg.get_variable(src[CONF_LCD_SENSOR])
-            cg.add(var.add_lcd_sensor(key, ent, src.get(CONF_UNIT, ""),
+        if CONF_SRC_SENSOR in src:
+            ent = await cg.get_variable(src[CONF_SRC_SENSOR])
+            cg.add(var.add_source_sensor(key, ent, src.get(CONF_UNIT, ""),
                                       src.get(CONF_DECIMALS, -1)))
-        elif CONF_LCD_TEXT_SENSOR in src:
-            ent = await cg.get_variable(src[CONF_LCD_TEXT_SENSOR])
-            cg.add(var.add_lcd_text_sensor(key, ent))
+        elif CONF_SRC_TEXT_SENSOR in src:
+            ent = await cg.get_variable(src[CONF_SRC_TEXT_SENSOR])
+            cg.add(var.add_source_text_sensor(key, ent))
+        elif CONF_SRC_BINARY_SENSOR in src:
+            ent = await cg.get_variable(src[CONF_SRC_BINARY_SENSOR])
+            cg.add(var.add_source_binary_sensor(key, ent))
         else:
             # Same define custom_text_id sets, and for the same reason: the
             # text/text.h include and everything touching it is behind it.
             cg.add_define("USE_TEXT")
-            ent = await cg.get_variable(src[CONF_LCD_TEXT])
-            cg.add(var.add_lcd_text(key, ent))
+            ent = await cg.get_variable(src[CONF_SRC_TEXT])
+            cg.add(var.add_source_text(key, ent))
 
     cg.add(var.set_expose_buttons(config[CONF_EXPOSE_BUTTONS]))
     for btn_id in config.get(CONF_HIDE_BUTTONS, []):

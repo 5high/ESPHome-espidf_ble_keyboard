@@ -1673,9 +1673,32 @@ void EspidfBleKeyboard::publish_remote_style_() {
 // behind a key, and neither should have to.
 static std::string format_lcd_number(float value, int8_t decimals, const std::string &unit) {
     if (std::isnan(value)) return "";
-    int d = decimals < 0 ? 1 : (decimals > 6 ? 6 : decimals);
-    char buf[24];
-    snprintf(buf, sizeof(buf), "%.*f", d, value);
+    int d = decimals < 0 ? 1 : (decimals > 4 ? 4 : decimals);
+    // Deliberately not snprintf("%.*f"). printf's float conversion is the
+    // hungriest frame in this whole chain, and the chain runs on the main task,
+    // which has 3584 bytes — less than the web task it used to run on. Scaling
+    // to an integer and printing that keeps the formatter out of it entirely.
+    static const int32_t POW10[5] = {1, 10, 100, 1000, 10000};
+    const int32_t scale = POW10[d];
+    float scaled = value * (float) scale;
+    // Round half away from zero, as %f does.
+    int64_t fixed = (int64_t) (scaled < 0 ? scaled - 0.5f : scaled + 0.5f);
+    const bool neg = fixed < 0;
+    if (neg) fixed = -fixed;
+    char buf[32];
+    if (d == 0) {
+        snprintf(buf, sizeof(buf), "%s%lld", neg ? "-" : "", (long long) fixed);
+    } else {
+        // The fraction is zero-padded by hand rather than with "%0*lld": the
+        // runtime width is something the compiler cannot bound, so it warns the
+        // output may be truncated however large the buffer is. d is 1-4 here.
+        char frac[6];
+        int64_t f = fixed % scale;
+        for (int i = d - 1; i >= 0; i--) { frac[i] = (char) ('0' + (f % 10)); f /= 10; }
+        frac[d] = 0;
+        snprintf(buf, sizeof(buf), "%s%lld.%s", neg ? "-" : "",
+                 (long long) (fixed / scale), frac);
+    }
     std::string out = buf;
     if (!unit.empty()) {
         out += " ";
@@ -1684,36 +1707,55 @@ static std::string format_lcd_number(float value, int8_t decimals, const std::st
     return out;
 }
 
-void EspidfBleKeyboard::add_lcd_sensor(const std::string &key, sensor::Sensor *s,
+void EspidfBleKeyboard::add_source_sensor(const std::string &key, sensor::Sensor *s,
                                        const std::string &unit, int8_t decimals) {
-    if (s == nullptr || lcd_sources_.size() >= MAX_LCD_SOURCES) return;
-    LcdSource src;
+    if (s == nullptr || sources_.size() >= MAX_SOURCES) return;
+    Source src;
     src.key = key;
     src.num = s;
     src.unit = unit;
     src.decimals = decimals;
-    lcd_sources_.push_back(src);
+    sources_.push_back(src);
     // Flag only — the callback can fire from any task, and publishing an API
     // state from there is not this component's to do. loop() picks it up.
     s->add_on_state_callback([this](float) { this->pending_lcd_publish_.store(true); });
 }
 
-void EspidfBleKeyboard::add_lcd_text_sensor(const std::string &key, text_sensor::TextSensor *s) {
-    if (s == nullptr || lcd_sources_.size() >= MAX_LCD_SOURCES) return;
-    LcdSource src;
+void EspidfBleKeyboard::add_source_text_sensor(const std::string &key, text_sensor::TextSensor *s) {
+    if (s == nullptr || sources_.size() >= MAX_SOURCES) return;
+    Source src;
     src.key = key;
     src.txt = s;
-    lcd_sources_.push_back(src);
+    sources_.push_back(src);
     s->add_on_state_callback([this](std::string) { this->pending_lcd_publish_.store(true); });
 }
 
+void EspidfBleKeyboard::add_source_binary_sensor(const std::string &key, binary_sensor::BinarySensor *s) {
+    if (s == nullptr || sources_.size() >= MAX_SOURCES) return;
+    Source src;
+    src.key = key;
+    src.flag = s;
+    sources_.push_back(src);
+    s->add_on_state_callback([this](bool) { this->pending_lcd_publish_.store(true); });
+}
+
+bool EspidfBleKeyboard::source_bool(const std::string &key, bool &out) const {
+    for (const auto &src : sources_) {
+        if (src.key != key || src.flag == nullptr) continue;
+        if (!src.flag->has_state()) return false;   // nothing heard yet
+        out = src.flag->state;
+        return true;
+    }
+    return false;
+}
+
 #ifdef USE_TEXT
-void EspidfBleKeyboard::add_lcd_text(const std::string &key, text::Text *t) {
-    if (t == nullptr || lcd_sources_.size() >= MAX_LCD_SOURCES) return;
-    LcdSource src;
+void EspidfBleKeyboard::add_source_text(const std::string &key, text::Text *t) {
+    if (t == nullptr || sources_.size() >= MAX_SOURCES) return;
+    Source src;
     src.key = key;
     src.fld = t;
-    lcd_sources_.push_back(src);
+    sources_.push_back(src);
     t->add_on_state_callback([this](std::string) { this->pending_lcd_publish_.store(true); });
 }
 #endif
@@ -1731,7 +1773,7 @@ std::string EspidfBleKeyboard::host_label(uint8_t slot) const {
 
 std::vector<std::pair<std::string, std::string>> EspidfBleKeyboard::lcd_values() const {
     std::vector<std::pair<std::string, std::string>> out;
-    out.reserve(lcd_sources_.size() + 7);
+    out.reserve(sources_.size() + 7);
 
     // The built-ins first: they cost nothing to produce and need no YAML, which
     // is what lets an imported style say something useful straight away.
@@ -1755,7 +1797,7 @@ std::vector<std::pair<std::string, std::string>> EspidfBleKeyboard::lcd_values()
         }
     }
 
-    for (const auto &src : lcd_sources_) {
+    for (const auto &src : sources_) {
         std::string value;
         if (src.num != nullptr) {
             if (src.num->has_state()) {
@@ -1766,6 +1808,9 @@ std::vector<std::pair<std::string, std::string>> EspidfBleKeyboard::lcd_values()
                 std::string unit = src.unit.empty() ? s->get_unit_of_measurement_ref().str() : src.unit;
                 value = format_lcd_number(s->state, d, unit);
             }
+        } else if (src.flag != nullptr) {
+            // The literal on/off a style's lit: token and the if: action test.
+            if (src.flag->has_state()) value = src.flag->state ? "on" : "off";
         } else if (src.txt != nullptr) {
             if (src.txt->has_state()) value = src.txt->state;
 #ifdef USE_TEXT
@@ -1813,16 +1858,50 @@ std::string EspidfBleKeyboard::lcd_json() const {
     json += "}";
     if (dropped)
         ESP_LOGW(TAG, "LCD values exceed the 255 characters a Home Assistant state holds — "
-                      "some were left out. Declare fewer lcd_sources, or shorten their keys.");
+                      "some were left out. Declare fewer sources, or shorten their keys.");
     return json;
+}
+
+// Built here, on the main loop, for whoever asks. See lcd_status_json().
+// One walk of the sources produces both strings: the full object /status
+// serves, and the clamped one the text sensor can carry. It used to be two
+// walks a second, each with its own chain of frames.
+void EspidfBleKeyboard::rebuild_lcd_status_() {
+    static const size_t HA_STATE_MAX = 255;
+    std::string full = "{", clamped = "{";
+    full.reserve(240);
+    clamped.reserve(HA_STATE_MAX + 2);
+    bool dropped = false;
+    for (const auto &kv : lcd_values()) {
+        std::string entry;
+        entry.reserve(kv.first.size() + kv.second.size() + 8);
+        entry += "\"";
+        lcd_json_escape(kv.first, entry);
+        entry += "\":\"";
+        lcd_json_escape(kv.second, entry);
+        entry += "\"";
+        if (full.size() > 1) full += ",";
+        full += entry;
+        // Whole entries or nothing, so what the sensor carries always parses.
+        const size_t sep = clamped.size() > 1 ? 1 : 0;
+        if (clamped.size() + sep + entry.size() + 1 > HA_STATE_MAX) { dropped = true; continue; }
+        if (sep) clamped += ",";
+        clamped += entry;
+    }
+    full += "}";
+    clamped += "}";
+    if (dropped)
+        ESP_LOGW(TAG, "LCD values exceed the 255 characters a Home Assistant state holds — "
+                      "some were left out. Declare fewer sources, or shorten their keys.");
+    lcd_status_json_.swap(full);
+    lcd_sensor_json_.swap(clamped);
 }
 
 void EspidfBleKeyboard::publish_lcd_() {
     if (lcd_sensor_ == nullptr) return;
-    std::string json = lcd_json();
-    if (json == last_lcd_json_) return;   // states stream constantly; publish on change
-    last_lcd_json_ = json;
-    lcd_sensor_->publish_state(json);
+    if (lcd_sensor_json_ == last_lcd_json_) return;   // states stream; publish on change
+    last_lcd_json_ = lcd_sensor_json_;
+    lcd_sensor_->publish_state(lcd_sensor_json_);
 }
 
 void EspidfBleKeyboard::load_remote_style_() {
@@ -2592,6 +2671,18 @@ void EspidfBleKeyboard::setup() {
       web_control_->setup();
     }
 #endif
+
+    // The task that runs action strings handed over by the web server. Created
+    // last so nothing it might touch is still uninitialised.
+    action_queue_ = xQueueCreate(ACTION_QUEUE_DEPTH, sizeof(std::string *));
+    if (action_queue_ == nullptr ||
+        xTaskCreate(&EspidfBleKeyboard::action_task_entry_, "ble_kb_act", ACTION_TASK_STACK,
+                    this, 2, &action_task_) != pdPASS) {
+        // Not fatal: queue_action() falls back to running inline, which is what
+        // it did before this task existed.
+        ESP_LOGW(TAG, "Could not start the action task; web actions will run on the web task");
+        if (action_queue_ != nullptr) { vQueueDelete(action_queue_); action_queue_ = nullptr; }
+    }
 }
 
 void EspidfBleKeyboard::update_led_state_(uint8_t led_byte) {
@@ -2667,12 +2758,29 @@ void EspidfBleKeyboard::loop() {
     // LCD values, coalesced. Several sources can move within the same second and
     // each publish is an API state update; nothing here is urgent — the web
     // page's own poll is 3 s — so once a second is as often as it can matter.
-    if (lcd_sensor_ != nullptr && pending_lcd_publish_.load()) {
+    if (pending_lcd_publish_.load()) {
         uint32_t now = millis();
         if (now - lcd_last_publish_ms_ >= 1000) {
             lcd_last_publish_ms_ = now;
             pending_lcd_publish_.store(false);
-            publish_lcd_();
+            rebuild_lcd_status_();
+            publish_lcd_();   // no-ops without the sensor
+            // What that pass actually cost this task. The main task gets 3584
+            // bytes — less than the web task — and a stack overflow here is what
+            // sent the device into a boot loop, so the figure is worth having
+            // rather than guessing at. Logged once per boot at its lowest, and
+            // loudly if it is getting close.
+            {
+                UBaseType_t left = uxTaskGetStackHighWaterMark(nullptr);
+                if (left < lcd_stack_low_ || lcd_stack_low_ == 0) {
+                    lcd_stack_low_ = left;
+                    // Only when it is getting close. A healthy device says
+                    // nothing; measured here it sits around 5.6 KB free.
+                    if (left < 768)
+                        ESP_LOGW(TAG, "Main task stack down to %u bytes after an LCD rebuild — "
+                                      "raise CONFIG_ESP_MAIN_TASK_STACK_SIZE", (unsigned) left);
+                }
+            }
         }
     }
     if (pending_rssi_nan_.exchange(false)) {
@@ -3645,6 +3753,151 @@ void EspidfBleKeyboard::send_hibernate() {
 
 // ── Centralized action executor ──────────────────────────────────
 
+// Split out of execute_action, and never inlined back into it. That function
+// recurses up to MAX_ACTION_DEPTH deep, and a frame reserves the locals of every
+// branch it contains — so a vector of branch strings declared here used to cost
+// its space on every nested frame, including ones that only send a keycode.
+// Measured on device: ~700 bytes a frame, 484 bytes of the web task's 4352 left
+// at four deep. Each heavy branch now pays only where it is actually taken.
+__attribute__((noinline)) void EspidfBleKeyboard::run_alternate_(const std::string &body) {
+        // Branches are separated by '||'. A single '|' keeps its usual meaning
+        // of "next step", so each branch can be a whole sequence — a power-off
+        // that needs "code, wait, confirm" is one branch, not three presses.
+        std::vector<std::string> branches;
+        size_t start = 0;
+        while (true) {
+            size_t sep = body.find("||", start);
+            std::string branch = (sep == std::string::npos) ? body.substr(start)
+                                                            : body.substr(start, sep - start);
+            while (!branch.empty() && branch.front() == ' ') branch.erase(branch.begin());
+            while (!branch.empty() && branch.back() == ' ') branch.pop_back();
+            if (!branch.empty()) branches.push_back(branch);
+            if (sep == std::string::npos) break;
+            start = sep + 2;
+        }
+        if (branches.empty()) return;
+
+        uint8_t idx = 0;
+        auto it = alternate_index_.find(body);
+        if (it != alternate_index_.end()) {
+            idx = it->second;
+            it->second = (uint8_t) ((idx + 1) % branches.size());
+        } else if (alternate_index_.size() < MAX_ALTERNATE_COUNTERS) {
+            alternate_index_[body] = (uint8_t) (1 % branches.size());
+        }
+        // Past the cap the counter simply isn't tracked and branch 0 runs every
+        // time — a bounded map matters more than toggling an unbounded number
+        // of distinct sequences.
+        //
+        // Recursing into execute_action means a branch is a normal action
+        // string: multi-step, repeat:, delays, everything.
+        execute_action(branches[idx % branches.size()]);
+        }
+
+// Not inlined, for the reason run_alternate_ gives.
+__attribute__((noinline)) void EspidfBleKeyboard::run_if_(const std::string &action) {
+        size_t colon = action.find(':', 3);
+        if (colon == std::string::npos) return;
+        const std::string key = action.substr(3, colon - 3);
+        const std::string body = action.substr(colon + 1);
+
+        std::vector<std::string> branches;
+        size_t start = 0;
+        while (true) {
+            size_t sep = body.find("||", start);
+            std::string branch = (sep == std::string::npos) ? body.substr(start)
+                                                            : body.substr(start, sep - start);
+            while (!branch.empty() && branch.front() == ' ') branch.erase(branch.begin());
+            while (!branch.empty() && branch.back() == ' ') branch.pop_back();
+            branches.push_back(branch);
+            if (sep == std::string::npos) break;
+            start = sep + 2;
+        }
+
+        bool on = false;
+        if (!source_bool(key, on)) {
+            // No such source, or none heard from yet. Deliberately does nothing:
+            // the off-branch of a power button sends Wake-on-LAN, and guessing
+            // "off" every time the device reboots before Home Assistant connects
+            // would send it for no reason. Debug, not warn — this is per press.
+            ESP_LOGD(TAG, "if:%s has no state yet; doing nothing", key.c_str());
+            return;
+        }
+        const size_t want = on ? 0 : 1;
+        // One branch means "when on, otherwise nothing".
+        if (want < branches.size() && !branches[want].empty())
+            execute_action(branches[want]);
+        return;
+    }
+
+// Kept out of execute_action's frame, for the reason run_alternate_ gives: the
+// step string here is the last of the big locals that every nested frame was
+// reserving whether or not it split anything.
+__attribute__((noinline)) void EspidfBleKeyboard::run_steps_(const std::string &action) {
+    size_t start = 0;
+    while (start < action.size()) {
+        size_t end = action.find('|', start);
+        if (end == std::string::npos) end = action.size();
+        std::string step = action.substr(start, end - start);
+        while (!step.empty() && step.front() == ' ') step.erase(step.begin());
+        while (!step.empty() && step.back() == ' ') step.pop_back();
+        if (!step.empty()) {
+            execute_action(step);
+        }
+        start = end + 1;
+        if (start < action.size() && step.find("delay:") != 0) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+}
+
+// One line per chain, and only when it ran the stack down far enough to matter.
+// Says which task, how deep it went and what was left, so the cost per frame can
+// be read off rather than guessed at.
+void EspidfBleKeyboard::report_action_stack_() {
+    // Only a chain that came close is worth a line. Everything else is silence,
+    // which is what a working device should print. The task name is in the
+    // message because which task ran the chain is half the diagnosis: it ran on
+    // the web server's 4352-byte task until it got its own.
+    if (act_low_ <= 1200) {
+        ESP_LOGW(TAG, "Action chain on '%s': %u frames deep, %u B stack left",
+                 pcTaskGetName(nullptr), (unsigned) act_deepest_, (unsigned) act_low_);
+    }
+    act_low_ = (UBaseType_t) -1;
+    act_deepest_ = 0;
+}
+
+// Actions handed over by the web server run here, not on its task. See
+// queue_action() for the measurements that made this necessary.
+void EspidfBleKeyboard::action_task_entry_(void *arg) {
+    auto *self = static_cast<EspidfBleKeyboard *>(arg);
+    std::string *job = nullptr;
+    while (true) {
+        if (xQueueReceive(self->action_queue_, &job, portMAX_DELAY) == pdTRUE && job != nullptr) {
+            self->execute_action(*job);
+            delete job;
+            job = nullptr;
+        }
+    }
+}
+
+void EspidfBleKeyboard::queue_action(const std::string &action) {
+    // No task means setup() could not create one; running inline is what this
+    // did before, and a working button on a thin stack beats no button at all.
+    if (action_queue_ == nullptr) {
+        execute_action(action);
+        return;
+    }
+    auto *job = new std::string(action);
+    if (xQueueSend(action_queue_, &job, 0) != pdTRUE) {
+        // The queue is only this deep because a chain can take seconds — a
+        // backlog means someone is pressing faster than the actions run, and
+        // dropping the newest says so rather than queueing minutes of them.
+        delete job;
+        ESP_LOGW(TAG, "Action queue full, dropped: %s", action.c_str());
+    }
+}
+
 void EspidfBleKeyboard::execute_action(const std::string &action) {
     // Depth guard for every recursive path below — repeat:, alternate: and the
     // '|' split all re-enter here, and nesting them multiplies rather than adds.
@@ -3662,17 +3915,31 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         return;
     }
     struct DepthGuard {
+        EspidfBleKeyboard *kb;
         uint8_t &depth;
-        explicit DepthGuard(uint8_t &d) : depth(d) { depth++; }
-        ~DepthGuard() { depth--; }
-    } depth_guard(action_depth_);
+        DepthGuard(EspidfBleKeyboard *k, uint8_t &d) : kb(k), depth(d) { depth++; }
+        // Report once the whole chain has unwound, not per level: logging from
+        // inside the chain costs the very stack being measured.
+        ~DepthGuard() { depth--; if (depth == 0) kb->report_action_stack_(); }
+    } depth_guard(this, action_depth_);
+
+    // How deep this chain went, and how little stack was left at the bottom.
+    // Recorded rather than logged here for the reason the guard gives.
+    {
+        UBaseType_t left = uxTaskGetStackHighWaterMark(nullptr);
+        if (left < act_low_) act_low_ = left;
+        if (action_depth_ > act_deepest_) act_deepest_ = action_depth_;
+    }
 
     // Remember the outermost press, for the @last and @station panel values.
     // Depth 1 here because the guard above has already counted this call: any
     // deeper one is a step of a macro or a chain, and recording those would
     // leave the panel showing the last leaf of a sequence rather than the key
     // that was actually pressed.
-    if (action_depth_ == 1 && action.find("lcd:") != 0) {
+    // Container verbs are excluded: recording one verbatim would put a whole
+    // conditional or a repeat count on a panel instead of the key that was hit.
+    if (action_depth_ == 1 && action.find("lcd:") != 0 && action.find("if:") != 0 &&
+        action.find("alternate:") != 0 && action.find("repeat:") != 0) {
         if (last_action_ != action) {
             last_action_ = action;
             pending_lcd_publish_.store(true);
@@ -3710,61 +3977,15 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     // This is assumed state: HID is one-way, so the device cannot know what it
     // actually toggled. Switch the target off by other means and the sequence
     // is inverted until it's pressed through once more.
-    if (action.find("alternate:") == 0) {
-        std::string body = action.substr(10);
-        // Branches are separated by '||'. A single '|' keeps its usual meaning
-        // of "next step", so each branch can be a whole sequence — a power-off
-        // that needs "code, wait, confirm" is one branch, not three presses.
-        std::vector<std::string> branches;
-        size_t start = 0;
-        while (true) {
-            size_t sep = body.find("||", start);
-            std::string branch = (sep == std::string::npos) ? body.substr(start)
-                                                            : body.substr(start, sep - start);
-            while (!branch.empty() && branch.front() == ' ') branch.erase(branch.begin());
-            while (!branch.empty() && branch.back() == ' ') branch.pop_back();
-            if (!branch.empty()) branches.push_back(branch);
-            if (sep == std::string::npos) break;
-            start = sep + 2;
-        }
-        if (branches.empty()) return;
-
-        uint8_t idx = 0;
-        auto it = alternate_index_.find(body);
-        if (it != alternate_index_.end()) {
-            idx = it->second;
-            it->second = (uint8_t) ((idx + 1) % branches.size());
-        } else if (alternate_index_.size() < MAX_ALTERNATE_COUNTERS) {
-            alternate_index_[body] = (uint8_t) (1 % branches.size());
-        }
-        // Past the cap the counter simply isn't tracked and branch 0 runs every
-        // time — a bounded map matters more than toggling an unbounded number
-        // of distinct sequences.
-        //
-        // Recursing into execute_action means a branch is a normal action
-        // string: multi-step, repeat:, delays, everything.
-        execute_action(branches[idx % branches.size()]);
-        return;
-    }
+    if (action.find("alternate:") == 0) { run_alternate_(action.substr(10)); return; }
+    // Branch on something the device actually knows, rather than on a counter
+    // that only hopes to agree with it. Same '||' grammar as alternate: above —
+    // first branch when the source is on, second when off — and checked here,
+    // before the '|' split, for the same reason: the split would otherwise cut a
+    // branch into pieces and run its tail unconditionally.
+    if (action.find("if:") == 0) { run_if_(action); return; }
     // Multi-step actions: split on '|' and execute each step
-    if (action.find('|') != std::string::npos) {
-        size_t start = 0;
-        while (start < action.size()) {
-            size_t end = action.find('|', start);
-            if (end == std::string::npos) end = action.size();
-            std::string step = action.substr(start, end - start);
-            while (!step.empty() && step.front() == ' ') step.erase(step.begin());
-            while (!step.empty() && step.back() == ' ') step.pop_back();
-            if (!step.empty()) {
-                execute_action(step);
-            }
-            start = end + 1;
-            if (start < action.size() && step.find("delay:") != 0) {
-                vTaskDelay(pdMS_TO_TICKS(50));
-            }
-        }
-        return;
-    }
+    if (action.find('|') != std::string::npos) { run_steps_(action); return; }
     // Delay action for multi-step macros
     if (action.find("delay:") == 0) {
         int ms = 0;

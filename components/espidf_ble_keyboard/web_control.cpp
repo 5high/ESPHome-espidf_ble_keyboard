@@ -190,11 +190,12 @@ static bool same_origin_ok(AsyncWebServerRequest *request, EspidfBleKeyboard *kb
 }
 
 // ── Stack headroom probe ───────────────────────────────────────────
-// Everything in the handler below runs on the web server's task, including
-// execute_action(), which the press endpoint calls inline — and an action can
-// recurse through repeat:, alternate: and '|' chains before it reaches the HID
-// layer. That task gets ESP-IDF's default httpd stack plus 256 bytes, which is
-// not much to spend on a chain like that while boot-time init is also running.
+// Everything in the handler below runs on the web server's task. Action strings
+// no longer do: /press hands them to the component's own action task, because a
+// chain recursing through if:, alternate:, macro: and '|' measured seven frames
+// deep with 52 bytes left of this task's stack — one more and it overflows.
+// That task gets ESP-IDF's default httpd stack plus 256 bytes, which is not much
+// to spend on a chain like that while boot-time init is also running.
 //
 // An overflow there does not announce itself: it writes past the end of the
 // stack and the eventual panic reports an impossible exccause with no faulting
@@ -364,15 +365,14 @@ class BleKbWebHandler : public AsyncWebHandler {
 
     // GET-only endpoints (read state)
     if (path == "status") {
-      // The lcd map is built first so the reserve below can be sized from what
-      // is actually there. The rule this file keeps everywhere: estimate from
-      // what is stored, never from the caps — over-reserving raises the very
-      // heap peak the reserve exists to lower.
-      auto lcd = kb_->lcd_values();
-      size_t lcd_est = 12;
-      for (const auto &kv : lcd) lcd_est += kv.first.size() + kv.second.size() + 8;
+      // Already built, on the main loop. This endpoint used to walk every source
+      // and format each one here, which put a chain of string-building frames on
+      // the web task — 4352 bytes of stack, ~860 of them spare. A const ref and
+      // one append is all it costs now, and the reserve is still sized from what
+      // is actually stored rather than from the caps.
+      const std::string &lcd = kb_->lcd_status_json();
       std::string json = "{\"connected\":";
-      json.reserve(512 + lcd_est);  // one allocation instead of the five doublings this would take
+      json.reserve(512 + lcd.size());  // one allocation instead of the five doublings this would take
       json += kb_->is_connected() ? "true" : "false";
       json += ",\"paired\":";
       json += kb_->is_paired() ? "true" : "false";
@@ -401,18 +401,9 @@ class BleKbWebHandler : public AsyncWebHandler {
       // endpoint rather than its own: the page already polls it every 3 s, and
       // canHandle() pays a URL buffer and a heap string for every request the
       // web server sees, so a second polled path is the expensive way to do it.
-      json += ",\"lcd\":{";
-      bool first = true;
-      for (const auto &kv : lcd) {
-        if (!first) json += ",";
-        first = false;
-        json += "\"";
-        json += json_escape(kv.first);
-        json += "\":\"";
-        json += json_escape(kv.second);
-        json += "\"";
-      }
-      json += "}}";
+      json += ",\"lcd\":";
+      json += lcd;
+      json += "}";
       send_response(200, "application/json", json);
       return;
     }
@@ -1087,6 +1078,10 @@ class BleKbWebHandler : public AsyncWebHandler {
       } else {
         action = "mouse_abs:" + sx + ":" + sy;
       }
+      // Inline, unlike /press: the click below is meant to land at the new
+      // position, so the move has to have happened first. One shallow action
+      // with no nesting, so the stack it costs here is not the problem /press
+      // had.
       kb_->execute_action(action);
       if (request->hasArg("btn")) {
         int btn = atoi(request->arg("btn").c_str());
@@ -1157,10 +1152,12 @@ class BleKbWebHandler : public AsyncWebHandler {
       send_response(200, "text/plain", "OK");
 
     } else if (path == "press") {
-      // Press a button by action string
+      // Press a button by action string. Handed to the component's action task
+      // rather than run here: this task has 4352 bytes, and a real chain went
+      // seven execute_action frames deep with 52 of them left.
       if (request->hasArg("action")) {
         std::string action = request->arg("action").c_str();
-        kb_->execute_action(action);
+        kb_->queue_action(action);
       }
       send_response(200, "text/plain", "OK");
 

@@ -322,7 +322,7 @@ binary_sensor:
 * **custom_text_id** (Optional, ID or list of IDs): Link one or more ESPHome `text` entities for custom text input. Automatically registers a "Send" button in the web UI for each. Use `send_custom_text` or `send_custom_text:N` action to trigger.
 * **expose_buttons** (Optional, boolean): List every non-internal ESPHome `button` in your config on the [web control page](#pressing-other-esphome-buttons), so it can reach things BLE can't — Wake-on-LAN, a relay, a restart. Defaults to `true`.
 * **hide_buttons** (Optional, ID or list of IDs): Buttons to keep *off* the web page. Anything listed there can be pressed by whoever can reach the device — and unless you have set up authentication, that is anyone on the network — so use this for anything destructive (`factory_reset`, `restart`, `safe_mode`). Leave one of those platforms exposed and the build names it in a warning, so you can decide rather than discover. Hidden buttons also refuse to run if their action is typed by hand.
-* **lcd_sources** (Optional, list): Entities an [LCD panel](#lcd-panels) in a remote style may show. Each entry names exactly one of `sensor:`, `text_sensor:` or `text:` by id, plus an optional `key:` (what the style calls it — defaults to the entity's id) and, for a numeric sensor, `unit:` and `decimals:` overrides. At most 8. Without this a panel can still show the keyboard's own `@` values.
+* **sources** (Optional, list): Entities a remote style may read — to show on an [LCD panel](#lcd-panels), to branch on with [`if:`](#branching-on-real-state), or to light a button with `lit:`. Each entry names exactly one of `sensor:`, `text_sensor:`, `text:` or `binary_sensor:` by id, plus an optional `key:` (what the style calls it — defaults to the entity's id) and, for a numeric sensor, `unit:` and `decimals:` overrides. A `binary_sensor:` publishes the literal `on`/`off`. At most 8.
 * **battery_level** (Optional, ID): A sensor whose value (0–100) is published over the BLE Battery Service, so the host's Bluetooth settings show the keyboard's real charge. Any sensor reading a percentage will do — an ADC with a calibration filter, a fuel-gauge IC, a template sensor. Values outside 0–100 are clamped and an unavailable reading is ignored rather than sent as 0%. Without this the service is still advertised and reports a fixed 100%. See [Battery level](#battery-level).
 * **keyboard_layout** (Optional, string): Default keyboard layout. One of `us` (default), `uk`, `de`, `be`. Controls how `send_string` maps each character to USB HID keycodes — must match the *host's* keyboard layout. Can be overridden at runtime from the web UI (persisted to NVS, survives reboot). See [Keyboard layouts](#keyboard-layouts) below.
 * **hosts** (Optional, list): Per-slot passkey and pairing mode overrides. Each entry has:
@@ -531,6 +531,7 @@ espidf_ble_keyboard:
 | `"switch_host:next"` / `"switch_host:prev"` | Step to the next or previous host slot, wrapping around at the ends. Cycles through every configured slot, so an unpaired one is reached too (and advertises for pairing). Does nothing when only one slot is configured. |
 | `"forget_host:N"` | Remove BLE bond for host slot N (0–9) and clear the slot. |
 | `"lcd:<text>"` | Put text on an [LCD panel](#lcd-panels)'s `@msg` line. Everything after the colon is the text. |
+| `"if:<source>: <when on> \|\| <when off>"` | Run one branch or the other depending on a [source](#branching-on-real-state). Does nothing until the source has a state. |
 | `"string:hello"` | Explicit text typing — useful in multi-step macros to distinguish text from action names. |
 | `"delay:N"` | Pause for N milliseconds (max 10000). Used between steps in multi-step macros. |
 | `"repeat:N:<action>"` | Run `<action>` N times (max 1000). Put it at the start of a macro to repeat the whole sequence, e.g. `repeat:3:combo:0:40 \| delay:200`. |
@@ -658,7 +659,7 @@ text_sensor:
     name: "LCD Values"
 ```
 
-It carries the keyboard's own `@` values and anything listed in `lcd_sources:`, republished whenever one of them changes and at most once a second. Everything has to fit the 255 characters a Home Assistant state holds; past that whole entries are dropped and the log says which way to fix it.
+It carries the keyboard's own `@` values and anything listed in `sources:`, republished whenever one of them changes and at most once a second. Everything has to fit the 255 characters a Home Assistant state holds; past that whole entries are dropped and the log says which way to fix it.
 
 > **These are diagnostic entities.** They carry machine-readable state for the cards rather than anything to read yourself, so they default to `entity_category: diagnostic` — Home Assistant files them under **Diagnostic** on the device page and leaves them out of auto-generated dashboards, instead of listing a long comma-separated repeat config across the integration screen. Set `entity_category:` on the sensor to promote one back to the main list. Add only the sensors your cards actually use; each is optional.
 
@@ -1113,6 +1114,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `sm` / `lg` / `xl` | 36 / 56 / 64 px instead of the usual 48 |
 | `wide` | an auto-width pill |
 | `sq` | square-ish corners |
+| `lit:<source>` | Light the key while that [source](#configuration-variables) reads `on` — e.g. a power key that goes green while the TV is on. Takes the style's `lit_bg`/`lit_fg`; `lit:<source>:#43a047` colours this one button instead. |
 
 An unknown token is refused on import rather than ignored, so a typo shows up rather than silently doing nothing.
 
@@ -1126,7 +1128,7 @@ Labels are 1–16 characters. A round key fits about four; the wide app pill fit
 
 Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, the seven transport keys, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `spare1`–`spare16`). An unknown name is refused on import rather than rendering a dead button.
 
-**Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, and for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
+**Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, and for a `lit:` button `lit_bg`, `lit_fg`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
 **Making the buttons bigger or smaller.** `zoom` scales the whole remote — buttons, their icons and labels, the gaps between them, the d-pad and the rockers — by one factor: `"zoom": "1.25"` for a quarter larger, `"0.8"` for smaller. It is the only size control, deliberately: the buttons come in several sizes that are tuned against each other and against the gaps, so scaling them as a set keeps a layout that was designed to fit still fitting.
 
@@ -1219,7 +1221,7 @@ Put that in a spare's [per-host override](#host-actions-per-host-overrides) and 
 ```yaml
 espidf_ble_keyboard:
   id: my_keyboard
-  lcd_sources:
+  sources:
     - sensor: lounge_temperature     # key defaults to the entity's id
     - key: temp                      # or name it yourself
       sensor: lounge_temperature
@@ -1228,6 +1230,8 @@ espidf_ble_keyboard:
     - text_sensor: now_playing
     - key: msg
       text: my_text_input
+    - key: monitor
+      binary_sensor: monitor_on     # publishes "on" / "off"
 ```
 
 Each entry names exactly one of `sensor:`, `text_sensor:` or `text:`, by id. At most **8** sources, and a key is 1–16 characters of `a-z`, `0-9` or `_`. A key nothing answers draws as `--` rather than failing, which is also what a value shows before its entity has published anything.
@@ -1258,7 +1262,7 @@ A key named there wins over the device's value for the same key.
 
 #### A complete example
 
-This is **Style 6**, the built-in with a screen, written out so you can see how one is put together — and copy it as the starting point for your own. The screen shows which host the keyboard is on and whether it is connected: both `@` values, so **it needs no `lcd_sources:` at all**. Add the `lcd` text sensor only if you want the panel filled on the Home Assistant card too.
+This is **Style 6**, the built-in with a screen, written out so you can see how one is put together — and copy it as the starting point for your own. The screen shows which host the keyboard is on and whether it is connected: both `@` values, so **it needs no `sources:` at all**. Add the `lcd` text sensor only if you want the panel filled on the Home Assistant card too.
 
 The `id` below is deliberately not `style6` — a built-in's id is reserved, so an import has to use its own. Change the name and it joins the stepper beside the built-ins.
 
@@ -1310,6 +1314,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
 | `"alternate:<a> \|\| <b> \|\| …"` | Run **one branch** per press, advancing each time. Branches split on `\|\|`; a single `\|` still means "next step", so a branch can be a whole sequence. See [Toggling one button between two actions](#toggling-one-button-between-two-actions). |
 | `"macro:<name>"` | Run a stored [web macro](#web-macros) by name — a live reference, so editing the macro updates everything pointing at it. Macros may call each other (nesting is capped). |
+| `"if:<source>: <when on> \|\| <when off>"` | Branch on something the device actually knows, instead of `alternate:`'s blind counter. Branches split on `\|\|` and each may be a whole sequence. Nothing runs until the source has a state. See [Branching on real state](#branching-on-real-state). |
 | `"lcd:<text>"` | Write text to an [LCD panel](#lcd-panels)'s `@msg` line, so a key can name where it just took you — `consumer:0x0223 \| lcd:Netflix`. Up to 64 characters. |
 | `"ha_action:<domain>.<action>;<key>=<value>;…"` | Ask Home Assistant to run one of its own actions — e.g. an IR blaster's `remote.send_command`. Needs `ha_action: true`. See [Calling Home Assistant Actions](#calling-home-assistant-actions). |
 
@@ -1396,6 +1401,30 @@ The counter is keyed on the action text, so the same string driven from the web 
 > **It's a guess, and guesses drift.** Turn the monitor off with its own button and the sequence is inverted until you press through once more. The device has no way to detect that, which is what the next option is for. The position also resets on reboot.
 
 Two smaller limits: `alternate:` must be the **whole** action, not one step inside a longer chain, and at most 16 distinct alternate sequences are tracked at once. With no `||` at all there's just one branch, which runs in full on every press.
+
+<a id="branching-on-real-state"></a>
+**Real state — the `if:` action.** When something can actually tell you the state, branch on it instead of counting presses. Declare it as a `sources:` entry and the same name works in the action, on a panel, and as a button's `lit:` colour:
+
+```yaml
+espidf_ble_keyboard:
+  id: my_keyboard
+  sources:
+    - key: monitor
+      binary_sensor: monitor_on
+
+binary_sensor:
+  - platform: homeassistant          # needs api:
+    id: monitor_on
+    entity_id: binary_sensor.samsung_m70f_power
+```
+
+```
+if:monitor: consumer:0x30 | delay:1000 | ok || press_button:samsung_43_m70f_wol
+```
+
+Same `||` grammar as `alternate:`, so switching an existing button over is a one-word edit — first branch while the source reads `on`, second while it reads `off`. Turn the monitor off with its own remote and the next press still does the right thing, which is the case `alternate:` gets wrong.
+
+**Until the source has a state, the button does nothing** — no guess at boot before Home Assistant has connected, which matters when the off-branch sends Wake-on-LAN. A single branch means "do this when on, nothing when off". Give the key `lit:monitor` and it lights up while the monitor is on, so the remote shows the state as well as following it.
 
 **Real state — a template button.** For a toggle that can't drift, let a template button hold the decision. It appears on the web page automatically, so it works exactly like any other button:
 
