@@ -86,8 +86,25 @@
 // own web page so this card draws exactly what the device does. Regenerate with
 // `node tools/gen-remote-styles.mjs` after changing styles in web_control.cpp.
 import {
-  RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, sectionHtml, validateTpl, themeValueBad,
+  RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, sectionHtml, validateTpl, themeValueBad,
 } from './remote-styles.js?v=1.10.0-dev';
+
+// Which build of this file the browser actually loaded, read from the ?v= its
+// importer wrote rather than from a constant that has to be remembered at
+// release. Printed because "did my update land?" is otherwise only answerable
+// by fetching the served file and reading it, and it is also on the card
+// element as data-version for anyone already in the inspector.
+const CARD_VER = new URL(import.meta.url).searchParams.get('v') || 'unversioned';
+console.info(`%c BLE Media Remote %c ${CARD_VER} `,
+  'background:#0b6;color:#fff;border-radius:3px 0 0 3px', 'background:#333;color:#fff;border-radius:0 3px 3px 0');
+// A card newer than its own catalogue is the half-updated install that makes a
+// perfectly good style look broken — one of the two came from a cache. Only
+// worth saying when both are versioned; a hand-installed card has no query
+// string and would otherwise disagree with the module it imports by design.
+if (CARD_VER !== 'unversioned' && RMT_VER !== 'unversioned' && RMT_VER !== CARD_VER) {
+  console.warn(`ble-remote-card ${CARD_VER} is using remote-styles ${RMT_VER}. ` +
+    'One of them came from a cache — reload the dashboard with the cache cleared.');
+}
 
 /**
  * Parse the card's pasted-style box.
@@ -169,6 +186,9 @@ class BleRemoteCard extends HTMLElement {
     if (!config.device) {
       throw new Error('Please define a "device" (your ESPHome device name)');
     }
+    // Visible in the inspector without opening the console, and it survives a
+    // reconfigure because setConfig runs on every editor keystroke.
+    this.setAttribute('data-version', CARD_VER);
     this._config = {
       device: config.device,
       name: config.name || null,

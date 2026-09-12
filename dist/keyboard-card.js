@@ -44,6 +44,15 @@
  *   show_mac: true
  */
 
+// Which build of this file the browser actually loaded, read from the ?v= its
+// importer wrote rather than from a constant that has to be remembered at
+// release. Printed because "did my update land?" is otherwise only answerable
+// by fetching the served file and reading it; also on the card element as
+// data-version for anyone already in the inspector.
+const CARD_VER = new URL(import.meta.url).searchParams.get('v') || 'unversioned';
+console.info(`%c BLE Keyboard %c ${CARD_VER} `,
+  'background:#0b6;color:#fff;border-radius:3px 0 0 3px', 'background:#333;color:#fff;border-radius:0 3px 3px 0');
+
 // HID keycodes for printable characters (used when Ctrl/Alt/Win modifiers are active)
 const CHAR_TO_KEYCODE = {
   'a':0x04,'b':0x05,'c':0x06,'d':0x07,'e':0x08,'f':0x09,'g':0x0A,
@@ -483,6 +492,8 @@ class BleKeyboardCard extends HTMLElement {
     if (!config.device) {
       throw new Error('Please define a "device" (your ESPHome device name)');
     }
+    // Visible in the inspector without opening the console.
+    this.setAttribute('data-version', CARD_VER);
     const layout = (config.layout || 'us').toLowerCase();
     this._config = {
       device: config.device,

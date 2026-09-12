@@ -495,6 +495,15 @@ function validateTpl(t){
     return '';
   }
 
+// Which copy of this file the browser actually loaded, taken from the ?v= the
+// importer wrote rather than from a constant someone has to remember to bump.
+// The card reports it beside its own: those two disagreeing is precisely the
+// shape of a half-updated install — a new card still holding a cached catalogue
+// — which otherwise surfaces as the card rejecting a style the device just
+// exported. Hand-installed without a query string, it reads "unversioned".
+export const RMT_VER =
+  new URL(import.meta.url).searchParams.get('v') || 'unversioned';
+
 // The remote's stylesheet. It falls back to the page palette (--bg, --fg,
 // --border, --muted, --active, --accent), so whatever hosts this must map those
 // onto its own theme — inside a shadow root there is no :root to inherit from.
