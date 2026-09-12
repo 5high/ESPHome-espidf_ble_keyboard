@@ -86,7 +86,8 @@
 // own web page so this card draws exactly what the device does. Regenerate with
 // `node tools/gen-remote-styles.mjs` after changing styles in web_control.cpp.
 import {
-  RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, sectionHtml, validateTpl, themeValueBad,
+  RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, RMT_LCD_LABELLED, lcdLabel,
+  sectionHtml, validateTpl, themeValueBad,
 } from './remote-styles.js?v=1.10.0-dev';
 
 // Which build of this file the browser actually loaded, read from the ?v= its
@@ -417,7 +418,8 @@ class BleRemoteCard extends HTMLElement {
       if (v) vals[k] = v;
     }
     spans.forEach(el => {
-      const v = vals[el.dataset.lcd];
+      let v = vals[el.dataset.lcd];
+      if (v && RMT_LCD_LABELLED.includes(el.dataset.lcd)) v = lcdLabel(this._drawnStyle, v);
       el.textContent = (v === undefined || v === null || v === '') ? '--' : String(v);
     });
   }
@@ -947,6 +949,9 @@ class BleRemoteCard extends HTMLElement {
       }
     }
     body.innerHTML = style.sections.map(sectionHtml).join('');
+    // Kept for _applyLcd: @last and @station arrive as an action, and this
+    // is the only thing that knows the style calls it something.
+    this._drawnStyle = style;
     this._applyToggles();
     // Forced: the buttons are new, so whatever this host hides has to be
     // reapplied even though the hidden list itself did not change.

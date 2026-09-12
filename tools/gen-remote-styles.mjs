@@ -60,6 +60,7 @@ const PARTS = [
   ['const RMT_OPTS=', () => oneLine('const RMT_OPTS=')],
   ['const RMT_LCD_OPTS=', () => oneLine('const RMT_LCD_OPTS=')],
   ['const RMT_LCD_COLOURS=', () => oneLine('const RMT_LCD_COLOURS=')],
+  ['const RMT_LCD_LABELLED=', () => oneLine('const RMT_LCD_LABELLED=')],
   ['const RMT_LCD_KEYS=', () => oneLine('const RMT_LCD_KEYS=')],
   ['const RMT_HEX=', () => oneLine('const RMT_HEX=')],
   ['const RMT_CLIP=', () => oneLine('const RMT_CLIP=')],
@@ -70,6 +71,7 @@ const PARTS = [
   // which is the whole point of it being here rather than inline in the importer.
   ['function themeValueBad(', () => balanced('function themeValueBad(')],
   ['function btnHtml(', () => balanced('function btnHtml(')],
+  ['function lcdLabel(', () => balanced('function lcdLabel(')],
   ['function sectionHtml(', () => balanced('function sectionHtml(')],
   ['function validateTpl(', () => balanced('function validateTpl(')],
 ];
@@ -79,7 +81,7 @@ const js = PARTS.map(([, take]) => take()).join('\n\n');
 // by hand is what let RMT_OPTS slip out of the gallery's bundle once, and the
 // symptom was every button rendering as nothing at all — silently.
 const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS',
-  'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
+  'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_LCD_LABELLED', 'lcdLabel', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
   'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl'];
 const defined = new Set([...js.matchAll(/(?:^|\n)\s*(?:const|function)\s+([A-Za-z_$][\w$]*)/g)]
   .map(m => m[1]));

@@ -530,6 +530,7 @@ espidf_ble_keyboard:
 | `"switch_host:N"` | Switch to host slot N (0–9). Reconnects to stored host or advertises for new pairing. |
 | `"switch_host:next"` / `"switch_host:prev"` | Step to the next or previous host slot, wrapping around at the ends. Cycles through every configured slot, so an unpaired one is reached too (and advertises for pairing). Does nothing when only one slot is configured. |
 | `"forget_host:N"` | Remove BLE bond for host slot N (0–9) and clear the slot. |
+| `"lcd:<text>"` | Put text on an [LCD panel](#lcd-panels)'s `@msg` line. Everything after the colon is the text. |
 | `"string:hello"` | Explicit text typing — useful in multi-step macros to distinguish text from action names. |
 | `"delay:N"` | Pause for N milliseconds (max 10000). Used between steps in multi-step macros. |
 | `"repeat:N:<action>"` | Run `<action>` N times (max 1000). Put it at the start of a macro to repeat the whole sequence, e.g. `repeat:3:combo:0:40 \| delay:200`. |
@@ -1199,6 +1200,19 @@ A title line centres by default, since it has no value to sit opposite; give it 
 | `@rssi` | Signal strength in dBm. Dashes until the first reading arrives. |
 | `@battery` | The percentage the host sees. See [Battery level](#battery-level). |
 | `@layout` | The active keyboard layout id. |
+| `@last` | The last button pressed, named as the current style labels it — a spare labelled `Netflix` shows "Netflix", not `spare1`. Changes on every press. |
+| `@station` | The same, but only the spares update it, so a volume tap doesn't wipe which station you chose. |
+| `@msg` | Whatever an `lcd:` action last wrote. |
+
+All three are held in memory only and start blank, so a panel shows `--` until something is pressed.
+
+**Writing your own text.** The `lcd:<text>` action puts anything you like on an `@msg` line — everything after the colon is the text, colons included. Chain it with whatever the key really does:
+
+```
+consumer:0x0223 | lcd:Netflix
+```
+
+Put that in a spare's [per-host override](#host-actions-per-host-overrides) and the panel names where you are. Up to 64 characters.
 
 **Anything else names an entity you list on the component.** The device reads it and formats it — unit and decimals included — so `21.4 °C` needs no format string anywhere:
 
@@ -1296,6 +1310,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
 | `"alternate:<a> \|\| <b> \|\| …"` | Run **one branch** per press, advancing each time. Branches split on `\|\|`; a single `\|` still means "next step", so a branch can be a whole sequence. See [Toggling one button between two actions](#toggling-one-button-between-two-actions). |
 | `"macro:<name>"` | Run a stored [web macro](#web-macros) by name — a live reference, so editing the macro updates everything pointing at it. Macros may call each other (nesting is capped). |
+| `"lcd:<text>"` | Write text to an [LCD panel](#lcd-panels)'s `@msg` line, so a key can name where it just took you — `consumer:0x0223 \| lcd:Netflix`. Up to 64 characters. |
 | `"ha_action:<domain>.<action>;<key>=<value>;…"` | Ask Home Assistant to run one of its own actions — e.g. an IR blaster's `remote.send_command`. Needs `ha_action: true`. See [Calling Home Assistant Actions](#calling-home-assistant-actions). |
 
 ---

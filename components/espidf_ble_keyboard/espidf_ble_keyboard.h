@@ -635,6 +635,9 @@ class EspidfBleKeyboard : public Component
   // and it is what bounds both the /status payload and the 255-character state
   // Home Assistant will carry.
   static const uint8_t MAX_LCD_SOURCES = 8;
+  /// Longest text an `lcd:` action may put on a panel. Generous against a
+  /// 16-character line, mean against the 255 a Home Assistant state holds.
+  static const uint8_t MAX_LCD_MSG_LEN = 64;
   void add_lcd_sensor(const std::string &key, sensor::Sensor *s,
                       const std::string &unit, int8_t decimals);
   void add_lcd_text_sensor(const std::string &key, text_sensor::TextSensor *s);
@@ -874,6 +877,12 @@ class EspidfBleKeyboard : public Component
     int8_t decimals{-1};    // <0 = whatever the sensor declares
   };
   std::vector<LcdSource> lcd_sources_;
+  // What a panel can say about what was just pressed. Held in RAM only: a
+  // station key gets pressed many times an hour and none of this is worth a
+  // flash write. last_action_ is every outermost press, last_spare_ only the
+  // spares — so a volume tap cannot wipe the station you are on — and lcd_msg_
+  // is whatever an `lcd:` action put there.
+  std::string last_action_, last_spare_, lcd_msg_;
   std::string last_lcd_json_;
   uint32_t lcd_last_publish_ms_{0};
   std::atomic<bool> pending_lcd_publish_{false};

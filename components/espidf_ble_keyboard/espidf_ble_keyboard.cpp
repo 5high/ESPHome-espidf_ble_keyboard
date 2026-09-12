@@ -1741,6 +1741,11 @@ std::vector<std::pair<std::string, std::string>> EspidfBleKeyboard::lcd_values()
     out.emplace_back("@layout", active_layout_id());
     out.emplace_back("@battery", std::to_string((unsigned) battery_level()) + "%");
     if (has_rssi_) out.emplace_back("@rssi", std::to_string((int) last_rssi_) + " dBm");
+    // Left out entirely until something has happened, so a panel shows its own
+    // dashes rather than an empty line pretending to be a reading.
+    if (!last_action_.empty()) out.emplace_back("@last", last_action_);
+    if (!last_spare_.empty()) out.emplace_back("@station", last_spare_);
+    if (!lcd_msg_.empty()) out.emplace_back("@msg", lcd_msg_);
     {
         const HostSlot &h = hosts_[active_slot_];
         if (h.occupied) {
@@ -3662,6 +3667,22 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         ~DepthGuard() { depth--; }
     } depth_guard(action_depth_);
 
+    // Remember the outermost press, for the @last and @station panel values.
+    // Depth 1 here because the guard above has already counted this call: any
+    // deeper one is a step of a macro or a chain, and recording those would
+    // leave the panel showing the last leaf of a sequence rather than the key
+    // that was actually pressed.
+    if (action_depth_ == 1 && action.find("lcd:") != 0) {
+        if (last_action_ != action) {
+            last_action_ = action;
+            pending_lcd_publish_.store(true);
+        }
+        if (is_spare_action(action) && last_spare_ != action) {
+            last_spare_ = action;
+            pending_lcd_publish_.store(true);
+        }
+    }
+
     // Repeat: run the rest of the action N times. Checked before the '|' split
     // so the count covers the whole remaining sequence. Runs inline/synchronously
     // like other multi-step macros, so the count is capped to bound how long it
@@ -3900,6 +3921,19 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     // whole string to the host as text.
     if (action.find("ha_action:") == 0) {
         do_ha_action_(action.substr(10));
+        return;
+    }
+    // Write the rest of the string onto any @msg line a remote style is showing.
+    // Everything after the colon is the text, colons included, so a message can
+    // read "Now playing: Netflix". Chain it with whatever the key really does —
+    // consumer:0x0223 | lcd:Netflix — and the panel names where you are.
+    if (action.find("lcd:") == 0) {
+        std::string msg = action.substr(4);
+        if (msg.size() > MAX_LCD_MSG_LEN) msg.resize(MAX_LCD_MSG_LEN);
+        if (lcd_msg_ != msg) {
+            lcd_msg_ = msg;
+            pending_lcd_publish_.store(true);
+        }
         return;
     }
 

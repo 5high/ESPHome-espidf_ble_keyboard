@@ -15,6 +15,11 @@ web control page shows the matching version badge.
   specified the way a real display is — so many characters across by so many lines down, in its own
   colours — and each line takes size, justification and colour tokens like a button's.
 
+- **A panel can say which button was just pressed.** `@last` names any press and `@station` only the
+  spares, so a volume tap doesn't wipe which station you chose — both named the way the current style
+  labels the key, so a spare labelled Netflix reads "Netflix". A new `lcd:<text>` action writes
+  whatever you like to an `@msg` line, which chains onto the key that does the work.
+
 - **A sixth built-in remote style, the first with a screen.** A media-box slab whose display names the
   active host and says whether it is connected, over four spare pills waiting for per-host overrides.
   It reads values the firmware always has, so it says something useful the moment it is picked.

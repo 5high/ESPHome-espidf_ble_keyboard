@@ -673,6 +673,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <optgroup label="Other">
 <option value="send_custom_text">Send Custom Text</option>
 <option value="string:">Type Text</option>
+<option value="lcd:">Show Text on LCD (edit)</option>
 <option value="delay:100">Delay 100ms</option>
 <option value="delay:500">Delay 500ms</option>
 <option value="delay:1000">Delay 1000ms</option>
@@ -799,7 +800,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["rocker",…]</code></dt><dd>The same groups as one-piece rocker keys. <code>["","mute"]</code> is a single key of the same height.</dd>
 <dt><code>["media",…]</code></dt><dd>A row of small transport buttons.</dd>
 <dt><code>["apps",…]</code></dt><dd>A row of wide pills.</dd>
-<dt><code>["lcd",…]</code></dt><dd>A small screen: <code>["lcd",["Room","temp"],["Host","@host"]]</code>. Each line is a label and the value to show &mdash; <code>@host @slot @mac @state @rssi @battery @layout</code> come from the keyboard itself, any other name is an entry in the component's <code>lcd_sources:</code>. A third entry sizes and justifies one line: <code>sm lg xl</code>, <code>left centre right</code>, or a <code>#hex</code> colour. Left alone a line spreads &mdash; label one side, value the other. A settings object in front of the lines sizes the panel itself like a real display: <code>{"cols":16,"rows":2}</code> is 16 characters by 2 lines (4&ndash;40 and 1&ndash;8), and <code>fg bg label border</code> colour that panel alone.</dd>
+<dt><code>["lcd",…]</code></dt><dd>A small screen: <code>["lcd",["Room","temp"],["Host","@host"]]</code>. Each line is a label and the value to show &mdash; <code>@host @slot @mac @state @rssi @battery @layout</code> come from the keyboard itself, <code>@last</code> and <code>@station</code> name the button just pressed, <code>@msg</code> shows what an <code>lcd:text</code> action wrote, and any other name is an entry in the component's <code>lcd_sources:</code>. A third entry sizes and justifies one line: <code>sm lg xl</code>, <code>left centre right</code>, or a <code>#hex</code> colour. Left alone a line spreads &mdash; label one side, value the other. A settings object in front of the lines sizes the panel itself like a real display: <code>{"cols":16,"rows":2}</code> is 16 characters by 2 lines (4&ndash;40 and 1&ndash;8), and <code>fg bg label border</code> colour that panel alone.</dd>
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
@@ -1340,7 +1341,13 @@ const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 // theme keys. Each is the same --rb-lcd-* custom property the stylesheet
 // already reads, so a panel-level colour needs no CSS of its own.
 const RMT_LCD_COLOURS=['fg','bg','label','border'];
-const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout'];
+const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout',
+'@last','@station','@msg'];
+// @last and @station arrive as the action that was pressed — "spare1" — which
+// says nothing to a viewer. The style is the only place that knows the key was
+// labelled "Netflix", so the renderers translate these two through it. @msg is
+// already text an lcd: action chose, and is shown as written.
+const RMT_LCD_LABELLED=['@last','@station'];
 const RMT_HEX=/^#[0-9a-f]{3,8}$/i;
 // Built-in styles. `default` reproduces the fixed markup the remote had before
 // styles existed, so a host that never picks one sees no change at all. The
@@ -3776,11 +3783,14 @@ buildKeyboard();
   // Called with a fresh map by the status poll, and with nothing at all by the
   // renderer after a redraw — a new style's panels would otherwise sit on their
   // placeholder dashes until the next tick.
-  let lastLcdVals=null;
+  let lastLcdVals=null,lastLcdTpl=null;
   window.applyLcd=function(vals){
     if(vals!==undefined)lastLcdVals=vals;
     card.querySelectorAll('[data-lcd]').forEach(el=>{
-      const v=lastLcdVals?lastLcdVals[el.dataset.lcd]:undefined;
+      let v=lastLcdVals?lastLcdVals[el.dataset.lcd]:undefined;
+      // @last and @station come back as the action that was pressed; the style
+      // is what knows it is called "Netflix".
+      if(v&&RMT_LCD_LABELLED.indexOf(el.dataset.lcd)>=0)v=lcdLabel(lastLcdTpl,v);
       // A key nothing answers keeps the dashes the renderer drew, which is what
       // a real display does with a reading it hasn't got.
       el.textContent=(v===undefined||v===null||v==='')?'--':v;
@@ -3873,6 +3883,28 @@ buildKeyboard();
     return '<button class="rmt-btn'+(b.c?' '+b.c:'')+cls+'" data-action="'+a+'"'+
            (b.r?' data-repeat="1"':'')+(css?' style="'+css+'"':'')+
            ' title="'+tip+'">'+face+'</button>';
+  }
+  // What a style calls an action, for the @last and @station panel values: they
+  // arrive as "spare1" and a viewer wants "Netflix". The style is the only place
+  // that label exists — the firmware stores an action and never sees a label —
+  // so the translation happens here, where both renderers already hold the style.
+  // Falls back to the catalogue's own name, then to the action itself.
+  function lcdLabel(t,action){
+    if(!action)return '';
+    if(t&&Array.isArray(t.sections))for(const s of t.sections){
+      // An lcd line is [label, key], the opposite order, and its key is not an
+      // action at all — scanning it would match the wrong half.
+      if(s[0]==='lcd')continue;
+      for(const it of s.slice(1)){
+        if(!Array.isArray(it))continue;
+        if(it[0]===action&&typeof it[1]==='string'&&it[1])return it[1];
+        // strip and rocker hold their buttons one level down.
+        for(const g of it)
+          if(Array.isArray(g)&&g[0]===action&&typeof g[1]==='string'&&g[1])return g[1];
+      }
+    }
+    const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,action)?RMT_BTNS[action]:null;
+    return (b&&b.t)?b.t:action;
   }
   function sectionHtml(s){
     const k=s[0];
@@ -3999,7 +4031,9 @@ buildKeyboard();
     // reapplied even though the hidden set itself did not change.
     window.applyHidden(true);
     // Same reason: any panel this style drew is showing its placeholder dashes
-    // and the values are already in hand from the last poll.
+    // and the values are already in hand from the last poll. The style goes with
+    // them — it is where a pressed action's label lives.
+    lastLcdTpl=t;
     window.applyLcd();
     // A window holding this remote is sized around it, so a style of a different
     // shape — which is what a host switch usually brings — has to take the window

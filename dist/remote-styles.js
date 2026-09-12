@@ -208,7 +208,10 @@ const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 
 const RMT_LCD_COLOURS=['fg','bg','label','border'];
 
-const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout'];
+const RMT_LCD_LABELLED=['@last','@station'];
+
+const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout',
+'@last','@station','@msg'];
 
 const RMT_HEX=/^#[0-9a-f]{3,8}$/i;
 
@@ -257,6 +260,24 @@ function btnHtml(item){
     return '<button class="rmt-btn'+(b.c?' '+b.c:'')+cls+'" data-action="'+a+'"'+
            (b.r?' data-repeat="1"':'')+(css?' style="'+css+'"':'')+
            ' title="'+tip+'">'+face+'</button>';
+  }
+
+function lcdLabel(t,action){
+    if(!action)return '';
+    if(t&&Array.isArray(t.sections))for(const s of t.sections){
+      // An lcd line is [label, key], the opposite order, and its key is not an
+      // action at all — scanning it would match the wrong half.
+      if(s[0]==='lcd')continue;
+      for(const it of s.slice(1)){
+        if(!Array.isArray(it))continue;
+        if(it[0]===action&&typeof it[1]==='string'&&it[1])return it[1];
+        // strip and rocker hold their buttons one level down.
+        for(const g of it)
+          if(Array.isArray(g)&&g[0]===action&&typeof g[1]==='string'&&g[1])return g[1];
+      }
+    }
+    const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,action)?RMT_BTNS[action]:null;
+    return (b&&b.t)?b.t:action;
   }
 
 function sectionHtml(s){
@@ -598,4 +619,4 @@ export const RMT_CSS = `
 .rmt-head .macro-edit-btn{margin-left:0}
 `;
 
-export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, themeValueBad, btnHtml, sectionHtml, validateTpl };
+export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, themeValueBad, btnHtml, sectionHtml, validateTpl };
