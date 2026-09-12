@@ -7,6 +7,9 @@ web control page shows the matching version badge.
 ## v1.9.0 — 2026-09-06
 
 ### Added
+- **The host list shows when a slot has no pairing key.** Such a host needs pairing again from its
+  own side; nothing has to be cleared on the keyboard first.
+
 - **A remote style can scale its buttons.** Add `"zoom": "1.25"` to a style's theme and the whole
   remote grows by a quarter — buttons, their icons and labels, the gaps between them, the d-pad and
   the rockers, all together, so a layout that was tuned to fit still fits. Values below 1 shrink it.
@@ -118,6 +121,17 @@ web control page shows the matching version badge.
   once it is on, and the examples now say so.
 
 ### Fixed
+- **A host could lose its pairing on its own and need pairing again.** The keyboard asked for
+  encryption on every reconnection, which starts a fresh pairing even when both sides already
+  hold a key. If the link dropped while that was open, the stack discarded the pairing. The
+  keyboard now leaves encryption to the host once bonded.
+
+- **Hosts that rotate their Bluetooth address were reported as unpaired.** The check only
+  compared against the address a slot last saw, not the host's stable identity.
+
+- **A dropped connection no longer discards a working pairing.** Only a host that reports the key
+  as missing clears it now.
+
 - **A popped-out remote fills its window, instead of leaving a strip of background around it.** The
   remote used to sit two pixels clear of the top and bottom and now meets them; the window is sized
   from what it actually has to hold rather than from those two pixels, which the always-on-top window

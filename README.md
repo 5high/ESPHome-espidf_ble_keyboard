@@ -851,7 +851,7 @@ A few things worth knowing:
 
 * **The refusal happens just after pairing, not instead of it.** The other device briefly shows as paired on its own screen before being dropped. That is expected — it is only at that point that the keyboard learns who connected. It ends up with no usable bond and cannot reconnect.
 * **Your own host is not locked out.** Hosts are matched by identity, so a phone returning on a rotated address, or re-pairing after you unpaired it, is recognised as the slot's owner and let straight back in. No forget needed.
-* **A slot with no live bond is still free to take.** After restoring a backup, or after a stale bond is cleared, the slot holds an address but no pairing keys — it accepts a new host as before, since refusing would leave no way back in.
+* **A slot with no live bond is still free to take.** After restoring a backup, or after a stale bond is cleared, the slot holds an address but no pairing keys — it accepts a new host as before, since refusing would leave no way back in. The slot picker marks these; such a host needs pairing again from its own side.
 * **Rejections are logged.** A warning naming the refused address and the slot it tried to take is the only notification you get, so check the logs if a device unexpectedly will not pair.
 
 ### Host Switching from Home Assistant
@@ -1784,7 +1784,7 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/status` | GET | — | Returns `{"connected":bool,"paired":bool,"device_name":"..."}` |
 | `/api/ble_keyboard/buttons` | GET | — | Returns JSON array of programmed buttons |
 | `/api/ble_keyboard/press` | POST | `action` (string) | Trigger a programmed button action |
-| `/api/ble_keyboard/hosts` | GET | — | Returns `{"active":N,"slots":[{"slot":N,"occupied":bool,"addr":"XX:XX:...","tpl":"style1"},...]}`. `tpl` is that host's [remote style](#remote-style-per-host) and is absent when it uses the default |
+| `/api/ble_keyboard/hosts` | GET | — | Returns `{"active":N,"slots":[{"slot":N,"occupied":bool,"addr":"XX:XX:...","bonded":bool,"tpl":"style1"},...]}`. `tpl` is that host's [remote style](#remote-style-per-host) and is absent when it uses the default. `bonded` is false when the slot has no pairing key |
 | `/api/ble_keyboard/irk` | GET | `slot` (int, default active) | That host's Identity Resolving Key: `{"slot":N,"irk":"<32 hex chars>"}`, or `"irk":null` when the slot is empty or the host sent no key. **Refuses cross-site requests** — see [Identity key](#identity-key-irk) |
 | `/api/ble_keyboard/switch_host` | POST | `slot` (int) | Switch to host slot 0–9 |
 | `/api/ble_keyboard/forget_host` | POST | `slot` (int) | Remove bond for host slot 0–9 |

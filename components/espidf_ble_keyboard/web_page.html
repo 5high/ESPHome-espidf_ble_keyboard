@@ -432,7 +432,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <!-- Carries the release tag, and `-dev` while main is ahead of the last one. Drop
      the suffix when tagging; append a letter (v1.7.0-dev-b) to tell two dev builds
      apart when chasing a "my edit didn't reach the device" problem. -->
-<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.9.0</span>
+<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.9.0-dev</span>
 </div>
 <div class="toolbar-right">
 <div class="section-toggles" id="toggle-bar">
@@ -1800,7 +1800,12 @@ function appendStep(el,val){
         // button's name), but also state the raw slot number — this card maps
         // straight onto YAML `slot:` and the API's 0-based slot argument.
         const label=s.name||('Host '+(s.slot+1));
-        o.textContent=label+' — slot '+s.slot+(s.slot===d.active?' (active)':'');
+        // A slot that holds a host the stack has no key for still looks perfectly
+        // normal otherwise, so say so here — it will not connect until that host
+        // is paired again from its own side.
+        const unbonded=s.occupied&&s.bonded===false;
+        o.textContent=label+' — slot '+s.slot+(s.slot===d.active?' (active)':'')+(unbonded?' ⚠ not bonded':'');
+        if(unbonded)o.title='The keyboard has no pairing key for this host. Pair it again from the host itself; nothing needs clearing here first.';
         slotSel.appendChild(o);
       });
       slotSel.value=slot;

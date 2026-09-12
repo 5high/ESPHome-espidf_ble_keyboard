@@ -39,6 +39,42 @@ static const uint8_t MAX_HOST_SLOTS = 10;
 /// Render a BLE address as AA:BB:CC:DD:EE:FF. `out` must hold 18 bytes.
 void format_bd_addr(const esp_bd_addr_t addr, char out[18]);
 
+// ── Bond-loss recorder ───────────────────────────────────────────────────────
+// A bond can disappear days before anyone notices, and by then the log that
+// would have explained it is long gone. So every removal is written to NVS with
+// its cause, and read back later from /bondlog.
+
+enum BondLossCause : uint8_t {
+  BOND_LOSS_NONE = 0,
+  BOND_LOSS_DISCONNECT = 1,  ///< stale-bond heuristic acted on an encryption-related disconnect
+  BOND_LOSS_REJECT = 2,      ///< reject_host_(): a peer was refused because the slot was taken
+  BOND_LOSS_FORGET = 3,      ///< forget_host(): deliberate, from the UI or an action
+  BOND_LOSS_CONFIG = 4,      ///< passkey config changed, so every bond was cleared
+  BOND_LOSS_MISSING = 5,     ///< an occupied slot had no bond at boot; nothing here removed it
+  BOND_LOSS_KEPT = 6,        ///< the heuristic fired but the bond was deliberately kept
+  BOND_LOSS_STACK = 7,       ///< pairing failed and Bluedroid itself dropped the bond from flash
+};
+
+struct BondLossRecord {
+  uint8_t cause{BOND_LOSS_NONE};
+  uint8_t reason{0};    ///< HCI disconnect reason for DISCONNECT/KEPT, otherwise 0
+  uint8_t slot{0xFF};   ///< 0xFF when the event cannot be attributed to a slot
+  esp_bd_addr_t addr{};
+  uint32_t uptime_s{0};  ///< seconds since boot, so same-boot events can be ordered
+  uint32_t boot_seq{0};  ///< which boot this happened on
+};
+
+static const uint8_t BOND_LOG_SLOTS = 8;
+
+/// The whole recorder, stored as one NVS blob. Small enough to keep in RAM and
+/// rewrite whole, which keeps the write path free of partial-update states.
+struct BondLogBlob {
+  uint32_t boot_seq{0};
+  uint8_t head{0};   ///< next slot to write
+  uint8_t count{0};  ///< valid records, saturating at BOND_LOG_SLOTS
+  BondLossRecord rec[BOND_LOG_SLOTS]{};
+};
+
 // ── Keyboard layout abstraction ──────────────────────────────────────────────
 struct HidKeyMapping {
   uint8_t modifier;  // 0x00 none, 0x02 LShift, 0x40 RAlt/AltGr, etc.
@@ -487,6 +523,17 @@ class EspidfBleKeyboard : public Component
   /// host that then refuses encryption, so the UI must surface the difference.
   bool host_slot_bonded(uint8_t slot) const;
 
+  /// True if the stack holds a bond for this exact address, matching both the
+  /// address a record was filed under and the identity inside its ID key.
+  bool peer_is_bonded(const esp_bd_addr_t addr) const;
+
+  /// Record that a bond went away, and why. Called from every site that removes
+  /// one, plus the boot census for bonds that vanished on their own. Writes NVS,
+  /// so it is for real events only — never per poll.
+  void bond_log_record(uint8_t cause, uint8_t reason, uint8_t slot, const esp_bd_addr_t addr);
+  /// The recorder as JSON, newest record first. Served by /bondlog.
+  std::string bond_log_json() const;
+
   /// Resolve a peer's stable identity address. Android connects with a resolvable
   /// private address that rotates every ~15 minutes; the identity address it hands
   /// over at bonding does not. Matches `addr` against both the bonded connection
@@ -615,6 +662,21 @@ class EspidfBleKeyboard : public Component
     memcpy(reject_addr_, addr, sizeof(esp_bd_addr_t));
     reject_slot_ = slot;
     pending_host_reject_.store(true);
+  }
+
+  /// Record a bond loss seen from a BLE callback. Same reason as the reject above:
+  /// bond_log_record() commits to NVS, which has no business running on
+  /// Bluedroid's task, so loop() does the write.
+  void queue_bond_log(uint8_t cause, uint8_t reason, uint8_t slot, const esp_bd_addr_t addr) {
+    uint8_t n = pending_bond_log_count_.load();
+    // These events are rare by definition; a full queue would mean something is
+    // wrong that the records already there describe.
+    if (n >= PENDING_BOND_LOG) return;
+    pending_bond_log_[n].cause = cause;
+    pending_bond_log_[n].reason = reason;
+    pending_bond_log_[n].slot = slot;
+    memcpy(pending_bond_log_[n].addr, addr, sizeof(esp_bd_addr_t));
+    pending_bond_log_count_.store((uint8_t) (n + 1));
   }
 
   // Peer address and RSSI state — public so static GAP/GATTS handlers can access them directly
@@ -787,6 +849,19 @@ class EspidfBleKeyboard : public Component
   esp_bd_addr_t slot_addrs_[MAX_HOST_SLOTS]{};  // per-slot random BLE address
   void load_host_slots_();
   void generate_slot_addrs_();
+
+  // Bond-loss recorder state
+  static const uint8_t PENDING_BOND_LOG = 4;
+  std::atomic<uint8_t> pending_bond_log_count_{0};
+  BondLossRecord pending_bond_log_[PENDING_BOND_LOG]{};
+  BondLogBlob bond_log_{};
+  /// Load the recorder and count this boot. Must run before the boot census.
+  void bond_log_init_();
+  void bond_log_save_();
+  /// Warn about — and record — any occupied slot the stack has no bond for. Runs
+  /// once at boot, and is the only thing that can catch a bond removed by
+  /// something outside this component.
+  void bond_census_();
 
 #ifdef USE_BLE_KEYBOARD_WEB_CONTROL
   web_server_base::WebServerBase *web_server_base_{nullptr};

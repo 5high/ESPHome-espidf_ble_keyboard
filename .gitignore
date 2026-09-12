@@ -15,6 +15,10 @@ _verify_*.yaml
 # deliberately not a GitHub concern.
 .vscode/
 
+# Claude Code settings and hooks — machine-specific absolute paths, and a
+# maintainer-only reminder has no business running for anyone who clones this.
+.claude/
+
 # Local-only workbench: downloaded reference material, the converted remote-style
 # catalogue and the pages that display it. Never published — the styles in here
 # are data to paste into Remote Style > Import, not part of the firmware.

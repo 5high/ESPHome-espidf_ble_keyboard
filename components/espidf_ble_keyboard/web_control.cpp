@@ -527,6 +527,13 @@ class BleKbWebHandler : public AsyncWebHandler {
             json += id_str;
             json += "\"";
           }
+          // Whether the stack still holds a key for this host. A slot can be
+          // occupied with no bond — the stack drops one after a failed pairing,
+          // and the host keeps its own copy, so it has to be paired again from
+          // its own side before it will work. Nothing else on the page could
+          // tell the difference between that and an ordinary idle host.
+          json += ",\"bonded\":";
+          json += kb_->host_slot_bonded(i) ? "true" : "false";
         }
         auto it = slot_names.find(i);
         if (it != slot_names.end()) {
@@ -594,6 +601,23 @@ class BleKbWebHandler : public AsyncWebHandler {
       }
       json += "}";
       send_response(200, "application/json", json);
+      return;
+    }
+
+    if (path == "bondlog") {
+      // Why a host stopped being bonded, kept in NVS because the answer is needed
+      // days after the fact — long after the log that would have explained it has
+      // scrolled away. Read this *before* pairing the host again: re-pairing
+      // restores the bond and the /hosts "bonded" flag stops being evidence.
+      //
+      // Guarded like /irk, and for a milder version of the same reason: it is a
+      // list of host addresses, and web_server sets Access-Control-Allow-Origin:*
+      // for everything. Nothing reads this cross-origin.
+      if (!same_origin_ok(request, kb_)) {
+        send_response(400, "text/plain", "Refused: read this from the device's own page");
+        return;
+      }
+      send_response(200, "application/json", kb_->bond_log_json());
       return;
     }
 

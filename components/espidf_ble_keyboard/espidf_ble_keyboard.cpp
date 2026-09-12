@@ -221,6 +221,9 @@ static void maybe_reset_bonds_after_security_config_change() {
                     esp_err_t rm_ret = esp_ble_remove_bond_device(bonded[static_cast<size_t>(i)].bd_addr);
                     if (rm_ret != ESP_OK) {
                         ESP_LOGW(TAG, "Failed to remove bond #%d (%d)", i, rm_ret);
+                    } else {
+                        s_instance->bond_log_record(BOND_LOSS_CONFIG, 0, 0xFF,
+                                                    bonded[static_cast<size_t>(i)].bd_addr);
                     }
                 }
             } else {
@@ -460,7 +463,32 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                 }
             } else {
                 uint8_t fail_reason = param->ble_security.auth_cmpl.fail_reason;
-                ESP_LOGE(TAG, "GAP: Pairing Failed (0x%x)", fail_reason);
+                ESP_LOGE(TAG, "GAP: Pairing Failed (0x%02X)", fail_reason);
+
+                // The bond is very probably already gone, and not because anything
+                // here removed it. Bluedroid's btc_dm_ble_auth_cmpl_evt()
+                // (btc_dm.c, the `default:` branch) calls
+                // btc_dm_remove_ble_bonding_keys() on *every* pairing failure
+                // except SMP_PAIR_NOT_SUPPORT — so a procedure that merely timed
+                // out because the link went away takes the bond with it. The codes
+                // that reach here that way are all offset by
+                // BTA_DM_AUTH_FAIL_BASE (HCI_ERR_MAX_ERR + 10 = 0x4D):
+                //   0x66 SMP_CONN_TOUT   — link dropped mid-pairing
+                //   0x63 SMP_RSP_TIMEOUT — peer stopped answering
+                //   0x61 SMP_ENC_FAIL, 0x65 SMP_FAIL
+                // The host keeps its own copy of the key, so it does not re-pair on
+                // its own and has to be paired again by hand. This component cannot
+                // veto the removal, so record it — that record is the only trace
+                // the event leaves behind.
+                if (s_instance && fail_reason != 0x52) {
+                    int8_t fslot = s_instance->find_slot_for_peer(param->ble_security.auth_cmpl.bd_addr);
+                    ESP_LOGW(TAG, "GAP: The stack drops the bond after a failed pairing — "
+                                  "this host must be paired again from its own side");
+                    s_instance->queue_bond_log(BOND_LOSS_STACK, fail_reason,
+                                               fslot >= 0 ? (uint8_t) fslot : 0xFF,
+                                               param->ble_security.auth_cmpl.bd_addr);
+                }
+
                 bool fb_has, fb_sc; uint32_t fb_pk;
                 if (s_instance) s_instance->get_active_slot_passkey(fb_has, fb_pk, fb_sc);
                 if (s_instance &&
@@ -757,35 +785,78 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             abs_mouse_ccc_val = 0;
             battery_ccc_val = 0;
             request_host_friendly_conn_params(param->connect.remote_bda);
-            // Trigger encryption with security level matching configured pairing mode
-            esp_ble_sec_act_t sec_act = s_require_mitm ? ESP_BLE_SEC_ENCRYPT_MITM : ESP_BLE_SEC_ENCRYPT_NO_MITM;
-            esp_ble_set_encryption(param->connect.remote_bda, sec_act);
+            // Ask for encryption only when this peer has no bond yet.
+            //
+            // On a peripheral, esp_ble_set_encryption() does not mean "encrypt with
+            // the key we already have". btm_ble_set_encryption() (btm_ble.c) falls
+            // through every sec_act to SMP_Pair(), which as slave sends a security
+            // request and parks the device record in BTM_SEC_STATE_AUTHENTICATING —
+            // it notices the peer already holds an LTK and does it anyway. That
+            // opened a timeable SMP procedure on every single reconnect.
+            //
+            // It cost real bonds. If the link drops while that procedure is open the
+            // stack completes it as SMP_CONN_TOUT, and Bluedroid deletes the bond
+            // from flash on almost any pairing failure (btc_dm.c,
+            // btc_dm_ble_auth_cmpl_evt). The host keeps its own copy of the key, so
+            // it never re-pairs itself and has to be paired again by hand. A TV that
+            // sleeps hits that window often enough to lose its bond every few days.
+            //
+            // Skipping it for a bonded peer is safe: every HID attribute is
+            // encryption-gated (PERM_R_ENC / PERM_W_ENC / PERM_RW_ENC), so a host
+            // that does not encrypt on its own is refused the moment it touches the
+            // HID service and encrypts then. First-time pairing still asks, which is
+            // the case that actually needs the request.
+            if (s_instance != nullptr && s_instance->peer_is_bonded(param->connect.remote_bda)) {
+                ESP_LOGD(TAG, "GATTS: Peer is already bonded — leaving encryption to the host");
+            } else {
+                esp_ble_sec_act_t sec_act = s_require_mitm ? ESP_BLE_SEC_ENCRYPT_MITM : ESP_BLE_SEC_ENCRYPT_NO_MITM;
+                esp_ble_set_encryption(param->connect.remote_bda, sec_act);
+            }
             break;
         }
         case ESP_GATTS_DISCONNECT_EVT: {
             ESP_LOGI(TAG, "GATTS: Disconnected");
             uint8_t dc_reason = param->disconnect.reason;
-            ESP_LOGD(TAG, "GATTS: Disconnect reason 0x%02X", dc_reason);
+            {
+                char peer_str[18] = "??:??:??:??:??:??";
+                if (s_instance) format_bd_addr(s_instance->peer_addr_, peer_str);
+                ESP_LOGD(TAG, "GATTS: Disconnect reason 0x%02X (peer %s)", dc_reason, peer_str);
+            }
 
-            // Detect stale bond scenario: peer's bond keys are missing/mismatched after a power-cycle.
-            // HCI reasons 0x05 (Auth Failure), 0x06 (PIN/Key Missing), 0x3D (MIC Failure) indicate
-            // that encryption could not be established with our stored LTK. If this peer is still
-            // in our hosts table, drop the stale bond and switch to Just Works so the next
-            // connection attempt can rebond automatically without manual re-pairing.
+            // An encryption-related disconnect from a host we know may mean its bond
+            // has gone stale — the peer no longer holds a key that matches ours.
+            //
+            // Only 0x06 (PIN or Key Missing) actually says that. 0x05 (Auth Failure)
+            // is what a peer sends when encryption could not complete for any reason,
+            // including a security-procedure collision, and 0x3D (MIC Failure) is a
+            // radio-layer symptom — one corrupt-but-CRC-valid packet, or Wi-Fi/BLE
+            // coexistence pressure, on a device that also serves a web page. Treating
+            // either as proof of a stale key throws away a working bond that would
+            // have re-encrypted fine on the next attempt, and the host then has to be
+            // paired again by hand. So they are recorded and the bond is kept.
             if (s_instance && (dc_reason == 0x05 || dc_reason == 0x06 || dc_reason == 0x3D)) {
                 bool is_zero = true;
                 for (int i = 0; i < 6; i++) {
                     if (s_instance->peer_addr_[i] != 0) { is_zero = false; break; }
                 }
-                if (!is_zero) {
-                    for (uint8_t i = 0; i < MAX_HOST_SLOTS; i++) {
-                        auto &hs = s_instance->get_host_slot(i);
-                        if (hs.occupied && memcmp(hs.addr, s_instance->peer_addr_, sizeof(esp_bd_addr_t)) == 0) {
-                            ESP_LOGW(TAG, "GATTS: Stale bond detected (reason 0x%02X) for known host slot %u — removing bond and falling back to Just Works", dc_reason, i);
-                            esp_ble_remove_bond_device(s_instance->peer_addr_);
-                            apply_security_params(false);
-                            break;
-                        }
+                // Matched through find_slot_for_peer rather than a raw compare, so a
+                // host that came back on a rotated address cannot aim this at the
+                // wrong slot.
+                int8_t hit = is_zero ? -1 : s_instance->find_slot_for_peer(s_instance->peer_addr_);
+                if (hit >= 0) {
+                    uint8_t i = (uint8_t) hit;
+                    if (dc_reason == 0x06) {
+                        ESP_LOGW(TAG, "GATTS: Host slot %u reports our key is missing "
+                                      "(reason 0x06) — removing the stale bond", i);
+                        esp_ble_remove_bond_device(s_instance->peer_addr_);
+                        s_instance->queue_bond_log(BOND_LOSS_DISCONNECT, dc_reason, i,
+                                                   s_instance->peer_addr_);
+                    } else {
+                        ESP_LOGW(TAG, "GATTS: Encryption-related disconnect (reason 0x%02X) from "
+                                      "host slot %u — keeping the bond; it should re-encrypt on "
+                                      "the next connection", dc_reason, i);
+                        s_instance->queue_bond_log(BOND_LOSS_KEPT, dc_reason, i,
+                                                   s_instance->peer_addr_);
                     }
                 }
             }
@@ -797,6 +868,12 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                 s_instance->rssi_pending_ = false;
                 s_instance->pending_rssi_nan_ = true;
                 s_instance->queue_host_mac_update();
+                // Nothing may act on this address until the next connect fills it
+                // in. Left standing, it would let a disconnect that arrives without
+                // a fresh connect point bond removal at whoever was here last.
+                // Safe to clear: both readers (publish_host_mac_,
+                // remember_host_identity_) return early once disconnected.
+                memset(s_instance->peer_addr_, 0, sizeof(esp_bd_addr_t));
             }
             proto_mode_val = 0x01;
             report_ccc_val = 0;
@@ -931,24 +1008,161 @@ void EspidfBleKeyboard::load_host_slots_() {
     nvs_close(handle);
 }
 
-bool EspidfBleKeyboard::host_slot_bonded(uint8_t slot) const {
-    if (slot >= MAX_HOST_SLOTS || !hosts_[slot].occupied) return false;
+bool EspidfBleKeyboard::peer_is_bonded(const esp_bd_addr_t addr) const {
     int dev_num = esp_ble_get_bond_device_num();
     if (dev_num <= 0) return false;
     std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(dev_num));
     int query_num = dev_num;
     if (esp_ble_get_bond_device_list(&query_num, bonded.data()) != ESP_OK) return false;
     for (int i = 0; i < query_num; i++) {
-        if (memcmp(bonded[static_cast<size_t>(i)].bd_addr, hosts_[slot].addr,
-                   sizeof(esp_bd_addr_t)) == 0)
+        const auto &dev = bonded[static_cast<size_t>(i)];
+        // The connection address, and the identity the record was filed under —
+        // a host that rotates its address is bonded under the latter, so a peer
+        // arriving on a fresh RPA matches only the second test.
+        if (memcmp(dev.bd_addr, addr, sizeof(esp_bd_addr_t)) == 0) return true;
+        if ((dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) != 0 &&
+            memcmp(dev.bond_key.pid_key.static_addr, addr, sizeof(esp_bd_addr_t)) == 0)
             return true;
     }
+    return false;
+}
+
+bool EspidfBleKeyboard::host_slot_bonded(uint8_t slot) const {
+    if (slot >= MAX_HOST_SLOTS || !hosts_[slot].occupied) return false;
+    // The address the slot stores is only what the host last connected with, and
+    // a phone rotates that every ~15 minutes while the stack keeps filing the bond
+    // under the identity address. Checking `addr` alone reported every phone here
+    // as unbonded — two healthy hosts were flagged by the boot census before this
+    // was fixed. So try the identity too, the same order find_slot_for_peer uses.
+    if (peer_is_bonded(hosts_[slot].addr)) return true;
+    if (hosts_[slot].has_identity && peer_is_bonded(hosts_[slot].identity)) return true;
+    esp_bd_addr_t identity;
+    if (peer_identity_addr(hosts_[slot].addr, identity) && peer_is_bonded(identity)) return true;
     return false;
 }
 
 void format_bd_addr(const esp_bd_addr_t addr, char out[18]) {
     snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
              addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+}
+
+// ── Bond-loss recorder ───────────────────────────────────────────────────────
+// A bond can vanish days before anyone tries the host again, by which time the
+// log that would have explained it is gone. NVS is the only place a reason
+// survives that gap, so every removal writes one record here.
+
+void EspidfBleKeyboard::bond_log_init_() {
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return;
+
+    size_t len = sizeof(bond_log_);
+    // A blob of a different size came from a different build of this struct.
+    // Start clean rather than reinterpret bytes that no longer mean what they did.
+    if (nvs_get_blob(handle, "bondlog", &bond_log_, &len) != ESP_OK || len != sizeof(bond_log_))
+        bond_log_ = BondLogBlob{};
+
+    bond_log_.boot_seq++;
+    nvs_set_blob(handle, "bondlog", &bond_log_, sizeof(bond_log_));
+    nvs_commit(handle);
+    nvs_close(handle);
+
+    ESP_LOGI(TAG, "Bond log: boot #%lu, %u past event(s) on record",
+             (unsigned long) bond_log_.boot_seq, (unsigned) bond_log_.count);
+}
+
+void EspidfBleKeyboard::bond_log_save_() {
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return;
+    nvs_set_blob(handle, "bondlog", &bond_log_, sizeof(bond_log_));
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+void EspidfBleKeyboard::bond_log_record(uint8_t cause, uint8_t reason, uint8_t slot,
+                                        const esp_bd_addr_t addr) {
+    BondLossRecord &r = bond_log_.rec[bond_log_.head];
+    r.cause = cause;
+    r.reason = reason;
+    r.slot = slot;
+    if (addr != nullptr)
+        memcpy(r.addr, addr, sizeof(esp_bd_addr_t));
+    else
+        memset(r.addr, 0, sizeof(esp_bd_addr_t));
+    r.uptime_s = millis() / 1000;
+    r.boot_seq = bond_log_.boot_seq;
+
+    bond_log_.head = (uint8_t) ((bond_log_.head + 1) % BOND_LOG_SLOTS);
+    if (bond_log_.count < BOND_LOG_SLOTS) bond_log_.count++;
+    bond_log_save_();
+
+    char addr_str[18];
+    format_bd_addr(r.addr, addr_str);
+    ESP_LOGW(TAG, "Bond log: cause=%u reason=0x%02X slot=%u addr=%s (boot #%lu, +%lus)",
+             (unsigned) cause, (unsigned) reason, (unsigned) slot, addr_str,
+             (unsigned long) r.boot_seq, (unsigned long) r.uptime_s);
+}
+
+std::string EspidfBleKeyboard::bond_log_json() const {
+    std::string json = "{\"boot\":";
+    json += std::to_string(bond_log_.boot_seq);
+    json += ",\"events\":[";
+    // Newest first. Whoever opens this has just found a host unpaired and wants
+    // the last thing that happened, not the oldest thing still remembered.
+    for (uint8_t i = 0; i < bond_log_.count; i++) {
+        uint8_t idx = (uint8_t) ((bond_log_.head + BOND_LOG_SLOTS - 1 - i) % BOND_LOG_SLOTS);
+        const BondLossRecord &r = bond_log_.rec[idx];
+        char addr_str[18];
+        format_bd_addr(r.addr, addr_str);
+        char buf[160];
+        snprintf(buf, sizeof(buf),
+                 "%s{\"cause\":%u,\"reason\":%u,\"slot\":%d,\"addr\":\"%s\","
+                 "\"uptime\":%lu,\"boot\":%lu}",
+                 i ? "," : "", (unsigned) r.cause, (unsigned) r.reason,
+                 r.slot == 0xFF ? -1 : (int) r.slot, addr_str,
+                 (unsigned long) r.uptime_s, (unsigned long) r.boot_seq);
+        json += buf;
+    }
+    json += "]}";
+    return json;
+}
+
+void EspidfBleKeyboard::bond_census_() {
+    int dev_num = esp_ble_get_bond_device_num();
+    ESP_LOGI(TAG, "Bond census: the stack holds %d bond(s)", dev_num);
+    if (dev_num > 0) {
+        std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(dev_num));
+        int query_num = dev_num;
+        if (esp_ble_get_bond_device_list(&query_num, bonded.data()) == ESP_OK) {
+            for (int i = 0; i < query_num; i++) {
+                char addr_str[18];
+                format_bd_addr(bonded[static_cast<size_t>(i)].bd_addr, addr_str);
+                ESP_LOGI(TAG, "Bond census: bonded %s", addr_str);
+            }
+        }
+    }
+
+    // An occupied slot with no bond is the signature of a bond that went away
+    // while nothing was watching. If this component removed it, a record from
+    // that moment is already here saying why; if not, this is the only trace
+    // there will ever be.
+    for (uint8_t slot = 0; slot < MAX_HOST_SLOTS; slot++) {
+        if (!hosts_[slot].occupied || host_slot_bonded(slot)) continue;
+        char addr_str[18];
+        format_bd_addr(hosts_[slot].addr, addr_str);
+        ESP_LOGW(TAG, "Bond census: host slot %u (%s) is occupied but has no bond — "
+                      "that host must pair again", slot, addr_str);
+
+        // The condition persists across reboots, so recording it every boot would
+        // fill the ring with copies of itself and push the event that caused it
+        // out the far end. Once per address is the whole value.
+        bool already = false;
+        for (uint8_t i = 0; i < bond_log_.count && !already; i++) {
+            const BondLossRecord &r = bond_log_.rec[i];
+            already = r.cause == BOND_LOSS_MISSING &&
+                      memcmp(r.addr, hosts_[slot].addr, sizeof(esp_bd_addr_t)) == 0;
+        }
+        if (!already) bond_log_record(BOND_LOSS_MISSING, 0, slot, hosts_[slot].addr);
+    }
 }
 
 bool EspidfBleKeyboard::peer_id_keys_(const esp_bd_addr_t addr, esp_ble_pid_keys_t &out) const {
@@ -1329,6 +1543,7 @@ void EspidfBleKeyboard::reject_host_() {
                   "different device there.", addr_str, reject_slot_);
     // Removes this peer's bond only — the slot owner's bond is a separate entry.
     esp_ble_remove_bond_device(reject_addr_);
+    bond_log_record(BOND_LOSS_REJECT, 0, reject_slot_, reject_addr_);
     if (is_connected_) esp_ble_gatts_close(s_gatts_if, conn_id_);
     // The close is asynchronous, so is_connected_ is still true this pass. Drop the
     // publish that pairing queued rather than announce a host we just refused; the
@@ -2010,6 +2225,7 @@ void EspidfBleKeyboard::forget_host(uint8_t slot) {
 
     // Remove the BLE bond
     esp_ble_remove_bond_device(hosts_[slot].addr);
+    bond_log_record(BOND_LOSS_FORGET, 0, slot, hosts_[slot].addr);
 
     // Clear the slot
     hosts_[slot].occupied = false;
@@ -2113,8 +2329,11 @@ void EspidfBleKeyboard::setup() {
         return;
     }
 
+    // Before anything that can remove a bond, so the wipe below can be recorded.
+    bond_log_init_();
     maybe_reset_bonds_after_security_config_change();
     load_host_slots_();
+    bond_census_();  // needs the slots loaded to know what should be bonded
     yaml_goto_scale_x_ = goto_scale_x_;  // snapshot YAML defaults (for Reset) before NVS override
     yaml_goto_scale_y_ = goto_scale_y_;
     load_goto_scale_for_host(active_slot_);  // per-host calibration override (if saved)
@@ -2273,6 +2492,15 @@ void EspidfBleKeyboard::loop() {
         // slot still learns its host's identity on a device with no MAC sensor.
         remember_host_identity_();
         publish_host_mac_();
+    }
+    // Bond-loss records handed over by the BLE callbacks; each one commits to NVS,
+    // which is why it happens here rather than on Bluedroid's task.
+    if (pending_bond_log_count_.load() > 0) {
+        uint8_t n = pending_bond_log_count_.exchange(0);
+        if (n > PENDING_BOND_LOG) n = PENDING_BOND_LOG;
+        for (uint8_t i = 0; i < n; i++)
+            bond_log_record(pending_bond_log_[i].cause, pending_bond_log_[i].reason,
+                            pending_bond_log_[i].slot, pending_bond_log_[i].addr);
     }
 
     if (is_connected_) {
