@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
-## v1.9.0 — 2026-09-06
+## v1.9.0 — 2026-09-12
 
 ### Added
 - **The host list shows when a slot has no pairing key.** Such a host needs pairing again from its
