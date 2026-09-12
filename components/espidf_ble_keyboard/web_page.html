@@ -4190,7 +4190,14 @@ buildKeyboard();
     // entirely. They cost nothing: they land under a remote whose own background
     // bleeds past its bottom edge anyway. Only the request is padded — rh stays the
     // remote's true height, since that is what decides whether it needs scaling.
-    return {w:Math.max(100,Math.min(900,Math.ceil(w))),
+    // Floor, not ceil, for the width asked for. A remote drawn at a style zoom
+    // is a fractional number of pixels wide and a window can only be a whole
+    // one, so rounding up left the window a pixel wider than the remote and
+    // that pixel showed as a stripe of page down one side. Rounding down leaves
+    // the window a fraction narrower instead, which overflow-x on the body
+    // clips — invisibly, since what it clips is the edge of the remote's own
+    // background. rw below stays exact; only the request is rounded.
+    return {w:Math.max(100,Math.min(900,Math.floor(w))),
             h:Math.max(100,Math.min(maxH,Math.ceil(r.height)+xv+2)),
             rw:w,rh:r.height+xv};
   }
