@@ -26,6 +26,11 @@ web control page shows the matching version badge.
   in the rotation, and a single-slot setup ignores it rather than dropping its link.
 
 ### Fixed
+- **The popped-out remote is the width its style asks for.** It sized its window from the widest row
+  rather than from the style's own width, so a style stating one drew narrower there than anywhere
+  else — and a remote too tall for the screen was shrunk on both axes, throwing that width away
+  again. Height that does not fit now scrolls, and all three surfaces measure alike.
+
 - **The Home Assistant remote now draws the same size as the web page's.** The page resets box-sizing
   globally, which never reached the card's shadow root, so every border and padding landed outside
   the width a style asked for and the whole remote came out wider. A style with its own width now

@@ -4152,8 +4152,15 @@ buildKeyboard();
     // never needed shrinking. Laying it out at max-content collapses the spacers
     // and puts each row on a single line, which is the width it actually wants;
     // a style with its own max-width is unaffected, since max-width still wins.
+    // A style that states a max-width means it, and max-content is the wrong
+    // question for one: it collapses to the widest ROW, which is narrower than
+    // the body the style asked for — so the window opened too narrow and the
+    // remote drew smaller there than on the page, whatever the style said.
+    // Measure at the stated width instead; max-content stays for the styles
+    // that set none, which is the case the paragraph above is about.
     const prev=el.style.width;
-    el.style.width='max-content';
+    const mw=getComputedStyle(el).maxWidth;
+    el.style.width=(mw&&mw!=='none')?mw:'max-content';
     const nat=el.getBoundingClientRect();
     el.style.width=prev;
     const r=nat.width>0?nat:el.getBoundingClientRect();
@@ -4470,12 +4477,17 @@ buildKeyboard();
         if(!w||!h)return;
         // A few pixels short is not worth scaling a remote for — that is rounding,
         // and shrinking everything by 2% to answer it is worse than the gap.
-        if(w>=s.rw-4&&h>=s.rh-4)return;   // it holds the remote; nothing to scale
+        if(w>=s.rw-4)return;   // it holds the remote's width; nothing to scale
         const MINBTN=28;let small=Infinity;
         el.querySelectorAll('.rmt-btn').forEach(b=>{const q=b.getBoundingClientRect();
           if(q.width&&q.height)small=Math.min(small,q.width,q.height)});
         const floor=isFinite(small)&&small>0?Math.min(1,MINBTN/small):0.5;
-        const k=Math.max(floor,Math.min(w/s.rw,h/s.rh,1));
+        // Width only. This used to take the smaller of the two ratios, so a
+        // remote taller than the screen allows — the window height is capped at
+        // availHeight-80 — was shrunk on BOTH axes, and the style's own width
+        // went with it. A style that states a width means it; too tall is what
+        // scrolling is for, and the body already scrolls vertically.
+        const k=Math.max(floor,Math.min(w/s.rw,1));
         if(k<0.999)doc.body.style.zoom=baseZoom*k;
       },140);
     },140);
