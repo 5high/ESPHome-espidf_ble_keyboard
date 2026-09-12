@@ -4,6 +4,15 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
+## Unreleased
+
+### Added
+- **One button can now step through the hosts.** `switch_host:next` and `switch_host:prev` move one
+  slot forward or back and wrap around at the ends, so a physical button, a macro or a per-host
+  override can rotate through the paired machines without naming a slot. Until now that cycling
+  existed only as arrows on the Home Assistant cards, computed in the browser. Unpaired slots stay
+  in the rotation, and a single-slot setup ignores it rather than dropping its link.
+
 ## v1.9.0 — 2026-09-12
 
 ### Added

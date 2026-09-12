@@ -527,6 +527,7 @@ espidf_ble_keyboard:
 | `"mouse_abs_restore"` | Jump back to the last `mouse_abs_save` position. |
 | `"mouse_goto:<x>:<y>"` | Move to a **Windows virtual-desktop pixel** across **all monitors** (homes the absolute pointer to the desktop origin, then steps relatively). X/Y are Windows coordinates (primary monitor top-left = 0,0; screens left of it are negative). Use this when the absolute pointer is confined to the primary monitor. Needs "Enhance pointer precision" **off** and a fixed pointer-speed slider position (the per-axis calibration is tied to it) for pixel accuracy. |
 | `"switch_host:N"` | Switch to host slot N (0–9). Reconnects to stored host or advertises for new pairing. |
+| `"switch_host:next"` / `"switch_host:prev"` | Step to the next or previous host slot, wrapping around at the ends. Cycles through every configured slot, so an unpaired one is reached too (and advertises for pairing). Does nothing when only one slot is configured. |
 | `"forget_host:N"` | Remove BLE bond for host slot N (0–9) and clear the slot. |
 | `"string:hello"` | Explicit text typing — useful in multi-step macros to distinguish text from action names. |
 | `"delay:N"` | Pause for N milliseconds (max 10000). Used between steps in multi-step macros. |
@@ -711,6 +712,11 @@ action:
   type: switch_host
   slot: 1             # switch to host slot 1
 
+# Switch host — cycle
+action:
+  type: switch_host
+  slot: next          # or prev; wraps around at the ends
+
 # Forget host
 action:
   type: forget_host
@@ -840,6 +846,22 @@ button:
 ```
 
 String action format is also supported: `"switch_host:0"`, `"forget_host:2"`.
+
+**Cycling instead of naming a slot.** `"switch_host:next"` and `"switch_host:prev"` step one slot forward or back and wrap around at the ends, so one button rotates through the hosts:
+
+```yaml
+button:
+  - platform: espidf_ble_keyboard
+    keyboard_id: my_keyboard
+    name: "Next Host"
+    action:
+      type: switch_host
+      slot: next          # or prev
+```
+
+The rotation covers every slot up to `host_slots`, including ones nothing is paired to yet — landing on an empty slot advertises for new pairing, exactly as `switch_host:N` on that slot would. With `host_slots: 1` it does nothing rather than dropping the link and re-advertising.
+
+From Home Assistant, the `switch_host` service takes a slot number only; reach the cycling form with `run_action` and the action string `switch_host:next`.
 
 ### Protecting a Bonded Host Slot
 
@@ -1109,6 +1131,7 @@ Deleting a custom style leaves the hosts using it on the full remote; re-importi
 | Action | Description |
 |---|---|
 | `"switch_host:N"` | Switch to host slot N (0–9). If the slot has a stored host, uses directed advertising to reconnect. If empty, starts normal advertising for new pairing. |
+| `"switch_host:next"` / `"switch_host:prev"` | Step one slot forward or back, wrapping at the ends — the same cycling the host switcher arrows on the cards do, but on the device, so a single remote key or macro can rotate through hosts. Empty slots are included in the rotation. |
 | `"forget_host:N"` | Remove the bond for host slot N (0–9). Clears the stored address and removes the BLE bond from the ESP32. If the forgotten host is currently connected, it is disconnected. |
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
 | `"alternate:<a> \|\| <b> \|\| …"` | Run **one branch** per press, advancing each time. Branches split on `\|\|`; a single `\|` still means "next step", so a branch can be a whole sequence. See [Toggling one button between two actions](#toggling-one-button-between-two-actions). |

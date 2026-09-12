@@ -3697,6 +3697,20 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         return;
     }
     if (action.find("switch_host:") == 0) {
+        const std::string arg = action.substr(12);
+        // Relative forms cycle exactly as the Lovelace cards do: plain
+        // wrap-around over every configured slot, empty ones included (landing
+        // on an empty slot advertises for new pairing, same as switch_host:N).
+        // The >1 test guards the modulo and stops a one-slot config from
+        // "switching" to the slot it is already on — switch_host() tears the
+        // link down unconditionally, so that would drop the host for nothing.
+        if (arg == "next" || arg == "prev" || arg == "previous") {
+            if (host_slots_ > 1) {
+                int delta = (arg == "next") ? 1 : -1;
+                switch_host((uint8_t) ((active_slot_ + host_slots_ + delta) % host_slots_));
+            }
+            return;
+        }
         int slot = 0;
         if (sscanf(action.c_str(), "switch_host:%i", &slot) == 1)
             switch_host((uint8_t) slot);

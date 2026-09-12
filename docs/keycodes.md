@@ -234,6 +234,7 @@ action:
 | Action | Description |
 |---|---|
 | `switch_host:N` | Switch to host slot N (0–9). Reconnects to stored host via directed advertising, or advertises for new pairing if slot is empty. |
+| `switch_host:next` / `switch_host:prev` | Step one slot forward or back, wrapping at the ends. Cycles through every configured slot, empty ones included. No-op when only one slot is configured. |
 | `forget_host:N` | Remove BLE bond for host slot N (0–9) and clear the stored address. Disconnects the host if currently active. |
 
 ### Dict Format
@@ -242,6 +243,10 @@ action:
 action:
   type: switch_host
   slot: 1
+
+action:
+  type: switch_host
+  slot: next          # or prev
 
 action:
   type: forget_host

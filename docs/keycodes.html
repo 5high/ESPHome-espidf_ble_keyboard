@@ -551,6 +551,7 @@
     <table>
       <tr><th>Action</th><th>Description</th></tr>
       <tr><td><code>switch_host:0</code></td><td>Switch to host slot 0–9. Reconnects via directed advertising or advertises for new pairing.</td></tr>
+      <tr><td><code>switch_host:next</code></td><td>Step one slot forward (or <code>switch_host:prev</code> for back), wrapping at the ends. Empty slots are included in the rotation.</td></tr>
       <tr><td><code>forget_host:0</code></td><td>Remove BLE bond for host slot 0–9 and clear the stored address.</td></tr>
     </table>
     <div class="note">Up to 10 host slots. Paired hosts are stored in NVS and persist across reboots. Dict format: <span>type: switch_host</span>, <span>slot: 1</span>.</div>
