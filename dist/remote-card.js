@@ -23,7 +23,7 @@
  *   device: bluetooth_keyboard    # your ESPHome device name
  *   # Optional overrides:
  *   # name: Media Remote           # card title (auto from HA if omitted)
- *   # remote_style: auto           # auto | default | style1..style5 | a pasted style's id
+ *   # remote_style: auto           # auto | default | style1..style6 | a pasted style's id
  *   # remote_style_json: '{...}'   # style(s) copied from the web page's Export
  *   # remote_style_entity: sensor.x_remote_style   # override the auto-detected id
  *   # show_numpad: true            # show number pad (default false)
@@ -87,7 +87,7 @@
 // `node tools/gen-remote-styles.mjs` after changing styles in web_control.cpp.
 import {
   RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, sectionHtml, validateTpl, themeValueBad,
-} from './remote-styles.js?v=1.9.0';
+} from './remote-styles.js?v=1.10.0-dev';
 
 /**
  * Parse the card's pasted-style box.
@@ -114,7 +114,18 @@ function pastedStylesOf(raw) {
   const styles = [];
   for (const style of list) {
     const why = validateTpl(style);
-    if (why) return { styles: [], error: `Style "${(style && style.id) || '?'}" rejected: ${why}` };
+    if (why) {
+      // Every "Unknown ..." verdict — a section kind, a button, an option token,
+      // a built-in value — means this card's catalogue lacks something the style
+      // names. Styles are written on the device and carried here, so the usual
+      // cause is not a bad style but card files older than the firmware that
+      // produced it. Saying so beats leaving the style looking wrong: the card
+      // and the device update separately, and only the card can tell.
+      const hint = /^Unknown /.test(why)
+        ? '\nThese card files may be older than the device — update the cards and try again.'
+        : '';
+      return { styles: [], error: `Style "${(style && style.id) || '?'}" rejected: ${why}${hint}` };
+    }
     styles.push(style);
   }
   return { styles, error: null };
@@ -579,6 +590,11 @@ class BleRemoteCard extends HTMLElement {
           color: #fff;
           font-size: 13px;
           line-height: 1.4;
+          /* A rejection may carry a second line explaining that the cards, not
+             the style, are out of date. The verdict it follows ends in a list
+             whose last entry is a bare "-", so running the two together reads
+             as nonsense — pre-line keeps the newline that separates them. */
+          white-space: pre-line;
         }
       </style>
       <div class="card">
