@@ -780,9 +780,14 @@ class EspidfBleKeyboard : public Component
   void register_api_services_();
   // int32_t (not int) — the api component only specializes service args for
   // int32_t, and on xtensa int32_t is a distinct type from int (link error).
-  void on_api_run_action_(std::string action) { execute_action(action); }
-  void on_api_run_macro_(int32_t index) { execute_macro((uint8_t) index); }
-  void on_api_run_macro_name_(std::string name) { execute_macro(name); }
+  // Queued, not run here. These arrive on the API task, and an action string
+  // is allowed to take seconds: `delay:` blocks with vTaskDelay, and a chain of
+  // them blocked the loop long enough for the task watchdog to reboot the
+  // device — an HA card press of a power button that fires Wake-on-LAN ten
+  // times is about ten seconds of it. The action task exists for exactly this.
+  void on_api_run_action_(std::string action) { queue_action(action); }
+  void on_api_run_macro_(int32_t index) { queue_macro_index_(index); }
+  void on_api_run_macro_name_(std::string name) { queue_action("macro:" + name); }
   void on_api_send_string_(std::string keys) { send_string(keys); }
   void on_api_send_key_(int32_t modifier, int32_t keycode) { send_key_combo((uint8_t) modifier, (uint8_t) keycode); }
   void on_api_send_consumer_(int32_t code) { send_consumer((uint16_t) code); }
@@ -926,6 +931,8 @@ class EspidfBleKeyboard : public Component
   void run_steps_(const std::string &action);
   // Stack accounting for a whole action chain — see report_action_stack_().
   void report_action_stack_();
+  /// Resolve a macro index to its action string and queue that.
+  void queue_macro_index_(int32_t index);
 
   // The action task and its work queue. Sized from the measurement above:
   // ~240 bytes a frame, seven frames on the deepest real chain, so 6 KB leaves

@@ -37,11 +37,11 @@ web control page shows the matching version badge.
   in the rotation, and a single-slot setup ignores it rather than dropping its link.
 
 ### Fixed
-- **A button pressed from the web page no longer risks rebooting the device.** Action strings ran on
-  the web server's task, which has 4352 bytes: a power button nesting an override, a conditional, a
-  macro and a multi-step chain measured seven frames deep with 52 bytes left, and one frame more
-  overflowed it. They now run on a task of their own with room to spare — which also stops `delay:`
-  holding the web server for the length of a chain.
+- **A long or deeply nested action no longer reboots the device.** Action strings ran on whichever
+  task asked for them: the web server's, with 4352 bytes, where a chain measured seven frames deep
+  with 52 left; or the loop, where a Home Assistant card firing Wake-on-LAN ten times spent about ten
+  seconds in `delay:` and tripped the task watchdog. Both now hand the string to a task of the
+  component's own, which has room for the frames and blocks nothing while it waits.
 
 - **The popped-out remote is the width its style asks for.** It sized its window from the widest row
   rather than from the style's own width, so a style stating one drew narrower there than anywhere

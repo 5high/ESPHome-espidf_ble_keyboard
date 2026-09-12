@@ -3881,6 +3881,15 @@ void EspidfBleKeyboard::action_task_entry_(void *arg) {
     }
 }
 
+void EspidfBleKeyboard::queue_macro_index_(int32_t index) {
+    if (index < 0 || (size_t) index >= macros_.size()) {
+        ESP_LOGW(TAG, "run_macro: no macro at index %d — deleting one shifts every later index, "
+                      "which is why run_macro_name exists", (int) index);
+        return;
+    }
+    queue_action(macros_[(size_t) index].action);
+}
+
 void EspidfBleKeyboard::queue_action(const std::string &action) {
     // No task means setup() could not create one; running inline is what this
     // did before, and a working button on a thin stack beats no button at all.
