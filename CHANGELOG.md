@@ -35,10 +35,10 @@ web control page shows the matching version badge.
   whole groups instead of running off the side, so an app row or a display panel is a short stack of
   lines that can be moved or deleted one at a time. Short sections still print one per line.
 
-- **Each card prints its version when it loads.** The version comes from the query string its
-  importer used, so it reports the build the browser actually holds rather than one written into the
-  file, and it is on the card element as `data-version` too. The remote card also warns when it and
-  its style catalogue disagree — which is exactly what a half-updated install looks like.
+- **Each card reports its version.** The keyboard card shows it beside its name on the dashboard; all
+  three print it to the console and carry it as `data-version`. It comes from the query string the
+  importer used, so it is the build the browser actually holds rather than one written into the file.
+  The remote card also warns when it and its style catalogue disagree — a half-updated install.
 
 - **A card that rejects a style now says when it is the out-of-date one.** The cards and the firmware
   update separately, so a style using something newer than the installed cards was reported as though
