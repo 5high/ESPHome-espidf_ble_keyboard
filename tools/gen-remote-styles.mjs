@@ -20,7 +20,11 @@ const here = new URL('./', import.meta.url);
 const PAGE = new URL('../components/espidf_ble_keyboard/web_page.html', here);
 const OUT = new URL('../dist/remote-styles.js', here);
 
-const page = readFileSync(PAGE, 'utf8');
+// Normalised to LF the moment it is read. The working copy is CRLF on Windows
+// (core.autocrlf), and everything lifted below is pasted into the output — so
+// without this the generated file's line endings depend on whose checkout ran
+// it, and the CSS goes into a template literal carrying \r into the string.
+const page = readFileSync(PAGE, 'utf8').replace(/\r\n/g, '\n');
 if (page.length < 1000) throw new Error('web_page.html is too short to be the control page');
 
 /** From `marker` through the balanced bracket pair that follows it. */
@@ -54,6 +58,9 @@ const PARTS = [
   ['const RMT_BUILTIN=', () => balanced('const RMT_BUILTIN=', '[') + ';'],
   ['const RMT_KINDS=', () => oneLine('const RMT_KINDS=')],
   ['const RMT_OPTS=', () => oneLine('const RMT_OPTS=')],
+  ['const RMT_LCD_OPTS=', () => oneLine('const RMT_LCD_OPTS=')],
+  ['const RMT_LCD_COLOURS=', () => oneLine('const RMT_LCD_COLOURS=')],
+  ['const RMT_LCD_KEYS=', () => oneLine('const RMT_LCD_KEYS=')],
   ['const RMT_HEX=', () => oneLine('const RMT_HEX=')],
   ['const RMT_CLIP=', () => oneLine('const RMT_CLIP=')],
   ['const RMT_FETCH=', () => oneLine('const RMT_FETCH=')],
@@ -72,8 +79,8 @@ const js = PARTS.map(([, take]) => take()).join('\n\n');
 // by hand is what let RMT_OPTS slip out of the gallery's bundle once, and the
 // symptom was every button rendering as nothing at all — silently.
 const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS',
-  'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc', 'themeValueBad', 'btnHtml',
-  'sectionHtml', 'validateTpl'];
+  'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
+  'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl'];
 const defined = new Set([...js.matchAll(/(?:^|\n)\s*(?:const|function)\s+([A-Za-z_$][\w$]*)/g)]
   .map(m => m[1]));
 for (const name of EXPORTS) {
@@ -100,7 +107,7 @@ for (let i = 0; i < allCss.length; i++) {
 // Only the remote's own rules: the card has its own card chrome, and the page's
 // body/keyboard rules would be dead weight (or worse) inside a shadow root.
 const css = rules.filter(r => /(^|[,\s])\.rmt-/.test(r.split('{')[0])).join('\n');
-for (const need of ['.rmt-btn{', '.rmt-ring{', '.rmt-rocker-col{', '.rmt-body{']) {
+for (const need of ['.rmt-btn{', '.rmt-ring{', '.rmt-rocker-col{', '.rmt-body{', '.rmt-lcd{']) {
   if (!css.includes(need)) throw new Error(`CSS is missing ${need}`);
 }
 // The cards build their styles inside a JS template literal, so a stray
@@ -116,6 +123,13 @@ const probe = new Function(`${js}\nreturn sectionHtml(['row','mute',['spare1','X
 if (!/data-action="mute"/.test(probe) || !/data-action="spare1"/.test(probe) ||
     !/class="[^"]*\blight\b[^"]*\bsm\b/.test(probe)) {
   throw new Error(`bundle renders incorrectly:\n${probe}`);
+}
+// The lcd branch draws no buttons, so the check above would pass with it
+// missing entirely — it needs its own, and the card fills panels by data-lcd.
+const lcdProbe = new Function(`${js}\nreturn sectionHtml(['lcd',['Room','temp'],['Host','@host','lg']]);`)();
+if (!/data-lcd="temp"/.test(lcdProbe) || !/data-lcd="@host"/.test(lcdProbe) ||
+    !/class="rmt-lcd-val lg"/.test(lcdProbe)) {
+  throw new Error(`lcd section renders incorrectly:\n${lcdProbe}`);
 }
 const builtins = new Function(`${js}\nreturn RMT_BUILTIN.map(t=>t.id);`)();
 

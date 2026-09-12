@@ -364,8 +364,15 @@ class BleKbWebHandler : public AsyncWebHandler {
 
     // GET-only endpoints (read state)
     if (path == "status") {
+      // The lcd map is built first so the reserve below can be sized from what
+      // is actually there. The rule this file keeps everywhere: estimate from
+      // what is stored, never from the caps — over-reserving raises the very
+      // heap peak the reserve exists to lower.
+      auto lcd = kb_->lcd_values();
+      size_t lcd_est = 12;
+      for (const auto &kv : lcd) lcd_est += kv.first.size() + kv.second.size() + 8;
       std::string json = "{\"connected\":";
-      json.reserve(512);  // one allocation instead of the five doublings this would take
+      json.reserve(512 + lcd_est);  // one allocation instead of the five doublings this would take
       json += kb_->is_connected() ? "true" : "false";
       json += ",\"paired\":";
       json += kb_->is_paired() ? "true" : "false";
@@ -389,7 +396,23 @@ class BleKbWebHandler : public AsyncWebHandler {
         json += json_escape(lay->display_name);
         json += "\"}";
       }
-      json += "]}";
+      json += "]";
+      // Values for any ["lcd",…] panel the current remote style drew. On this
+      // endpoint rather than its own: the page already polls it every 3 s, and
+      // canHandle() pays a URL buffer and a heap string for every request the
+      // web server sees, so a second polled path is the expensive way to do it.
+      json += ",\"lcd\":{";
+      bool first = true;
+      for (const auto &kv : lcd) {
+        if (!first) json += ",";
+        first = false;
+        json += "\"";
+        json += json_escape(kv.first);
+        json += "\":\"";
+        json += json_escape(kv.second);
+        json += "\"";
+      }
+      json += "}}";
       send_response(200, "application/json", json);
       return;
     }
@@ -794,6 +817,16 @@ class BleKbWebHandler : public AsyncWebHandler {
         for (const auto &h : kb_->get_hold(s)) est += h.size() + 4;
         est += 96;  // that slot's keys, calibration, style id and host entry
       }
+      // The custom styles, which nothing above covers and which are by far the
+      // largest thing in here: six of them is 9 KB stored and close to twice
+      // that once escaped, because every key, token and colour in a style is
+      // quoted. Doubled for the same reason /remote_templates doubles — only
+      // " and \ expand, and both go to two characters. Without this the reserve
+      // came out a couple of KB for a document of twenty, and the += chain
+      // reallocated its way up through exactly the heap this estimate exists
+      // to protect.
+      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++)
+        est += kb_->get_custom_template(i).size() * 2 + 24;
       std::string json = "{\"schema\":1,\"device\":\"";
       json.reserve(est);
       json += json_escape(kb_->device_name());

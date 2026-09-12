@@ -1665,6 +1665,161 @@ void EspidfBleKeyboard::publish_remote_style_() {
     remote_style_sensor_->publish_state(remote_style_[active_slot_]);
 }
 
+// ── LCD panel values ─────────────────────────────────────────────────────────
+
+// A reading as the panel should show it. The unit and the decimals come from
+// the sensor unless the YAML overrode them, so "21.4 °C" needs no format string
+// anywhere — which is the point: neither renderer knows what kind of entity is
+// behind a key, and neither should have to.
+static std::string format_lcd_number(float value, int8_t decimals, const std::string &unit) {
+    if (std::isnan(value)) return "";
+    int d = decimals < 0 ? 1 : (decimals > 6 ? 6 : decimals);
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%.*f", d, value);
+    std::string out = buf;
+    if (!unit.empty()) {
+        out += " ";
+        out += unit;
+    }
+    return out;
+}
+
+void EspidfBleKeyboard::add_lcd_sensor(const std::string &key, sensor::Sensor *s,
+                                       const std::string &unit, int8_t decimals) {
+    if (s == nullptr || lcd_sources_.size() >= MAX_LCD_SOURCES) return;
+    LcdSource src;
+    src.key = key;
+    src.num = s;
+    src.unit = unit;
+    src.decimals = decimals;
+    lcd_sources_.push_back(src);
+    // Flag only — the callback can fire from any task, and publishing an API
+    // state from there is not this component's to do. loop() picks it up.
+    s->add_on_state_callback([this](float) { this->pending_lcd_publish_.store(true); });
+}
+
+void EspidfBleKeyboard::add_lcd_text_sensor(const std::string &key, text_sensor::TextSensor *s) {
+    if (s == nullptr || lcd_sources_.size() >= MAX_LCD_SOURCES) return;
+    LcdSource src;
+    src.key = key;
+    src.txt = s;
+    lcd_sources_.push_back(src);
+    s->add_on_state_callback([this](std::string) { this->pending_lcd_publish_.store(true); });
+}
+
+#ifdef USE_TEXT
+void EspidfBleKeyboard::add_lcd_text(const std::string &key, text::Text *t) {
+    if (t == nullptr || lcd_sources_.size() >= MAX_LCD_SOURCES) return;
+    LcdSource src;
+    src.key = key;
+    src.fld = t;
+    lcd_sources_.push_back(src);
+    t->add_on_state_callback([this](std::string) { this->pending_lcd_publish_.store(true); });
+}
+#endif
+
+std::string EspidfBleKeyboard::host_label(uint8_t slot) const {
+    // The switch_host button's own name, which is what the host bar and the
+    // /hosts response already use — so a panel never disagrees with them.
+    char want[24];
+    snprintf(want, sizeof(want), "switch_host:%u", (unsigned) slot);
+    for (const auto &btn : buttons_) {
+        if (btn.action == want) return btn.name;
+    }
+    return "Host " + std::to_string((unsigned) slot + 1);
+}
+
+std::vector<std::pair<std::string, std::string>> EspidfBleKeyboard::lcd_values() const {
+    std::vector<std::pair<std::string, std::string>> out;
+    out.reserve(lcd_sources_.size() + 7);
+
+    // The built-ins first: they cost nothing to produce and need no YAML, which
+    // is what lets an imported style say something useful straight away.
+    out.emplace_back("@host", host_label(active_slot_));
+    out.emplace_back("@slot", std::to_string((unsigned) active_slot_));
+    out.emplace_back("@state", is_paired_ ? "Paired" : (is_connected_ ? "Connected" : "Disconnected"));
+    out.emplace_back("@layout", active_layout_id());
+    out.emplace_back("@battery", std::to_string((unsigned) battery_level()) + "%");
+    if (has_rssi_) out.emplace_back("@rssi", std::to_string((int) last_rssi_) + " dBm");
+    {
+        const HostSlot &h = hosts_[active_slot_];
+        if (h.occupied) {
+            char addr[18];
+            format_bd_addr(h.has_identity ? h.identity : h.addr, addr);
+            out.emplace_back("@mac", addr);
+        }
+    }
+
+    for (const auto &src : lcd_sources_) {
+        std::string value;
+        if (src.num != nullptr) {
+            if (src.num->has_state()) {
+                // get_accuracy_decimals() is not const upstream; the pointer is
+                // what this const method holds const, not the sensor behind it.
+                sensor::Sensor *s = src.num;
+                int8_t d = src.decimals >= 0 ? src.decimals : s->get_accuracy_decimals();
+                std::string unit = src.unit.empty() ? s->get_unit_of_measurement_ref().str() : src.unit;
+                value = format_lcd_number(s->state, d, unit);
+            }
+        } else if (src.txt != nullptr) {
+            if (src.txt->has_state()) value = src.txt->state;
+#ifdef USE_TEXT
+        } else if (src.fld != nullptr) {
+            if (src.fld->has_state()) value = src.fld->state;
+#endif
+        }
+        // A source with no state yet is left out rather than sent as empty, so
+        // the panel keeps its dashes instead of going blank.
+        if (!value.empty()) out.emplace_back(src.key, value);
+    }
+    return out;
+}
+
+// Escapes only what JSON demands. Values are entity states and user-set names,
+// so a quote or a backslash is unremarkable and a control character is not
+// worth a second code path — it simply doesn't travel.
+static void lcd_json_escape(const std::string &in, std::string &out) {
+    for (char c : in) {
+        if (c == '"' || c == '\\') { out += '\\'; out += c; }
+        else if ((unsigned char) c >= 0x20) out += c;
+    }
+}
+
+std::string EspidfBleKeyboard::lcd_json() const {
+    // 255 is what Home Assistant keeps of a state string. Entries are added
+    // whole or not at all, so the result is always parseable JSON — a value
+    // sliced in half would take the panel down rather than one line of it.
+    static const size_t HA_STATE_MAX = 255;
+    std::string json = "{";
+    json.reserve(200);
+    bool dropped = false;
+    for (const auto &kv : lcd_values()) {
+        std::string entry;
+        entry.reserve(kv.first.size() + kv.second.size() + 8);
+        if (json.size() > 1) entry += ",";
+        entry += "\"";
+        lcd_json_escape(kv.first, entry);
+        entry += "\":\"";
+        lcd_json_escape(kv.second, entry);
+        entry += "\"";
+        if (json.size() + entry.size() + 1 > HA_STATE_MAX) { dropped = true; continue; }
+        json += entry;
+    }
+    json += "}";
+    if (dropped)
+        ESP_LOGW(TAG, "LCD values exceed the 255 characters a Home Assistant state holds — "
+                      "some were left out. Declare fewer lcd_sources, or shorten their keys.");
+    return json;
+}
+
+void EspidfBleKeyboard::publish_lcd_() {
+    if (lcd_sensor_ == nullptr) return;
+    std::string json = lcd_json();
+    if (json == last_lcd_json_) return;   // states stream constantly; publish on change
+    last_lcd_json_ = json;
+    lcd_sensor_->publish_state(json);
+}
+
 void EspidfBleKeyboard::load_remote_style_() {
     nvs_handle_t handle;
     if (nvs_open("espidf_ble_kb", NVS_READONLY, &handle) != ESP_OK) return;
@@ -2199,6 +2354,7 @@ void EspidfBleKeyboard::switch_host(uint8_t slot) {
     publish_hold_();
     publish_repeat_();
     publish_remote_style_();
+    publish_lcd_();   // @host, @slot and @mac all just changed
 
     // Re-apply security params for the new slot's passkey config
     bool slot_has_pk; uint32_t slot_pk; bool slot_sc;
@@ -2280,6 +2436,11 @@ bool EspidfBleKeyboard::get_active_slot_passkey(bool &has_passkey, uint32_t &pas
 }
 
 void EspidfBleKeyboard::update_rssi(int8_t rssi) {
+    // Kept as well as published: the @rssi panel value needs a number even when
+    // no rssi sensor is declared, and there is nowhere else it survives.
+    last_rssi_ = rssi;
+    has_rssi_ = true;
+    pending_lcd_publish_.store(true);
     if (rssi_sensor_ != nullptr) {
         rssi_sensor_->publish_state(static_cast<float>(rssi));
     }
@@ -2497,6 +2658,17 @@ void EspidfBleKeyboard::loop() {
     }
     if (pending_battery_notify_.exchange(false)) {
         send_battery_notify_();
+    }
+    // LCD values, coalesced. Several sources can move within the same second and
+    // each publish is an API state update; nothing here is urgent — the web
+    // page's own poll is 3 s — so once a second is as often as it can matter.
+    if (lcd_sensor_ != nullptr && pending_lcd_publish_.load()) {
+        uint32_t now = millis();
+        if (now - lcd_last_publish_ms_ >= 1000) {
+            lcd_last_publish_ms_ = now;
+            pending_lcd_publish_.store(false);
+            publish_lcd_();
+        }
     }
     if (pending_rssi_nan_.exchange(false)) {
         if (rssi_sensor_ != nullptr) rssi_sensor_->publish_state(NAN);

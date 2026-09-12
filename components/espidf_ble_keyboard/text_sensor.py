@@ -22,6 +22,11 @@ TYPE_REPEAT_BUTTONS = "repeat_buttons"
 # on the /hosts response the card already polls, but that fetch is what https
 # blocks. Empty state = the host uses the default style.
 TYPE_REMOTE_STYLE = "remote_style"
+# The values an ["lcd",…] panel in a remote style shows, as compact JSON —
+# again because the card cannot fetch /status over https. Clamped to the 255
+# characters a Home Assistant state holds, dropping whole entries so what does
+# arrive always parses.
+TYPE_LCD = "lcd"
 
 # Diagnostic by default: every one of these carries machine-readable state for
 # the Lovelace cards, not something to read on the device page. That keeps them
@@ -40,6 +45,7 @@ CONFIG_SCHEMA = text_sensor.text_sensor_schema(
             TYPE_HOLD_BUTTONS,
             TYPE_REPEAT_BUTTONS,
             TYPE_REMOTE_STYLE,
+            TYPE_LCD,
             lower=True,
         ),
     }
@@ -59,5 +65,7 @@ async def to_code(config):
         cg.add(parent.set_repeat_sensor(var))
     elif sensor_type == TYPE_REMOTE_STYLE:
         cg.add(parent.set_remote_style_sensor(var))
+    elif sensor_type == TYPE_LCD:
+        cg.add(parent.set_lcd_sensor(var))
     else:
         cg.add(parent.set_hidden_sensor(var))

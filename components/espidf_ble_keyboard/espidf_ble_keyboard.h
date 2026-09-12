@@ -441,6 +441,8 @@ class EspidfBleKeyboard : public Component
 
   void set_paired(bool paired) {
     is_paired_ = paired;
+    // @state is one of the panel values, and nothing else would notice.
+    pending_lcd_publish_.store(true);
     if (paired_binary_sensor_ != nullptr) {
       paired_binary_sensor_->publish_state(paired);
     }
@@ -476,6 +478,7 @@ class EspidfBleKeyboard : public Component
   void set_connected(bool connected, uint16_t conn_id) {
     is_connected_ = connected;
     conn_id_ = conn_id;
+    pending_lcd_publish_.store(true);   // @state
     // Drop held state rather than releasing it: the link is already gone, so no
     // report would reach the host anyway, and a host releases everything itself
     // when a HID device disconnects.
@@ -623,6 +626,39 @@ class EspidfBleKeyboard : public Component
     publish_remote_style_();
   }
 
+  // ── LCD panels ───────────────────────────────────────────────────────────
+  // An ["lcd",…] section in a remote style shows live values. Which entities
+  // are worth reading is declared in YAML rather than discovered from the
+  // style, because the device never parses a style — it stores the JSON
+  // opaquely, on purpose, so a new section kind stays a page change alone.
+  // That leaves this list as the only statement of what to format and publish,
+  // and it is what bounds both the /status payload and the 255-character state
+  // Home Assistant will carry.
+  static const uint8_t MAX_LCD_SOURCES = 8;
+  void add_lcd_sensor(const std::string &key, sensor::Sensor *s,
+                      const std::string &unit, int8_t decimals);
+  void add_lcd_text_sensor(const std::string &key, text_sensor::TextSensor *s);
+#ifdef USE_TEXT
+  void add_lcd_text(const std::string &key, text::Text *t);
+#endif
+  /// Every value a panel can name, already formatted — unit, decimals and all —
+  /// so neither the web page nor the card has to know what kind of entity is
+  /// behind a key. Includes the @-prefixed built-ins even with no sources
+  /// declared. Built fresh per call; it is asked for at most every 3 s.
+  std::vector<std::pair<std::string, std::string>> lcd_values() const;
+  /// The same map as compact JSON, clamped to what a HA state can hold.
+  std::string lcd_json() const;
+  /// Optional text sensor carrying lcd_json() to the Lovelace card — the same
+  /// reason the hidden, hold and repeat lists travel as sensors: a dashboard on
+  /// https cannot fetch this device's API at all.
+  void set_lcd_sensor(text_sensor::TextSensor *sensor) {
+    lcd_sensor_ = sensor;
+    publish_lcd_();
+  }
+  /// What a host slot is called — its switch_host button's name if it has one,
+  /// otherwise "Host N", counting from 1 as every other display of it does.
+  std::string host_label(uint8_t slot) const;
+
   // Press-and-hold buttons for the active host, published the same way — the
   // Lovelace remote card reads it to know which of its buttons should hold
   // rather than tap. The card can't read the device's REST API reliably (HA
@@ -652,6 +688,10 @@ class EspidfBleKeyboard : public Component
 
   // RSSI sensor
   void set_rssi_sensor(sensor::Sensor *sensor) { rssi_sensor_ = sensor; }
+  /// The last reading, for the @rssi panel value. has_rssi_ stays false until
+  /// one arrives, so a panel shows dashes rather than a plausible-looking 0.
+  bool has_rssi() const { return has_rssi_; }
+  int8_t last_rssi() const { return last_rssi_; }
   void set_rssi_update_interval(uint32_t ms) { rssi_update_interval_ms_ = ms; }
   void update_rssi(int8_t rssi);
   void add_rssi_above_callback(std::function<void(int8_t)> cb) { rssi_above_callbacks_.push_back(std::move(cb)); }
@@ -689,10 +729,13 @@ class EspidfBleKeyboard : public Component
   text_sensor::TextSensor *repeat_sensor_{nullptr};
   text_sensor::TextSensor *host_mac_sensor_{nullptr};
   sensor::Sensor *rssi_sensor_{nullptr};
+  text_sensor::TextSensor *lcd_sensor_{nullptr};
   bool rssi_pending_{false};
   std::atomic<bool> pending_rssi_nan_{false};
   std::atomic<bool> pending_rssi_update_{false};
   std::atomic<int8_t> pending_rssi_value_{0};
+  int8_t last_rssi_{0};
+  bool has_rssi_{false};
 
  protected:
   /// The ID key a bonded peer distributed, looked up by either the address it
@@ -815,6 +858,26 @@ class EspidfBleKeyboard : public Component
   void save_hidden_(uint8_t slot);
   void publish_hidden_();  // push the active slot's list to the text sensor
   void publish_remote_style_();  // push the active slot's style id to the text sensor
+
+  // LCD panel sources, and the last payload published for them. Every declared
+  // source raises a flag on change rather than publishing from whatever task
+  // updated it; loop() coalesces those into at most one publish a second, so a
+  // fast sensor cannot flood the API connection.
+  struct LcdSource {
+    std::string key;
+    sensor::Sensor *num{nullptr};
+    text_sensor::TextSensor *txt{nullptr};
+#ifdef USE_TEXT
+    text::Text *fld{nullptr};
+#endif
+    std::string unit;       // empty = whatever the sensor declares
+    int8_t decimals{-1};    // <0 = whatever the sensor declares
+  };
+  std::vector<LcdSource> lcd_sources_;
+  std::string last_lcd_json_;
+  uint32_t lcd_last_publish_ms_{0};
+  std::atomic<bool> pending_lcd_publish_{false};
+  void publish_lcd_();
 
   // Per-host hold-to-repeat (NVS key "rpt<slot>", "<delay>,<rate>,name,name").
   RepeatCfg repeat_[MAX_HOST_SLOTS];

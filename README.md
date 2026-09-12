@@ -322,6 +322,7 @@ binary_sensor:
 * **custom_text_id** (Optional, ID or list of IDs): Link one or more ESPHome `text` entities for custom text input. Automatically registers a "Send" button in the web UI for each. Use `send_custom_text` or `send_custom_text:N` action to trigger.
 * **expose_buttons** (Optional, boolean): List every non-internal ESPHome `button` in your config on the [web control page](#pressing-other-esphome-buttons), so it can reach things BLE can't — Wake-on-LAN, a relay, a restart. Defaults to `true`.
 * **hide_buttons** (Optional, ID or list of IDs): Buttons to keep *off* the web page. Anything listed there can be pressed by whoever can reach the device — and unless you have set up authentication, that is anyone on the network — so use this for anything destructive (`factory_reset`, `restart`, `safe_mode`). Leave one of those platforms exposed and the build names it in a warning, so you can decide rather than discover. Hidden buttons also refuse to run if their action is typed by hand.
+* **lcd_sources** (Optional, list): Entities an [LCD panel](#lcd-panels) in a remote style may show. Each entry names exactly one of `sensor:`, `text_sensor:` or `text:` by id, plus an optional `key:` (what the style calls it — defaults to the entity's id) and, for a numeric sensor, `unit:` and `decimals:` overrides. At most 8. Without this a panel can still show the keyboard's own `@` values.
 * **battery_level** (Optional, ID): A sensor whose value (0–100) is published over the BLE Battery Service, so the host's Bluetooth settings show the keyboard's real charge. Any sensor reading a percentage will do — an ADC with a calibration filter, a fuel-gauge IC, a template sensor. Values outside 0–100 are clamped and an unavailable reading is ignored rather than sent as 0%. Without this the service is still advertised and reports a fixed 100%. See [Battery level](#battery-level).
 * **keyboard_layout** (Optional, string): Default keyboard layout. One of `us` (default), `uk`, `de`, `be`. Controls how `send_string` maps each character to USB HID keycodes — must match the *host's* keyboard layout. Can be overridden at runtime from the web UI (persisted to NVS, survives reboot). See [Keyboard layouts](#keyboard-layouts) below.
 * **hosts** (Optional, list): Per-slot passkey and pairing mode overrides. Each entry has:
@@ -561,10 +562,10 @@ run an action string directly:
 
 ### `text_sensor` (Platform: `espidf_ble_keyboard`)
 
-Optional. Four types are available.
+Optional. Six types are available.
 
 * **keyboard_id** (Required, ID): The ID of the `espidf_ble_keyboard` component.
-* **type** (Optional, string): `hidden_buttons` (default), `host_mac`, `hold_buttons`, `repeat_buttons` or `remote_style`.
+* **type** (Optional, string): `hidden_buttons` (default), `host_mac`, `hold_buttons`, `repeat_buttons`, `remote_style` or `lcd`.
 * **name** (Optional, string): Friendly entity name shown in Home Assistant.
 
 #### Hidden buttons
@@ -644,9 +645,23 @@ Each slot learns its host's identity the next time that host connects, and remem
 
 The value is only as stable as the bond. Unpair and pair again and a phone may present a different identity, so re-check the sensor after re-pairing rather than assuming the old value still holds. Treat this as identification, not authentication — it tells one device from another, but it is not proof against a device that deliberately imitates one.
 
+#### LCD values
+
+Publishes the values an [LCD panel](#lcd-panels) shows, as compact JSON, so a panel in a remote style works on the Media Remote Card and not just on the web page. Only needed if a style has one.
+
+```yaml
+text_sensor:
+  - platform: espidf_ble_keyboard
+    keyboard_id: my_keyboard
+    type: lcd
+    name: "LCD Values"
+```
+
+It carries the keyboard's own `@` values and anything listed in `lcd_sources:`, republished whenever one of them changes and at most once a second. Everything has to fit the 255 characters a Home Assistant state holds; past that whole entries are dropped and the log says which way to fix it.
+
 > **These are diagnostic entities.** They carry machine-readable state for the cards rather than anything to read yourself, so they default to `entity_category: diagnostic` — Home Assistant files them under **Diagnostic** on the device page and leaves them out of auto-generated dashboards, instead of listing a long comma-separated repeat config across the integration screen. Set `entity_category:` on the sensor to promote one back to the main list. Add only the sensors your cards actually use; each is optional.
 
-> ESPHome text sensors appear in Home Assistant under the **`sensor.`** domain, not `text_sensor.`. With the YAML above the entities are `sensor.<device>_hidden_buttons`, `sensor.<device>_hold_buttons`, `sensor.<device>_repeat_buttons`, `sensor.<device>_remote_style` and `sensor.<device>_host_mac`. Those names are what the cards auto-detect; if you give one a different `name`, set the matching `hidden_entity:` / `hold_entity:` / `repeat_entity:` on the card.
+> ESPHome text sensors appear in Home Assistant under the **`sensor.`** domain, not `text_sensor.`. With the YAML above the entities are `sensor.<device>_hidden_buttons`, `sensor.<device>_hold_buttons`, `sensor.<device>_repeat_buttons`, `sensor.<device>_remote_style`, `sensor.<device>_lcd` and `sensor.<device>_host_mac`. Those names are what the cards auto-detect; if you give one a different `name`, set the matching `hidden_entity:` / `hold_entity:` / `repeat_entity:` / `lcd_entity:` on the card.
 
 ---
 
@@ -1035,6 +1050,7 @@ The web remote can be drawn in a different **style** per host, so switching to a
 | **Style 3** | Compact strip: power, mute, volume and the full transport row. Good for a headless box. |
 | **Style 4** | The full set-top shape: number pad, colour keys, nav ring, back/home/TV, one-piece VOL·mute·CH rockers and four app pills. Dark body. |
 | **Style 5** | Style 4's layout on a pale body — the only light style, and easier to read on a bright screen. |
+| **Style 6** | A media-box slab with a **[screen](#lcd-panels)** above four spare pills. The screen names the host and says whether it is connected, which needs nothing configured. The largest of the built-ins — it draws about 356px wide. |
 
 Styles 4 and 5 take their key arrangement from [HA-Firemote](https://github.com/PRProd/HA-Firemote) (GPL-3.0). The buttons, icons and renderer are this project's own.
 
@@ -1046,7 +1062,7 @@ The built-in styles are numbered rather than named after particular devices: the
 
 The style is stored on the device against the host slot, not in the browser, so it follows the host rather than the phone that set it — and every browser watching the page re-skins within a few seconds of a host switch, whoever made it. It is **presentation only**: the actions a style leaves out still run from macros, YAML buttons and Home Assistant, and the **Remote Buttons**, **Hold to Repeat** and **Press and Hold** panels always list every action regardless of which style is showing, so they can be set for a host before you ever look at its remote. Styles are included in [Backup and restore](#backup-and-restore).
 
-Styles are a web-page feature; the [Media Remote Card](#media-remote-card-for-home-assistant) is unaffected and keeps its own layout.
+The [Media Remote Card](#media-remote-card-for-home-assistant) draws from the same style definitions, so a layout looks the same in both places — see [Remote styles on the card](#remote-styles-on-the-card) for how a style travels there.
 
 #### Making your own
 
@@ -1080,6 +1096,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `["rocker", ["Vol","volume_up","volume_down"], …]` | **One-piece rocker keys** — a tall pill with two halves and the label between them, as a remote carries volume and channel. A two-entry group, `["","mute"]`, is a single key at the same height, which is how mute sits between two rockers. |
 | `["media", …]` | A row of the smaller transport-sized buttons. |
 | `["apps", …]` | A row of wide pill buttons. |
+| `["lcd", ["Room","temp"], …]` | **A small screen** showing live values — see [LCD panels](#lcd-panels). Each line is a label and the value to show; up to four per panel. |
 | `["-"]` | A horizontal divider. |
 
 **Colouring and sizing a button.** A third element carries appearance tokens, space-separated:
@@ -1108,7 +1125,7 @@ Labels are 1–16 characters. A round key fits about four; the wide app pill fit
 
 Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, the seven transport keys, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `spare1`–`spare16`). An unknown name is refused on import rather than rendering a dead button.
 
-**Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
+**Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, and for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
 **Making the buttons bigger or smaller.** `zoom` scales the whole remote — buttons, their icons and labels, the gaps between them, the d-pad and the rockers — by one factor: `"zoom": "1.25"` for a quarter larger, `"0.8"` for smaller. It is the only size control, deliberately: the buttons come in several sizes that are tuned against each other and against the gaps, so scaling them as a set keeps a layout that was designed to fit still fitting.
 
@@ -1125,6 +1142,149 @@ Three of those do more than they look:
 > `ring_fg` exists because a nav ring is often the opposite tone to the rest of the remote — a white ring on a black body, a black one on alloy. Without it the arrows inherit `btn_fg` and disappear.
 
 Deleting a custom style leaves the hosts using it on the full remote; re-importing it under the same id puts them all back.
+
+#### LCD panels
+
+A style can carry a small screen alongside its buttons. Each line is a label and the value to show:
+
+```json
+["lcd", ["Room", "temp"], ["Host", "@host", "lg"], ["Now Playing", ""]]
+```
+
+A panel holds up to eight lines, and a style can have more than one. A line with no value is a title. Labels are up to 16 characters.
+
+**Sizing the panel.** Put a settings object in front of the lines and the panel is specified the way a real character display is — so many characters across, so many lines down:
+
+```json
+["lcd", {"cols": 16, "rows": 2}, ["Room", "temp"], ["", "now_playing"]]
+```
+
+| Key | Effect |
+|---|---|
+| `cols` | Width in **characters**, 4–40. The panel becomes exactly that many characters of its own monospace face, and a value too long for it is cut off with an ellipsis rather than wrapping — as a real display does. |
+| `rows` | Height in **lines**, 1–8. The panel reserves that height whether or not the lines are there, so it stops changing size as its values do. It is also how many lines that panel may hold. |
+| `fg` `bg` `label` `border` | `#rrggbb` colours for this panel alone, overriding the style's `lcd_*` theme keys — which is how one style carries a green screen and an amber one. |
+
+Every key is optional. Without `cols` the panel fills the remote's width and wraps long values; without `rows` it grows with its content and holds up to eight lines.
+
+```json
+["lcd", {"cols": 20, "rows": 2, "fg": "#ffb000", "bg": "#1a1206"},
+        ["Temp", "temp"], ["", "@state"]]
+```
+
+**Sizing and justifying a line.** A third element carries tokens, space-separated, the same way a button's do — and an unknown one is refused on import rather than ignored:
+
+| Token | Effect |
+|---|---|
+| `sm` / `lg` / `xl` | 11 / 18 / 24 px instead of the usual 14 |
+| `left` / `centre` / `right` | Push the line's text to that side. `center` spells the same thing. |
+| `#rrggbb` | the value's own colour |
+
+Left to itself a line **spreads**: the label sits against the left edge and the value against the right, which is how a real panel reads. An alignment token packs the label and value together and moves the pair as one — so `centre` on a labelled line centres the pair, not the value inside the panel. On a line with no label there is nothing to spread against, so it sits left until you say otherwise:
+
+```json
+["lcd", ["Room", "temp"], ["", "now_playing", "centre"], ["", "@state", "sm right"]]
+```
+
+A title line centres by default, since it has no value to sit opposite; give it `left` or `right` to move it.
+
+**Values beginning `@` are the keyboard's own and need nothing configured:**
+
+| Key | Shows |
+|---|---|
+| `@host` | The active host's name — its `switch_host:` button's name if it has one, otherwise "Host 1", "Host 2"… |
+| `@slot` | The active slot number, counting from 0, the same number `switch_host:N` takes. |
+| `@mac` | The active host's address, or nothing if the slot is empty. |
+| `@state` | `Paired`, `Connected` or `Disconnected`. |
+| `@rssi` | Signal strength in dBm. Dashes until the first reading arrives. |
+| `@battery` | The percentage the host sees. See [Battery level](#battery-level). |
+| `@layout` | The active keyboard layout id. |
+
+**Anything else names an entity you list on the component.** The device reads it and formats it — unit and decimals included — so `21.4 °C` needs no format string anywhere:
+
+```yaml
+espidf_ble_keyboard:
+  id: my_keyboard
+  lcd_sources:
+    - sensor: lounge_temperature     # key defaults to the entity's id
+    - key: temp                      # or name it yourself
+      sensor: lounge_temperature
+      unit: "°C"                     # optional; defaults to the sensor's own
+      decimals: 1                    # optional; defaults to the sensor's own
+    - text_sensor: now_playing
+    - key: msg
+      text: my_text_input
+```
+
+Each entry names exactly one of `sensor:`, `text_sensor:` or `text:`, by id. At most **8** sources, and a key is 1–16 characters of `a-z`, `0-9` or `_`. A key nothing answers draws as `--` rather than failing, which is also what a value shows before its entity has published anything.
+
+> They are declared here rather than picked up from the style because the device never reads a style — it stores the JSON and hands it to the browser untouched, which is what lets a new kind of section be a page change alone. This list is the device's only statement of what is worth reading.
+
+**On the Home Assistant card** the same panel needs the values to reach it, and a dashboard on https cannot fetch the device. Add the text sensor:
+
+```yaml
+text_sensor:
+  - platform: espidf_ble_keyboard
+    keyboard_id: my_keyboard
+    type: lcd
+    name: "LCD Values"
+```
+
+The `@` values the card can work out for itself — the host's name, slot and address — need no sensor at all. Everything travels in one Home Assistant state, which holds 255 characters; past that, whole entries are dropped and the log says so. The card can also read a key straight from Home Assistant instead, which is how a panel shows something the keyboard's node knows nothing about:
+
+```yaml
+type: custom:ble-remote-card
+device: bluetooth_keyboard
+remote_style: auto
+lcd_entities:
+  temp: sensor.lounge_temperature
+```
+
+A key named there wins over the device's value for the same key.
+
+#### A complete example
+
+This is **Style 6**, the built-in with a screen, written out so you can see how one is put together — and copy it as the starting point for your own. The screen shows which host the keyboard is on and whether it is connected: both `@` values, so **it needs no `lcd_sources:` at all**. Add the `lcd` text sensor only if you want the panel filled on the Home Assistant card too.
+
+The `id` below is deliberately not `style6` — a built-in's id is reserved, so an import has to use its own. Change the name and it joins the stepper beside the built-ins.
+
+```json
+{
+  "id": "media_lcd",
+  "name": "Media box + screen",
+  "theme": {
+    "bg": "#17181d",
+    "border": "#2a2c33",
+    "radius": "34px",
+    "pad": "22px 12px",
+    "maxw": "280px",
+    "zoom": "1.27",
+    "btn_bg": "#232630",
+    "btn_fg": "#e8e8ec",
+    "btn_border": "#303341",
+    "ok_bg": "#454a5c",
+    "divider": "#303341"
+  },
+  "sections": [
+    ["row","remote_power","|","search","mute"],
+    ["dpad"],
+    ["row","back","home","info"],
+    ["media","rewind","play_pause","fast_forward"],
+    ["strip",["Vol","volume_up","volume_down"],["Ch","channel_up","channel_down"]],
+    ["-"],
+    ["lcd",{"cols":16,"rows":2,"fg":"#7fd4ff","bg":"#0e1014","label":"#5a6b78","border":"#303341"},
+      ["","@host","centre"],
+      ["","@state","sm centre"]],
+    ["apps",["spare1","Spare 1"],["spare2","Spare 2"],["spare3","Spare 3"],["spare4","Spare 4"]]
+  ]
+}
+```
+
+The four app pills are [spare actions](#action-reference): they send nothing until you give each one a per-host override, which is what lets the same pill launch a different app on each machine. Rename them to whatever you point them at.
+
+The panel is a deliberate 16 characters wide, so it sits inside the 280px body as a screen rather than a banner, and `rows: 2` holds its height steady as the host name changes length. Its colours are its own, overriding the style's — swap `fg` to `#ffb000` on `#1a1206` for an amber display instead. Compact, this style is 715 characters of the 1500 a custom style may use.
+
+> `zoom: 1.27` on a `maxw` of 280px draws about **356px wide**, which is roomy on a phone and on the web page but wider than a narrow Home Assistant column — the card will scroll sideways there. Drop the zoom, or halve it and raise `maxw`, if you want it narrower.
 
 ### Action Reference
 
@@ -2151,6 +2311,8 @@ Optional configuration:
 | `hidden_entity` | `sensor.<device>_hidden_buttons` | Text sensor carrying the active host's hidden buttons, so the card mirrors the web remote's [per-host hiding](#removing-remote-buttons-per-host). Optional — without the entity every button is shown. |
 | `hold_entity` | `sensor.<device>_hold_buttons` | Text sensor carrying the active host's [Press and hold](#press-and-hold-per-host) buttons. Required for push-to-talk on the card — without it no button holds. |
 | `repeat_entity` | `sensor.<device>_repeat_buttons` | Text sensor carrying the active host's [Hold to repeat](#hold-to-repeat-per-host) config. Without it the card repeats volume and channel only, at 400/180 ms. |
+| `lcd_entity` | `sensor.<device>_lcd` | Text sensor carrying the values an [LCD panel](#lcd-panels) shows. Only needed if the style has one. |
+| `lcd_entities` | — | Map of panel key to Home Assistant entity, e.g. `temp: sensor.lounge_temperature`. Read from HA directly, so it reaches things the keyboard's node never sees — and wins over the device's value for the same key. |
 | `host_slots` | `0` | Number of host slots. Set to match your `host_slots` config to show a [host switcher](#host-switcher-on-the-cards) in the header. Needs at least `2` — `0` or `1` hides it. |
 | `host_names` | `[]` | List of custom names for each host slot (e.g., `["TV", "Phone"]`). Index 0 = slot 0. Falls back to `switch_host` button names from the ESP32, then "Host N". |
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |

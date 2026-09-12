@@ -6,7 +6,7 @@
 //
 //     node tools/gen-remote-styles.mjs
 //
-// Built-ins in this snapshot: default, style1, style2, style3, style4, style5
+// Built-ins in this snapshot: default, style1, style2, style3, style4, style5, style6
 // Custom styles are not here — they live in the device's NVS. The card takes
 // those as pasted JSON, or from /api/ble_keyboard/remote_templates when it can
 // reach the device (a dashboard on https cannot).
@@ -104,10 +104,12 @@ spare15:{t:'Spare 15',x:'15',g:8},
 spare16:{t:'Spare 16',x:'16',g:8}};
 
 const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb-pad',
-maxw:'--rb-maxw',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',
+maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',
 btn_radius:'--rb-btn-radius',ok_bg:'--rb-ok-bg',ok_fg:'--rb-ok-fg',
 ring_bg:'--rb-ring-bg',ring_fg:'--rb-ring-fg',light_bg:'--rb-light-bg',light_fg:'--rb-light-fg',shadow:'--rb-shadow',
-label:'--rb-label',divider:'--rb-divider',clip:'--rb-clip'};
+label:'--rb-label',divider:'--rb-divider',clip:'--rb-clip',
+lcd_bg:'--rb-lcd-bg',lcd_fg:'--rb-lcd-fg',lcd_label:'--rb-lcd-label',
+lcd_border:'--rb-lcd-border',lcd_radius:'--rb-lcd-radius'};
 
 const RMT_BUILTIN=[
 {id:'default',name:'Full remote',theme:{},sections:[
@@ -179,11 +181,34 @@ const RMT_BUILTIN=[
  ['row','back',['home','','light'],'tv'],
  ['rocker',['Vol','volume_up','volume_down'],['','mute'],['Ch','channel_up','channel_down']],
  ['apps',['spare5','App 1','light wide'],['spare6','App 2','light wide'],['spare7','App 3','light wide']],
- ['apps',['spare8','App 4','light wide']]]}];
+ ['apps',['spare8','App 4','light wide']]]},
+// The one built-in with a screen. It reads @host and @state, which the firmware
+// always knows, so it says something useful the moment it is picked — no
+// lcd_sources, no sensor, nothing to configure. 16 characters wide so it sits
+// in the body as a display rather than a banner, and two reserved rows so it
+// holds its height as a host name changes length.
+{id:'style6',name:'Style 6',theme:{bg:'#17181d',border:'#2a2c33',radius:'34px',pad:'22px 12px',
+ maxw:'280px',zoom:'1.27',btn_bg:'#232630',btn_fg:'#e8e8ec',btn_border:'#303341',
+ ok_bg:'#454a5c',divider:'#303341'},sections:[
+ ['row','remote_power','|','search','mute'],
+ ['dpad'],
+ ['row','back','home','info'],
+ ['media','rewind','play_pause','fast_forward'],
+ ['strip',['Vol','volume_up','volume_down'],['Ch','channel_up','channel_down']],
+ ['-'],
+ ['lcd',{cols:16,rows:2,fg:'#7fd4ff',bg:'#0e1014',label:'#5a6b78',border:'#303341'},
+  ['','@host','centre'],['','@state','sm centre']],
+ ['apps',['spare1','Spare 1'],['spare2','Spare 2'],['spare3','Spare 3'],['spare4','Spare 4']]]}];
 
-const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','-'];
+const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','lcd','-'];
 
 const RMT_OPTS=['light','sm','lg','xl','wide','sq'];
+
+const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
+
+const RMT_LCD_COLOURS=['fg','bg','label','border'];
+
+const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout'];
 
 const RMT_HEX=/^#[0-9a-f]{3,8}$/i;
 
@@ -273,6 +298,59 @@ function sectionHtml(s){
     }else if(k==='media'||k==='apps'){
       inner='<div class="rmt-'+(k==='media'?'media-row':'app-row')+'">'+
             s.slice(1).map(a=>btnHtml(a)).join('')+'</div>';
+    }else if(k==='lcd'){
+      // The panel is drawn empty and filled in afterwards: the device page puts
+      // numbers in it from its status poll, the Home Assistant card from entity
+      // state. `data-lcd` is the only hook either of them needs, which is what
+      // lets one renderer serve two very different sources of truth.
+      // An optional settings object in front of the lines sizes the panel the
+      // way a character display is specified — 16 across by 2 down. Without it
+      // the panel fills the remote's width and grows with whatever it is given.
+      const cfg=(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
+      let pstyle='';
+      if(cfg){
+        // Only ever whole numbers the validator has already bounded, so this is
+        // the one place besides a #hex that builds an inline style here.
+        // 22px = the panel's own padding and border, counted by box-sizing.
+        if(cfg.cols)pstyle+='width:calc('+(cfg.cols|0)+'ch + 22px);';
+        // Reserve the height of N lines, so a panel declared taller than its
+        // content keeps that size and one whose values change length does not
+        // jump. In the stylesheet's own terms rather than pixels: a line box is
+        // 1.25em of the panel's pinned font, 4px separates two, and 18px is the
+        // padding and border a border-box min-height has to include.
+        if(cfg.rows)pstyle+='min-height:calc('+(cfg.rows|0)+' * 1.25em + '+
+                            (4*((cfg.rows|0)-1))+'px + 18px);';
+        // Straight onto the custom properties the stylesheet already reads, so
+        // one panel can be a different colour from another in the same style
+        // without a rule of its own. Hex-validated above.
+        for(const c of RMT_LCD_COLOURS)
+          if(typeof cfg[c]==='string')pstyle+='--rb-lcd-'+c+':'+cfg[c]+';';
+      }
+      inner='<div class="rmt-lcd'+(cfg&&cfg.cols?' fixed':'')+'"'+
+            (pstyle?' style="'+pstyle+'"':'')+'>'+s.slice(cfg?2:1).map(g=>{
+        const lab=g[0]||'',key=g[1]||'';
+        let sz='',align='',css='';
+        if(typeof g[2]==='string')for(const tok of g[2].split(/\s+/)){
+          if(!tok)continue;
+          // Same strict hex test the buttons use, and for the same reason: it is
+          // the only value here that reaches an inline style attribute.
+          if(RMT_HEX.test(tok))css='color:'+tok;
+          // Both spellings of the middle one, mapped to the CSS spelling so
+          // there is still only one class to style.
+          else if(tok==='centre'||tok==='center')align='center';
+          else if(tok==='left'||tok==='right')align=tok;
+          else if(RMT_LCD_OPTS.indexOf(tok)>=0)sz+=' '+tok;
+        }
+        // A title has no value to sit opposite, so it centres unless the style
+        // said otherwise. Everything else defaults to no alignment class at
+        // all, which leaves the label and value spread to opposite edges.
+        if(!key)return '<div class="rmt-lcd-line title '+(align||'center')+'">'+
+               '<span class="rmt-lcd-label">'+esc(lab)+'</span></div>';
+        return '<div class="rmt-lcd-line'+(align?' '+align:'')+'">'+
+               (lab?'<span class="rmt-lcd-label">'+esc(lab)+'</span>':'')+
+               '<span class="rmt-lcd-val'+sz+'" data-lcd="'+esc(key)+'"'+
+               (css?' style="'+css+'"':'')+'>--</span></div>';
+      }).join('')+'</div>';
     }
     return '<div class="rmt-section">'+inner+'</div>';
   }
@@ -312,6 +390,73 @@ function validateTpl(t){
         if(s.length>1&&s.length!==6)
           return 'A '+s[0]+' section lists exactly 5 actions (up, left, centre, right, down) or none';
         items=s.slice(1);
+      }else if(s[0]==='lcd'){
+        // Lines are ["Label","key"], label first — the way a strip or rocker
+        // group carries its label. Nothing in here is a button, so `items` is
+        // left empty and the button loop below never sees them.
+        // An optional settings object in front of the lines gives the panel a
+        // size in characters and lines, the way a display is specified.
+        let lines=s.slice(1),cfg=null;
+        if(lines.length&&lines[0]&&typeof lines[0]==='object'&&!Array.isArray(lines[0])){
+          cfg=lines[0];
+          lines=lines.slice(1);
+          for(const k in cfg){
+            if(RMT_LCD_COLOURS.indexOf(k)>=0){
+              // Hex and nothing else: these land in an inline style, the same
+              // rule a button's colour token follows.
+              if(typeof cfg[k]!=='string'||!RMT_HEX.test(cfg[k]))
+                return 'lcd "'+k+'" must be a #hex colour, e.g. {"'+k+'":"#6ee7a0"}';
+              continue;
+            }
+            if(k!=='cols'&&k!=='rows')
+              return 'An lcd panel takes cols, rows, '+RMT_LCD_COLOURS.join(', ')+
+                     ' — "'+k+'" is none of them';
+            const n=cfg[k];
+            if(typeof n!=='number'||!isFinite(n)||n!==Math.floor(n))
+              return 'lcd "'+k+'" must be a whole number, e.g. {"cols":16,"rows":2}';
+          }
+          if(cfg.cols!==undefined&&(cfg.cols<4||cfg.cols>40))
+            return 'lcd "cols" is 4-40 characters — "'+cfg.cols+'" is outside that';
+          if(cfg.rows!==undefined&&(cfg.rows<1||cfg.rows>8))
+            return 'lcd "rows" is 1-8 lines — "'+cfg.rows+'" is outside that';
+        }
+        if(!lines.length)return 'An lcd section needs at least one line: ["lcd",["Room","temp"]]';
+        // Declaring rows is also declaring how many lines fit: a panel with
+        // more lines than rows would draw outside the height it asked for.
+        const maxLines=(cfg&&cfg.rows)?cfg.rows:8;
+        if(lines.length>maxLines)
+          return 'This lcd panel holds '+maxLines+' line'+(maxLines===1?'':'s')+
+                 ' — it has '+lines.length+(cfg&&cfg.rows?'. Raise "rows", or add a second ["lcd",…]':
+                 '. Add a second ["lcd",…] for more');
+        for(const g of lines){
+          if(!Array.isArray(g)||g.length<2||g.length>3)
+            return 'An lcd line is ["Label","key"] or ["Label","key","opts"]';
+          if(typeof g[0]!=='string')return 'An lcd line starts with its label — "" for none';
+          // Same 16 a button label gets: one number to remember, and a title
+          // line has the whole panel to itself. A long label beside a value
+          // squeezes it, which is visible and the author's to judge.
+          if(g[0].length>16)return 'lcd labels are up to 16 characters — "'+g[0]+'" is too wide';
+          if(typeof g[1]!=='string')
+            return 'An lcd line names the value to show, or "" for a label-only title';
+          if(g[1].charAt(0)==='@'){
+            if(RMT_LCD_KEYS.indexOf(g[1])<0)
+              return 'Unknown built-in value "'+g[1]+'" — use '+RMT_LCD_KEYS.join(', ');
+          }else if(g[1]&&!/^[a-z0-9_]{1,16}$/.test(g[1])){
+            // Only the spelling of a declared key can be checked: whether the
+            // node actually has an lcd_sources entry by that name is something
+            // the browser cannot know. One that names nothing draws as "--",
+            // which is what a real display does with a missing reading.
+            return 'An lcd key is 1-16 characters of a-z, 0-9 or _, or a built-in such as @host';
+          }
+          if(g.length===3){
+            if(typeof g[2]!=='string')return 'lcd options must be a string, e.g. "lg right"';
+            for(const tok of g[2].split(/\s+/)){
+              if(!tok)continue;
+              if(!RMT_HEX.test(tok)&&RMT_LCD_OPTS.indexOf(tok)<0)
+                return 'Unknown lcd option "'+tok+'" — use a #hex colour or '+RMT_LCD_OPTS.join(', ');
+            }
+          }
+        }
       }else{
         items=s.slice(1);
       }
@@ -354,7 +499,7 @@ function validateTpl(t){
 // --border, --muted, --active, --accent), so whatever hosts this must map those
 // onto its own theme — inside a shadow root there is no :root to inherit from.
 export const RMT_CSS = `
-.rmt-body{background:var(--rb-bg,transparent);border:1px solid var(--rb-border,transparent);border-radius:var(--rb-radius,0);padding:var(--rb-pad,0);max-width:var(--rb-maxw,none);margin:0 auto;box-shadow:var(--rb-shadow,none);clip-path:var(--rb-clip,none)}
+.rmt-body{zoom:var(--rb-zoom,1);background:var(--rb-bg,transparent);border:1px solid var(--rb-border,transparent);border-radius:var(--rb-radius,0);padding:var(--rb-pad,0);max-width:var(--rb-maxw,none);margin:0 auto;box-shadow:var(--rb-shadow,none);clip-path:var(--rb-clip,none)}
 .rmt-section{margin-bottom:10px}
 .rmt-section:last-child{margin-bottom:0}
 .rmt-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;margin-bottom:8px}
@@ -405,6 +550,30 @@ export const RMT_CSS = `
 .rmt-rocker-col .rmt-btn:active,.rmt-rocker-col .rmt-btn.p{background:rgba(255,255,255,.18);border-color:transparent}
 .rmt-rocker-label{font-size:9px;color:var(--rb-label,var(--muted));font-weight:700;text-transform:uppercase;letter-spacing:.4px}
 .rmt-rocker-solo{background:none;border:none;padding:0;width:auto}
+.rmt-lcd{background:var(--rb-lcd-bg,#11161c);border:1px solid var(--rb-lcd-border,rgba(0,0,0,.55));
+  border-radius:var(--rb-lcd-radius,8px);padding:8px 10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.55);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  font-variant-numeric:tabular-nums;overflow:hidden;
+  
+  font-size:14px;box-sizing:border-box;margin:0 auto}
+.rmt-lcd.fixed .rmt-lcd-line{overflow:hidden}
+.rmt-lcd.fixed .rmt-lcd-val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rmt-lcd-line{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-height:16px}
+.rmt-lcd-line+.rmt-lcd-line{margin-top:4px}
+.rmt-lcd-line.left{justify-content:flex-start}
+.rmt-lcd-line.center{justify-content:center}
+.rmt-lcd-line.right{justify-content:flex-end}
+.rmt-lcd-line.left .rmt-lcd-val{text-align:left}
+.rmt-lcd-line.center .rmt-lcd-val{text-align:center}
+.rmt-lcd-line.title .rmt-lcd-label{white-space:normal}
+.rmt-lcd-label{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--rb-lcd-label,#7a8a80);white-space:nowrap}
+.rmt-lcd-line.title .rmt-lcd-label{font-size:10px}
+.rmt-lcd-val{font-size:14px;font-weight:600;color:var(--rb-lcd-fg,#6ee7a0);
+  text-align:right;overflow-wrap:anywhere;line-height:1.25}
+.rmt-lcd-val.sm{font-size:11px}
+.rmt-lcd-val.lg{font-size:18px}
+.rmt-lcd-val.xl{font-size:24px}
 .rmt-btn.sm{width:36px;height:36px;font-size:11px}
 .rmt-btn.sm svg{width:16px;height:16px}
 .rmt-btn.lg{width:56px;height:56px}
@@ -414,8 +583,9 @@ export const RMT_CSS = `
 .rmt-btn.sq{border-radius:10px}
 .rmt-btn.light{background:var(--rb-light-bg,#e9e9ee);color:var(--rb-light-fg,#16161a);border-color:var(--rb-light-bg,#e9e9ee)}
 .rmt-btn.light:active,.rmt-btn.light.p{background:#fff;color:#000}
+.popout .rmt-body{box-shadow:var(--rb-shadow,0 0 #0000),0 4px 0 var(--rb-bg,transparent)}
 .rmt-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
 .rmt-head .macro-edit-btn{margin-left:0}
 `;
 
-export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, themeValueBad, btnHtml, sectionHtml, validateTpl };
+export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, themeValueBad, btnHtml, sectionHtml, validateTpl };

@@ -339,6 +339,53 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-rocker-col .rmt-btn:active,.rmt-rocker-col .rmt-btn.p{background:rgba(255,255,255,.18);border-color:transparent}
 .rmt-rocker-label{font-size:9px;color:var(--rb-label,var(--muted));font-weight:700;text-transform:uppercase;letter-spacing:.4px}
 .rmt-rocker-solo{background:none;border:none;padding:0;width:auto}
+/* ── LCD panel ───────────────────────────────────────────────────
+   A small screen inside the remote: label/value lines fed by the keyboard's own
+   state or by an ESPHome entity named in `lcd_sources`. Its colours default to
+   a real display rather than to the page palette, so a panel dropped into any
+   style still reads as a screen on a light page as well as a dark one — and a
+   style that wants it to match sets the lcd_* theme keys, all of them, the same
+   rule every other colour here follows. The face is a system monospace stack:
+   the page is served from flash with nothing to fetch a font from, and a
+   theme url() is refused outright. */
+.rmt-lcd{background:var(--rb-lcd-bg,#11161c);border:1px solid var(--rb-lcd-border,rgba(0,0,0,.55));
+  border-radius:var(--rb-lcd-radius,8px);padding:8px 10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.55);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  font-variant-numeric:tabular-nums;overflow:hidden;
+  /* A declared width arrives as an inline `width` in ch, so the box has to
+     count its own padding and border — and centre itself once it is narrower
+     than the remote. font-size is pinned because ch is measured against it. */
+  font-size:14px;box-sizing:border-box;margin:0 auto}
+/* Sized in characters, so it cuts a long value off the way a real display does
+   rather than wrapping and growing. min-width:0 is what lets a flex item
+   shrink below its text at all; without it the ellipsis never appears. */
+.rmt-lcd.fixed .rmt-lcd-line{overflow:hidden}
+.rmt-lcd.fixed .rmt-lcd-val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* Default is space-between: the label at one edge and the value at the other,
+   which is how a real panel reads. An alignment token packs the pair together
+   and puts it where it says instead — and carries the value's own text-align
+   with it, which is what a value long enough to wrap needs. */
+.rmt-lcd-line{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-height:16px}
+.rmt-lcd-line+.rmt-lcd-line{margin-top:4px}
+.rmt-lcd-line.left{justify-content:flex-start}
+.rmt-lcd-line.center{justify-content:center}
+.rmt-lcd-line.right{justify-content:flex-end}
+.rmt-lcd-line.left .rmt-lcd-val{text-align:left}
+.rmt-lcd-line.center .rmt-lcd-val{text-align:center}
+/* A line with no value is a title: no value column to sit opposite, so the
+   renderer gives it `center` unless the style asked for something else. */
+.rmt-lcd-line.title .rmt-lcd-label{white-space:normal}
+.rmt-lcd-label{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--rb-lcd-label,#7a8a80);white-space:nowrap}
+.rmt-lcd-line.title .rmt-lcd-label{font-size:10px}
+/* Wraps rather than clips: a text sensor can hand back a whole now-playing
+   string, and a panel that only ever showed the first line of it would look
+   like the value was wrong rather than long. */
+.rmt-lcd-val{font-size:14px;font-weight:600;color:var(--rb-lcd-fg,#6ee7a0);
+  text-align:right;overflow-wrap:anywhere;line-height:1.25}
+.rmt-lcd-val.sm{font-size:11px}
+.rmt-lcd-val.lg{font-size:18px}
+.rmt-lcd-val.xl{font-size:24px}
 /* ── Per-button variants ─────────────────────────────────────────
    Size and shape are classes so the cost is paid once however many styles use
    them; only a validated #rrggbb ever reaches an inline style attribute. */
@@ -744,6 +791,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["rocker",…]</code></dt><dd>The same groups as one-piece rocker keys. <code>["","mute"]</code> is a single key of the same height.</dd>
 <dt><code>["media",…]</code></dt><dd>A row of small transport buttons.</dd>
 <dt><code>["apps",…]</code></dt><dd>A row of wide pills.</dd>
+<dt><code>["lcd",…]</code></dt><dd>A small screen: <code>["lcd",["Room","temp"],["Host","@host"]]</code>. Each line is a label and the value to show &mdash; <code>@host @slot @mac @state @rssi @battery @layout</code> come from the keyboard itself, any other name is an entry in the component's <code>lcd_sources:</code>. A third entry sizes and justifies one line: <code>sm lg xl</code>, <code>left centre right</code>, or a <code>#hex</code> colour. Left alone a line spreads &mdash; label one side, value the other. A settings object in front of the lines sizes the panel itself like a real display: <code>{"cols":16,"rows":2}</code> is 16 characters by 2 lines (4&ndash;40 and 1&ndash;8), and <code>fg bg label border</code> colour that panel alone.</dd>
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
@@ -1120,6 +1168,10 @@ function pollStatus(){
     // poll: the Host Actions dropdown mirrors the macro list's innerHTML, so
     // copies appear later than any single load-time pass would catch.
     document.querySelectorAll('option.ha-preset').forEach(o=>{o.disabled=!d.ha_action;o.style.display=d.ha_action?'':'none'});
+    // Whatever the style on screen asked for. Sent on every tick rather than
+    // only when it changes: the map is a handful of short strings, and the
+    // comparison to avoid re-painting them would cost more than the paint.
+    if(window.applyLcd)window.applyLcd(d.lcd||null);
   }).catch(()=>{
     sdot.className='status-dot';
     stxt.className='status-text';
@@ -1227,7 +1279,7 @@ spare13:{t:'Spare 13',x:'13',g:8},
 spare14:{t:'Spare 14',x:'14',g:8},
 spare15:{t:'Spare 15',x:'15',g:8},
 spare16:{t:'Spare 16',x:'16',g:8}};
-const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','-'];
+const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','lcd','-'];
 // A theme may only set these, and each maps to a custom property the .rmt-*
 // rules already read. An imported template therefore cannot inject CSS: keys
 // outside this table are dropped, values only ever land in a --rb-* property.
@@ -1237,7 +1289,9 @@ const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb
 maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',
 btn_radius:'--rb-btn-radius',ok_bg:'--rb-ok-bg',ok_fg:'--rb-ok-fg',
 ring_bg:'--rb-ring-bg',ring_fg:'--rb-ring-fg',light_bg:'--rb-light-bg',light_fg:'--rb-light-fg',shadow:'--rb-shadow',
-label:'--rb-label',divider:'--rb-divider',clip:'--rb-clip'};
+label:'--rb-label',divider:'--rb-divider',clip:'--rb-clip',
+lcd_bg:'--rb-lcd-bg',lcd_fg:'--rb-lcd-fg',lcd_label:'--rb-lcd-label',
+lcd_border:'--rb-lcd-border',lcd_radius:'--rb-lcd-radius'};
 // `radius` takes the whole CSS border-radius grammar, including the two-axis
 // `/` form — that is what makes an egg or a teardrop body, no code needed.
 // `clip` goes further for a genuine taper, and is the one theme value with a
@@ -1268,6 +1322,17 @@ function themeValueBad(k,v){
 // renderer applies them and the importer validates them, and they must agree —
 // keeping them in one place is what stops the two drifting apart.
 const RMT_OPTS=['light','sm','lg','xl','wide','sq'];
+// The same two things for an lcd line: what a line may carry, and the values
+// this firmware can resolve on its own. A built-in is spelled with a leading @
+// so the two namespaces cannot collide — a key naming an `lcd_sources:` entry
+// and one naming device state are told apart by sight, and a typo in either is
+// never silently read as the other.
+const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
+// Colours a single panel may set for itself, overriding the style-wide lcd_*
+// theme keys. Each is the same --rb-lcd-* custom property the stylesheet
+// already reads, so a panel-level colour needs no CSS of its own.
+const RMT_LCD_COLOURS=['fg','bg','label','border'];
+const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout'];
 const RMT_HEX=/^#[0-9a-f]{3,8}$/i;
 // Built-in styles. `default` reproduces the fixed markup the remote had before
 // styles existed, so a host that never picks one sees no change at all. The
@@ -1343,7 +1408,24 @@ const RMT_BUILTIN=[
  ['row','back',['home','','light'],'tv'],
  ['rocker',['Vol','volume_up','volume_down'],['','mute'],['Ch','channel_up','channel_down']],
  ['apps',['spare5','App 1','light wide'],['spare6','App 2','light wide'],['spare7','App 3','light wide']],
- ['apps',['spare8','App 4','light wide']]]}];
+ ['apps',['spare8','App 4','light wide']]]},
+// The one built-in with a screen. It reads @host and @state, which the firmware
+// always knows, so it says something useful the moment it is picked — no
+// lcd_sources, no sensor, nothing to configure. 16 characters wide so it sits
+// in the body as a display rather than a banner, and two reserved rows so it
+// holds its height as a host name changes length.
+{id:'style6',name:'Style 6',theme:{bg:'#17181d',border:'#2a2c33',radius:'34px',pad:'22px 12px',
+ maxw:'280px',zoom:'1.27',btn_bg:'#232630',btn_fg:'#e8e8ec',btn_border:'#303341',
+ ok_bg:'#454a5c',divider:'#303341'},sections:[
+ ['row','remote_power','|','search','mute'],
+ ['dpad'],
+ ['row','back','home','info'],
+ ['media','rewind','play_pause','fast_forward'],
+ ['strip',['Vol','volume_up','volume_down'],['Ch','channel_up','channel_down']],
+ ['-'],
+ ['lcd',{cols:16,rows:2,fg:'#7fd4ff',bg:'#0e1014',label:'#5a6b78',border:'#303341'},
+  ['','@host','centre'],['','@state','sm centre']],
+ ['apps',['spare1','Spare 1'],['spare2','Spare 2'],['spare3','Spare 3'],['spare4','Spare 4']]]}];
 // User-authored styles, fetched from the device. `index` is the storage slot
 // they came from, which is what an update or a delete addresses.
 // RMT_CUSTOM_LOADED says whether the device has been asked yet, which is what
@@ -2258,9 +2340,30 @@ function appendStep(el,val){
     }
     const ss=p.sections||[];
     out.push('  "sections": [');
-    ss.forEach((s,i)=>out.push('    '+JSON.stringify(s)+(i<ss.length-1?',':'')));
+    ss.forEach((s,i)=>out.push(tplSectionText(s)+(i<ss.length-1?',':'')));
     out.push('  ]','}');
     return out.join('\n');
+  }
+  // A section that no longer fits one line breaks between whole elements, never
+  // inside one, so every line is still a complete group to move or delete.
+  // 100 is not arbitrary: measured across the built-ins it is the width that
+  // separates the sections made of *groups* — app pills, colour keys, an lcd's
+  // display lines, all of which read better stacked — from the ones made of
+  // bare action names, where one line per name would be nine lines of noise.
+  const TPL_WRAP=100;
+  function tplSectionText(s){
+    const parts=s.map(e=>JSON.stringify(e));
+    const one='    ['+parts.join(',')+']';
+    // Under two elements there is nothing to break between, and the split below
+    // would write a dangling "[kind,". Nothing that short can reach the width
+    // today; a future kind has no business breaking the export.
+    if(one.length<=TPL_WRAP||parts.length<3)return one;
+    // The kind keeps the first element company on the opening line. On its own
+    // it reads as though something is missing, and spends a whole line saying
+    // only what kind of section this is. Everything after gets its own line.
+    const rest=parts.slice(2);
+    return '    ['+parts[0]+','+parts[1]+',\n'+
+           rest.map((p,i)=>'      '+p+(i<rest.length-1?',':'')).join('\n')+']';
   }
 
   // V8 and WebKit put a character offset in a parse error; Firefox writes
@@ -2344,6 +2447,73 @@ function appendStep(el,val){
         if(s.length>1&&s.length!==6)
           return 'A '+s[0]+' section lists exactly 5 actions (up, left, centre, right, down) or none';
         items=s.slice(1);
+      }else if(s[0]==='lcd'){
+        // Lines are ["Label","key"], label first — the way a strip or rocker
+        // group carries its label. Nothing in here is a button, so `items` is
+        // left empty and the button loop below never sees them.
+        // An optional settings object in front of the lines gives the panel a
+        // size in characters and lines, the way a display is specified.
+        let lines=s.slice(1),cfg=null;
+        if(lines.length&&lines[0]&&typeof lines[0]==='object'&&!Array.isArray(lines[0])){
+          cfg=lines[0];
+          lines=lines.slice(1);
+          for(const k in cfg){
+            if(RMT_LCD_COLOURS.indexOf(k)>=0){
+              // Hex and nothing else: these land in an inline style, the same
+              // rule a button's colour token follows.
+              if(typeof cfg[k]!=='string'||!RMT_HEX.test(cfg[k]))
+                return 'lcd "'+k+'" must be a #hex colour, e.g. {"'+k+'":"#6ee7a0"}';
+              continue;
+            }
+            if(k!=='cols'&&k!=='rows')
+              return 'An lcd panel takes cols, rows, '+RMT_LCD_COLOURS.join(', ')+
+                     ' — "'+k+'" is none of them';
+            const n=cfg[k];
+            if(typeof n!=='number'||!isFinite(n)||n!==Math.floor(n))
+              return 'lcd "'+k+'" must be a whole number, e.g. {"cols":16,"rows":2}';
+          }
+          if(cfg.cols!==undefined&&(cfg.cols<4||cfg.cols>40))
+            return 'lcd "cols" is 4-40 characters — "'+cfg.cols+'" is outside that';
+          if(cfg.rows!==undefined&&(cfg.rows<1||cfg.rows>8))
+            return 'lcd "rows" is 1-8 lines — "'+cfg.rows+'" is outside that';
+        }
+        if(!lines.length)return 'An lcd section needs at least one line: ["lcd",["Room","temp"]]';
+        // Declaring rows is also declaring how many lines fit: a panel with
+        // more lines than rows would draw outside the height it asked for.
+        const maxLines=(cfg&&cfg.rows)?cfg.rows:8;
+        if(lines.length>maxLines)
+          return 'This lcd panel holds '+maxLines+' line'+(maxLines===1?'':'s')+
+                 ' — it has '+lines.length+(cfg&&cfg.rows?'. Raise "rows", or add a second ["lcd",…]':
+                 '. Add a second ["lcd",…] for more');
+        for(const g of lines){
+          if(!Array.isArray(g)||g.length<2||g.length>3)
+            return 'An lcd line is ["Label","key"] or ["Label","key","opts"]';
+          if(typeof g[0]!=='string')return 'An lcd line starts with its label — "" for none';
+          // Same 16 a button label gets: one number to remember, and a title
+          // line has the whole panel to itself. A long label beside a value
+          // squeezes it, which is visible and the author's to judge.
+          if(g[0].length>16)return 'lcd labels are up to 16 characters — "'+g[0]+'" is too wide';
+          if(typeof g[1]!=='string')
+            return 'An lcd line names the value to show, or "" for a label-only title';
+          if(g[1].charAt(0)==='@'){
+            if(RMT_LCD_KEYS.indexOf(g[1])<0)
+              return 'Unknown built-in value "'+g[1]+'" — use '+RMT_LCD_KEYS.join(', ');
+          }else if(g[1]&&!/^[a-z0-9_]{1,16}$/.test(g[1])){
+            // Only the spelling of a declared key can be checked: whether the
+            // node actually has an lcd_sources entry by that name is something
+            // the browser cannot know. One that names nothing draws as "--",
+            // which is what a real display does with a missing reading.
+            return 'An lcd key is 1-16 characters of a-z, 0-9 or _, or a built-in such as @host';
+          }
+          if(g.length===3){
+            if(typeof g[2]!=='string')return 'lcd options must be a string, e.g. "lg right"';
+            for(const tok of g[2].split(/\s+/)){
+              if(!tok)continue;
+              if(!RMT_HEX.test(tok)&&RMT_LCD_OPTS.indexOf(tok)<0)
+                return 'Unknown lcd option "'+tok+'" — use a #hex colour or '+RMT_LCD_OPTS.join(', ');
+            }
+          }
+        }
       }else{
         items=s.slice(1);
       }
@@ -3589,6 +3759,26 @@ buildKeyboard();
   };
   window.applyHold(true);
 
+  // ── LCD panels ──
+  // Fills every screen the current style drew. Values arrive already formatted
+  // by the device — unit, decimals and all — so nothing here has to know what
+  // kind of entity is behind a key. Lives in this scope for `card`, which the
+  // pop-out window takes the remote with it: querying `document` instead would
+  // stop updating the moment the remote left the page.
+  // Called with a fresh map by the status poll, and with nothing at all by the
+  // renderer after a redraw — a new style's panels would otherwise sit on their
+  // placeholder dashes until the next tick.
+  let lastLcdVals=null;
+  window.applyLcd=function(vals){
+    if(vals!==undefined)lastLcdVals=vals;
+    card.querySelectorAll('[data-lcd]').forEach(el=>{
+      const v=lastLcdVals?lastLcdVals[el.dataset.lcd]:undefined;
+      // A key nothing answers keeps the dashes the renderer drew, which is what
+      // a real display does with a reading it hasn't got.
+      el.textContent=(v===undefined||v===null||v==='')?'--':v;
+    });
+  };
+
   // ── Per-host hidden buttons ──
   // Hides the buttons this host has no use for, then collapses any container
   // left empty so no stray label or divider is stranded behind them.
@@ -3610,7 +3800,11 @@ buildKeyboard();
       // Holding the shape stops once there is no shape left to hold: a group or
       // section with nothing visible in it collapses entirely rather than
       // leaving a band of empty slots.
-      const empty=el=>![...el.querySelectorAll('[data-action]')].some(b=>b.style.visibility!=='hidden');
+      // A panel is not a button, so a section holding one is never empty — every
+      // key beside it can be hidden for this host and the screen still has
+      // something to say. Without this the first poll after a draw deletes it.
+      const empty=el=>!el.querySelector('.rmt-lcd')&&
+        ![...el.querySelectorAll('[data-action]')].some(b=>b.style.visibility!=='hidden');
       card.querySelectorAll('.rmt-strip-group').forEach(g=>{g.style.display=empty(g)?'none':''});
       card.querySelectorAll('.rmt-section').forEach(s=>{s.style.display=empty(s)?'none':''});
       // A divider only earns its place between two visible sections.
@@ -3711,6 +3905,59 @@ buildKeyboard();
     }else if(k==='media'||k==='apps'){
       inner='<div class="rmt-'+(k==='media'?'media-row':'app-row')+'">'+
             s.slice(1).map(a=>btnHtml(a)).join('')+'</div>';
+    }else if(k==='lcd'){
+      // The panel is drawn empty and filled in afterwards: the device page puts
+      // numbers in it from its status poll, the Home Assistant card from entity
+      // state. `data-lcd` is the only hook either of them needs, which is what
+      // lets one renderer serve two very different sources of truth.
+      // An optional settings object in front of the lines sizes the panel the
+      // way a character display is specified — 16 across by 2 down. Without it
+      // the panel fills the remote's width and grows with whatever it is given.
+      const cfg=(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
+      let pstyle='';
+      if(cfg){
+        // Only ever whole numbers the validator has already bounded, so this is
+        // the one place besides a #hex that builds an inline style here.
+        // 22px = the panel's own padding and border, counted by box-sizing.
+        if(cfg.cols)pstyle+='width:calc('+(cfg.cols|0)+'ch + 22px);';
+        // Reserve the height of N lines, so a panel declared taller than its
+        // content keeps that size and one whose values change length does not
+        // jump. In the stylesheet's own terms rather than pixels: a line box is
+        // 1.25em of the panel's pinned font, 4px separates two, and 18px is the
+        // padding and border a border-box min-height has to include.
+        if(cfg.rows)pstyle+='min-height:calc('+(cfg.rows|0)+' * 1.25em + '+
+                            (4*((cfg.rows|0)-1))+'px + 18px);';
+        // Straight onto the custom properties the stylesheet already reads, so
+        // one panel can be a different colour from another in the same style
+        // without a rule of its own. Hex-validated above.
+        for(const c of RMT_LCD_COLOURS)
+          if(typeof cfg[c]==='string')pstyle+='--rb-lcd-'+c+':'+cfg[c]+';';
+      }
+      inner='<div class="rmt-lcd'+(cfg&&cfg.cols?' fixed':'')+'"'+
+            (pstyle?' style="'+pstyle+'"':'')+'>'+s.slice(cfg?2:1).map(g=>{
+        const lab=g[0]||'',key=g[1]||'';
+        let sz='',align='',css='';
+        if(typeof g[2]==='string')for(const tok of g[2].split(/\s+/)){
+          if(!tok)continue;
+          // Same strict hex test the buttons use, and for the same reason: it is
+          // the only value here that reaches an inline style attribute.
+          if(RMT_HEX.test(tok))css='color:'+tok;
+          // Both spellings of the middle one, mapped to the CSS spelling so
+          // there is still only one class to style.
+          else if(tok==='centre'||tok==='center')align='center';
+          else if(tok==='left'||tok==='right')align=tok;
+          else if(RMT_LCD_OPTS.indexOf(tok)>=0)sz+=' '+tok;
+        }
+        // A title has no value to sit opposite, so it centres unless the style
+        // said otherwise. Everything else defaults to no alignment class at
+        // all, which leaves the label and value spread to opposite edges.
+        if(!key)return '<div class="rmt-lcd-line title '+(align||'center')+'">'+
+               '<span class="rmt-lcd-label">'+esc(lab)+'</span></div>';
+        return '<div class="rmt-lcd-line'+(align?' '+align:'')+'">'+
+               (lab?'<span class="rmt-lcd-label">'+esc(lab)+'</span>':'')+
+               '<span class="rmt-lcd-val'+sz+'" data-lcd="'+esc(key)+'"'+
+               (css?' style="'+css+'"':'')+'>--</span></div>';
+      }).join('')+'</div>';
     }
     return '<div class="rmt-section">'+inner+'</div>';
   }
@@ -3743,6 +3990,9 @@ buildKeyboard();
     // Forced: the buttons are new, so whatever this host hides has to be
     // reapplied even though the hidden set itself did not change.
     window.applyHidden(true);
+    // Same reason: any panel this style drew is showing its placeholder dashes
+    // and the values are already in hand from the last poll.
+    window.applyLcd();
     // A window holding this remote is sized around it, so a style of a different
     // shape — which is what a host switch usually brings — has to take the window
     // with it. Defined by whichever side owns that window; absent when docked.

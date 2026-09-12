@@ -39,6 +39,9 @@
  *   # active_host_entity: sensor.bluetooth_keyboard_active_host  # (auto-detected)
  *   # show_mac: true               # show the active host's MAC address (default true)
  *   # host_url: http://192.168.1.50  # ESP address (auto-detected from HA)
+ *   # lcd_entity: sensor.x_lcd      # values for ["lcd",…] panels (auto-detected)
+ *   # lcd_entities:                 # read these keys from HA instead
+ *   #   temp: sensor.lounge_temperature
  *
  * Per-host hiding: if the device exposes the optional `hidden_buttons` text
  * sensor, this card hides whatever the active host hides on the web remote, and
@@ -56,6 +59,13 @@
  * "Export all" button to copy every custom style at once as a JSON array.
  * Styles only ever travel web page -> card; the card never writes back.
  * show_apps / show_color / show_numpad filter whichever style is drawn.
+ *
+ * LCD panels: a style may carry ["lcd",…] sections — small screens showing a
+ * label and a live value. Keys beginning @ are the keyboard's own state and
+ * need nothing configured; any other key names an `lcd_sources:` entry on the
+ * device, whose formatted values arrive through the optional `lcd` text sensor.
+ * `lcd_entities` maps a key to a Home Assistant entity instead, which wins over
+ * the device's value and is how a panel shows something the ESP never sees.
  *
  * Full example with overrides:
  *   type: custom:ble-remote-card
@@ -123,6 +133,7 @@ class BleRemoteCard extends HTMLElement {
     this._renderStyle();
     this._applyHidden();
     this._applyHoldAndRepeat();
+    this._applyLcd();
     // Track active host changes via HA sensor entity. The firmware publishes to
     // this sensor on every switch_host() path — HA service, the device's own web
     // UI, a physical button — so every card following it stays in step with the
@@ -179,6 +190,16 @@ class BleRemoteCard extends HTMLElement {
       // fetch the device's API, so /hosts alone is not enough.
       remote_style_entity: config.remote_style_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_remote_style`,
+      // The values an ["lcd",…] panel shows. Same reasoning as the lists above:
+      // the device already formats them, and a text sensor is the only way they
+      // reach a dashboard on https.
+      lcd_entity: config.lcd_entity ||
+        `sensor.${config.device.replace(/-/g, '_')}_lcd`,
+      // Per-key overrides, {key: entity_id}. These read Home Assistant directly,
+      // so a panel can show something the keyboard's own node knows nothing
+      // about — and they win over the device's value for the same key.
+      lcd_entities: (config.lcd_entities && typeof config.lcd_entities === 'object')
+        ? config.lcd_entities : {},
     };
     // Forces the next _renderStyle() to redraw even if the resolved id is
     // unchanged — the pasted JSON may have been edited under the same id.
@@ -199,6 +220,7 @@ class BleRemoteCard extends HTMLElement {
     this._lastHold = undefined;
     this._lastRepeat = undefined;
     this._lastHidden = undefined;
+    this._lastLcd = undefined;
     // Released, not dropped — reconfiguring the card mid-press must not leave a
     // key down on the host. No-ops when nothing is held.
     this._endHold();
@@ -300,12 +322,73 @@ class BleRemoteCard extends HTMLElement {
     });
     // Holding the shape stops once there is no shape left to hold: a group or
     // section with nothing visible collapses rather than leaving empty slots.
-    const empty = el => ![...el.querySelectorAll('[data-action]')]
-      .some(b => b.style.visibility !== 'hidden');
+    // A panel is not a button, so a section holding one is never empty — every
+    // key beside it can be hidden for this host and the screen still has
+    // something to say. Without this the first state update after a draw
+    // deletes it.
+    const empty = el => !el.querySelector('.rmt-lcd') &&
+      ![...el.querySelectorAll('[data-action]')]
+        .some(b => b.style.visibility !== 'hidden');
     this.shadowRoot.querySelectorAll('.rmt-strip-group, .rmt-rocker-col')
       .forEach(g => { g.style.display = empty(g) ? 'none' : ''; });
     this.shadowRoot.querySelectorAll('.rmt-section')
       .forEach(s => { s.style.display = empty(s) ? 'none' : ''; });
+  }
+
+  // The unknown/unavailable dance, which four callers here need.
+  _entityState(entity) {
+    const ent = entity && this._hass && this._hass.states[entity];
+    return ent && typeof ent.state === 'string' &&
+           ent.state !== 'unknown' && ent.state !== 'unavailable' ? ent.state : '';
+  }
+
+  // Fills every screen the current style drew. Three sources, in increasing
+  // precedence: the device's own lcd sensor, whose values arrive already
+  // formatted — unit, decimals and all, so nothing here needs to know what kind
+  // of entity is behind a key; the built-ins the card can answer by itself,
+  // which is what keeps a host readout working on an https dashboard that
+  // cannot reach the device at all; and the per-key entity overrides, which are
+  // the point of naming a Home Assistant entity in the first place.
+  _applyLcd(force) {
+    if (!this._hass || !this.shadowRoot) return;
+    const spans = this.shadowRoot.querySelectorAll('[data-lcd]');
+    if (!spans.length) return;      // no panel drawn: nothing to read or to paint
+
+    const raw = this._entityState(this._config.lcd_entity);
+    const keys = Object.keys(this._config.lcd_entities);
+    // The overrides' own states belong in the change key, or a panel fed
+    // entirely from Home Assistant would never repaint. So does the active
+    // slot, which is what the built-ins below are derived from.
+    const stamp = raw + ' :: ' + this._activeSlot + ' :: ' +
+      keys.map(k => k + '=' + this._entityState(this._config.lcd_entities[k])).join(';');
+    if (!force && stamp === this._lastLcd) return;
+    this._lastLcd = stamp;
+
+    let vals = {};
+    if (raw) {
+      // A state caught mid-write is not worth a broken panel — the next update
+      // is 3 s away and the dashes say plainly that nothing arrived.
+      try { const o = JSON.parse(raw); if (o && typeof o === 'object') vals = o; } catch (e) { vals = {}; }
+    }
+    const slot = this._activeSlot || 0;
+    const apiSlot = (this._hostSlots || []).find(s => s.slot === slot);
+    const names = this._config.host_names;
+    if (this._config.host_slots > 0) {
+      vals['@slot'] = String(slot);
+      // Same order of preference the host bar uses, so the two never disagree.
+      vals['@host'] = (names && names[slot]) || (apiSlot && apiSlot.name) ||
+                      vals['@host'] || ('Host ' + (slot + 1));
+      const addr = apiSlot && apiSlot.occupied && (apiSlot.identity || apiSlot.addr);
+      if (addr) vals['@mac'] = addr;
+    }
+    for (const k of keys) {
+      const v = this._entityState(this._config.lcd_entities[k]);
+      if (v) vals[k] = v;
+    }
+    spans.forEach(el => {
+      const v = vals[el.dataset.lcd];
+      el.textContent = (v === undefined || v === null || v === '') ? '--' : String(v);
+    });
   }
 
   _initialize() {
@@ -832,6 +915,9 @@ class BleRemoteCard extends HTMLElement {
     // Forced: the buttons are new, so whatever this host hides has to be
     // reapplied even though the hidden list itself did not change.
     this._applyHidden(true);
+    // Same reason: any panel this style drew is showing its placeholder dashes,
+    // and the values are already in hand from the last state update.
+    this._applyLcd(true);
   }
 
   // show_apps / show_color / show_numpad filter whatever style is drawn, rather
@@ -952,6 +1038,11 @@ function remoteEditorSchema(config) {
     { name: 'hidden_entity', selector: { entity: { domain: 'sensor' } } },
     { name: 'hold_entity', selector: { entity: { domain: 'sensor' } } },
     { name: 'repeat_entity', selector: { entity: { domain: 'sensor' } } },
+    { name: 'lcd_entity', selector: { entity: { domain: 'sensor' } } },
+    // An object, so the fallback editor below — which has no object selector —
+    // shows it as a text box. That is survivable: it is the one field most
+    // cards never set.
+    { name: 'lcd_entities', selector: { object: {} } },
     { name: 'host_slots', selector: { number: { min: 0, max: 10, step: 1, mode: 'box' } } },
     { name: 'host_names', selector: { text: {} } },
     { name: 'active_host_entity', selector: { entity: { domain: 'sensor' } } },
@@ -973,6 +1064,8 @@ const REMOTE_EDITOR_LABELS = {
   hidden_entity: 'Hidden-buttons sensor (optional)',
   hold_entity: 'Press-and-hold sensor (optional)',
   repeat_entity: 'Hold-to-repeat sensor (optional)',
+  lcd_entity: 'LCD values sensor (optional)',
+  lcd_entities: 'LCD keys read from Home Assistant instead, e.g. temp: sensor.lounge',
   host_slots: 'Host switcher (needs 2+; 0 = hide)',
   host_names: 'Host names, comma-separated (optional)',
   active_host_entity: 'Active-host sensor (optional)',
@@ -1078,6 +1171,10 @@ function buildFallbackEditor(schema, labels, getConfig, onChange) {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex;flex-direction:column;gap:10px;padding:8px 0';
   schema.forEach((item) => {
+    // Nothing here can edit a map, and a text input would render one as
+    // "[object Object]" and then save that back over it. Leaving the row out
+    // costs a field this editor never had; drawing it would lose the value.
+    if (item.selector.object) return;
     const row = document.createElement('label');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:14px';
     const isBool = !!item.selector.boolean;

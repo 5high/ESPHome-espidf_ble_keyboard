@@ -7,11 +7,33 @@ web control page shows the matching version badge.
 ## Unreleased
 
 ### Added
+- **The remote can show a small screen.** A style may place an `lcd` section carrying a few
+  label-and-value lines — temperature, what is playing, which host is live — on the web page and on
+  the Home Assistant card alike. Values beginning `@` are the keyboard's own and need nothing
+  configured; anything else names an entity listed in the component's new `lcd_sources:`, which the
+  device reads and formats itself, or a Home Assistant entity named on the card. A panel can be
+  specified the way a real display is — so many characters across by so many lines down, in its own
+  colours — and each line takes size, justification and colour tokens like a button's.
+
+- **A sixth built-in remote style, the first with a screen.** A media-box slab whose display names the
+  active host and says whether it is connected, over four spare pills waiting for per-host overrides.
+  It reads values the firmware always has, so it says something useful the moment it is picked.
+
 - **One button can now step through the hosts.** `switch_host:next` and `switch_host:prev` move one
   slot forward or back and wrap around at the ends, so a physical button, a macro or a per-host
   override can rotate through the paired machines without naming a slot. Until now that cycling
   existed only as arrows on the Home Assistant cards, computed in the browser. Unpaired slots stay
   in the rotation, and a single-slot setup ignores it rather than dropping its link.
+
+### Fixed
+- **Backing up with custom styles no longer churns the heap.** The size estimate the backup reserves
+  from left the styles out entirely, so a device holding several of them grew the document by
+  repeated reallocation instead — on the one heap that has the Bluetooth stack in it.
+
+### Changed
+- **Exported styles wrap their longest sections.** A section too wide for the box now breaks between
+  whole groups instead of running off the side, so an app row or a display panel is a short stack of
+  lines that can be moved or deleted one at a time. Short sections still print one per line.
 
 ## v1.9.0 — 2026-09-12
 
