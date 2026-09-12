@@ -51,7 +51,8 @@ enum BondLossCause : uint8_t {
   BOND_LOSS_FORGET = 3,      ///< forget_host(): deliberate, from the UI or an action
   BOND_LOSS_CONFIG = 4,      ///< passkey config changed, so every bond was cleared
   BOND_LOSS_MISSING = 5,     ///< an occupied slot had no bond at boot; nothing here removed it
-  BOND_LOSS_KEPT = 6,        ///< the heuristic fired but the bond was deliberately kept
+  BOND_LOSS_KEPT = 6,        ///< no longer recorded — a peer could repeat it without limit.
+                             ///< The value stays reserved so older records still decode.
   BOND_LOSS_STACK = 7,       ///< pairing failed and Bluedroid itself dropped the bond from flash
 };
 

@@ -833,7 +833,13 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             // coexistence pressure, on a device that also serves a web page. Treating
             // either as proof of a stale key throws away a working bond that would
             // have re-encrypted fine on the next attempt, and the host then has to be
-            // paired again by hand. So they are recorded and the bond is kept.
+            // paired again by hand. So the bond is kept and only the log says so.
+            //
+            // Deliberately not written to the bond log: a host in a bad spot can drop
+            // this way every few seconds, and each record is an NVS write. That is an
+            // unbounded write path driven by a peer's behaviour rather than the user's,
+            // and it would churn the eight-slot ring until the record worth keeping
+            // scrolled out of it.
             if (s_instance && (dc_reason == 0x05 || dc_reason == 0x06 || dc_reason == 0x3D)) {
                 bool is_zero = true;
                 for (int i = 0; i < 6; i++) {
@@ -855,8 +861,6 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                         ESP_LOGW(TAG, "GATTS: Encryption-related disconnect (reason 0x%02X) from "
                                       "host slot %u — keeping the bond; it should re-encrypt on "
                                       "the next connection", dc_reason, i);
-                        s_instance->queue_bond_log(BOND_LOSS_KEPT, dc_reason, i,
-                                                   s_instance->peer_addr_);
                     }
                 }
             }
@@ -1080,14 +1084,34 @@ void EspidfBleKeyboard::bond_log_save_() {
 
 void EspidfBleKeyboard::bond_log_record(uint8_t cause, uint8_t reason, uint8_t slot,
                                         const esp_bd_addr_t addr) {
+    esp_bd_addr_t peer{};
+    if (addr != nullptr) memcpy(peer, addr, sizeof(esp_bd_addr_t));
+    char peer_str[18];
+    format_bd_addr(peer, peer_str);
+
+    // One record per cause per peer per boot. Several of these are driven by what
+    // a peer does rather than by the user — a device that keeps failing to pair,
+    // or one being turned away from a taken slot, retries as fast as it likes —
+    // and every record is an NVS write. Without this, such a device could write
+    // flash in a loop and push the record worth keeping out of the ring. The
+    // first occurrence is the one that carries the information; the repeats only
+    // say it is still happening, which the log already does.
+    if (bond_log_.count > 0) {
+        uint8_t newest = (uint8_t) ((bond_log_.head + BOND_LOG_SLOTS - 1) % BOND_LOG_SLOTS);
+        const BondLossRecord &p = bond_log_.rec[newest];
+        if (p.cause == cause && p.boot_seq == bond_log_.boot_seq &&
+            memcmp(p.addr, peer, sizeof(esp_bd_addr_t)) == 0) {
+            ESP_LOGW(TAG, "Bond log: cause=%u reason=0x%02X addr=%s again this boot — not re-recorded",
+                     (unsigned) cause, (unsigned) reason, peer_str);
+            return;
+        }
+    }
+
     BondLossRecord &r = bond_log_.rec[bond_log_.head];
     r.cause = cause;
     r.reason = reason;
     r.slot = slot;
-    if (addr != nullptr)
-        memcpy(r.addr, addr, sizeof(esp_bd_addr_t));
-    else
-        memset(r.addr, 0, sizeof(esp_bd_addr_t));
+    memcpy(r.addr, peer, sizeof(esp_bd_addr_t));
     r.uptime_s = millis() / 1000;
     r.boot_seq = bond_log_.boot_seq;
 
@@ -1095,10 +1119,8 @@ void EspidfBleKeyboard::bond_log_record(uint8_t cause, uint8_t reason, uint8_t s
     if (bond_log_.count < BOND_LOG_SLOTS) bond_log_.count++;
     bond_log_save_();
 
-    char addr_str[18];
-    format_bd_addr(r.addr, addr_str);
     ESP_LOGW(TAG, "Bond log: cause=%u reason=0x%02X slot=%u addr=%s (boot #%lu, +%lus)",
-             (unsigned) cause, (unsigned) reason, (unsigned) slot, addr_str,
+             (unsigned) cause, (unsigned) reason, (unsigned) slot, peer_str,
              (unsigned long) r.boot_seq, (unsigned long) r.uptime_s);
 }
 
