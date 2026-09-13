@@ -176,6 +176,16 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .tpl-help code{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:0 3px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .tpl-help dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:7px 0}
 .tpl-help dt,.tpl-help dd{margin:0}
+.ico-thumb{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:48px;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg)}
+.ico-thumb svg{width:auto;max-width:42px;height:18px;fill:currentColor}
+/* The same drawing on a dark key and a light one, round and wide, because a
+   logo that reads on one is often invisible on the other. */
+.ico-preview{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ico-preview[hidden]{display:none}
+.ico-face{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px}
+.ico-face.dark{background:#1b1c21;--rb-btn-bg:#2b2d34;--rb-btn-fg:#f2f2f5;--rb-btn-border:#3b3e47}
+.ico-face.light{background:#e9eaef;--rb-btn-bg:#ffffff;--rb-btn-fg:#16161a;--rb-btn-border:#c9cbd3}
+.ico-face .rmt-btn{cursor:default}
 /* .macro-form centres its row, which left Import floating halfway up the side
    of the tall style box. It sits at the foot of the box instead, where a submit
    belongs. */
@@ -404,6 +414,21 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.xl svg{width:26px;height:26px}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
+/* An app tile: a rounded square whose corners run on into its sides, the shape
+   TV launchers draw apps in, on the round side: superellipse(2) is the classic
+   squircle and 1 a circle. Where the browser has corner-shape it draws the true
+   curve; elsewhere a large radius comes close. After .wide and .sq, so it wins
+   when a key carries either. */
+.rmt-btn.squircle{border-radius:42%}
+@supports (corner-shape:superellipse(1.4)){.rmt-btn.squircle{border-radius:50%;corner-shape:superellipse(1.4)}}
+/* An imported icon keeps its own shape. A wordmark is wide, so it takes the
+   key's icon height and as much width as its viewBox asks for, up to the room
+   the key has; its paths keep their own colours where they have any. After the
+   size rules above, which set a fixed width this has to undo. */
+.rmt-btn svg.rmt-ico{width:auto;max-width:78%;height:20px}
+.rmt-btn.sm svg.rmt-ico{height:16px}
+.rmt-btn.xl svg.rmt-ico{height:26px}
+.rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 /* A key showing that the thing it controls is on. Falls back to the style's OK
    colour, so a style that sets nothing still lights up visibly. */
 .rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
@@ -733,6 +758,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="card" id="hostact-card">
 <h2><svg viewBox="0 0 24 24"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>Host Actions<button class="macro-edit-btn" id="bk-save" title="Download all settings as a JSON file">Backup</button><button class="macro-edit-btn" id="bk-load" title="Restore settings from a backup file">Restore</button></h2>
 <input type="file" id="bk-file" accept="application/json,.json" style="display:none">
+<div id="mem-status" style="font-size:11px;color:var(--muted);margin-bottom:6px" hidden title="RAM: free now, the lowest it has been since the keyboard started, and the largest single piece free. Bluetooth, the web server and stored styles all share it, and it is the one that can run short.&#10;&#10;Storage: space left for macros, overrides, styles, icons and pairing keys."></div>
 <div id="bk-status" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
 <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Remap a <strong>named</strong> action for one host, so the same button suits each machine &mdash; e.g. <code>record</code> &rarr; <code>combo:0x0C:0x15</code> (Game Bar) on a Windows host, while a TV host keeps HID Record. Saved per host; YAML rows come from your config and are restored when you delete the override on top.</div>
 <div class="macro-form" style="margin-top:0;margin-bottom:8px">
@@ -810,9 +836,19 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
-A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq</code>). <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
+A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq squircle</code>). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code> &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
 <div class="macro-form"><textarea id="tpl-json" placeholder="Paste a style JSON here to import&hellip;" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="tpl-import">Import</button></div>
 <div id="tpl-msg" style="font-size:11px;color:var(--muted)"></div>
+</div>
+</div>
+<div class="hid-panel" id="ico-panel">
+<button class="hid-toggle" id="ico-toggle">Button Icons &#9662;</button>
+<div class="hid-body" id="ico-body">
+<div style="font-size:12px;color:var(--muted);margin:6px 0">Put a logo on a key. Paste the <strong>text</strong> of a logo's <code>.svg</code> file &mdash; open the file in Notepad and copy all of it, from <code>&lt;svg</code> to <code>&lt;/svg&gt;</code> &mdash; or drag the file onto the box. Give it a name and Import: it is turned into plain shapes in this browser and stored on the keyboard. Then any style can use it: <code>["spare1","Netflix","icon:netflix lg sq"]</code>. <code>lg sq</code> gives the logo a bigger, squarer key; <code>wide</code> suits a long wordmark. <strong>Style 6</strong> is a ready example &mdash; pick it under Remote Style and Export it to see the syntax. Exporting a style takes its icons along, so a style pasted into the Home Assistant card draws them too.</div>
+<div id="ico-list"></div>
+<div class="macro-form"><input id="ico-name" placeholder="Name, e.g. netflix" maxlength="15" autocomplete="off" autocapitalize="off" spellcheck="false" title="1-15 characters of a-z, 0-9 or _. A style names the icon with icon: and this name."><textarea id="ico-svg" placeholder="Paste the SVG's text here &mdash; open the .svg file in Notepad, select all and copy. It starts with &lt;svg.&#10;&#10;Or drag the .svg file onto this box." rows="5" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="ico-import">Import</button></div>
+<div class="ico-preview" id="ico-preview" hidden><span class="ico-face dark"><span class="rmt-btn"></span><span class="rmt-btn wide"></span></span><span class="ico-face light"><span class="rmt-btn"></span><span class="rmt-btn wide"></span></span></div>
+<div id="ico-msg" style="font-size:11px;color:var(--muted)"></div>
 </div>
 </div>
 <div class="hid-panel" id="irk-panel">
@@ -1198,6 +1234,23 @@ function pollStatus(){
 }
 pollEvery(pollStatus,3000);
 
+// ── Free memory, for Host Actions ──
+// Once a minute: it moves slowly, and a number changing every few seconds is
+// noise. A failed read leaves the last figures up; firmware without the
+// endpoint answers 404 and the line stays hidden rather than showing blanks.
+function pollMemory(){
+  const mem=document.getElementById('mem-status');
+  if(!mem)return;
+  fetch('/api/ble_keyboard/memory').then(r=>r.ok?r.json():null).then(m=>{
+    if(!m||typeof m.free!=='number'){mem.hidden=true;return}
+    const kb=n=>Math.round(n/1024)+' KB';
+    mem.textContent='RAM '+kb(m.free)+' free · lowest '+kb(m.min)+' · largest block '+kb(m.block)+
+      (typeof m.store_free==='number'?' · Storage '+kb(m.store_free)+' free of '+kb(m.store_total):'');
+    mem.hidden=false;
+  }).catch(()=>{});
+}
+if(!POPOUT)pollEvery(pollMemory,60000);
+
 // ── Remote button catalog & styles ──
 // Shared by the renderer (which draws the remote) and Host Actions (whose
 // check-grids must list every action whatever style is on screen), so it lives
@@ -1340,7 +1393,7 @@ function themeValueBad(k,v){
 // Appearance tokens a button may carry. Top level, not inside either IIFE: the
 // renderer applies them and the importer validates them, and they must agree —
 // keeping them in one place is what stops the two drifting apart.
-const RMT_OPTS=['light','sm','lg','xl','wide','sq'];
+const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle'];
 // The same two things for an lcd line: what a line may carry, and the values
 // this firmware can resolve on its own. A built-in is spelled with a leading @
 // so the two namespaces cannot collide — a key naming a `sources:` entry
@@ -1359,6 +1412,91 @@ const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout'
 // already text an lcd: action chose, and is shown as written.
 const RMT_LCD_LABELLED=['@last','@station'];
 const RMT_HEX=/^#[0-9a-f]{3,8}$/i;
+// ── Imported icons ──
+// A logo imported through Button Icons and named by a style with icon:<name>.
+// What is stored is never markup: a viewBox and a list of paths, each field of
+// which must pass one of these patterns before the renderer writes any tag or
+// attribute from it. None of them admits a quote or an angle bracket, so a
+// stored icon cannot close an attribute or open an element however it reached
+// the device — which is also why nothing here needs escaping.
+const RMT_ICON_D=/^[MmZzLlHhVvCcSsQqTtAa0-9eE .,+-]+$/;
+const RMT_ICON_VB=/^-?[\d.]+(?:e[-+]?\d+)?(?:[ ,]+-?[\d.]+(?:e[-+]?\d+)?){3}$/i;
+const RMT_ICON_T=/^(?:(?:matrix|translate|scale|rotate|skewX|skewY)\([-\d.eE ,]+\) ?)+$/;
+const RMT_ICON_NAME=/^[a-z0-9_]{1,15}$/;
+// d path data, f fill, r evenodd, t transform, s stroke, w stroke width,
+// c round or square line caps, j round or bevel joins, o opacity.
+const RMT_ICON_KEYS=['d','f','r','t','s','w','c','j','o'];
+const RMT_ICON_LEN=4200;
+const RMT_ICON_MAX=16;
+// The imported icons a draw can see, by name. Refilled by useIcons() just before
+// each draw from whatever that surface has: the device's store on the page, the
+// pasted style's own on the card.
+const RMT_ICONS={};
+// Why a stored icon cannot be drawn, or '' if it can. Run on import and again on
+// every draw, for the reason themeValueBad gives.
+function iconBad(rec){
+  if(!rec||typeof rec!=='object'||Array.isArray(rec))return 'an icon is an object with a vb and a list of paths';
+  if(typeof rec.vb!=='string'||!RMT_ICON_VB.test(rec.vb.trim()))return 'its viewBox must be four numbers';
+  if(!Array.isArray(rec.p)||!rec.p.length||rec.p.length>256)return 'it needs between 1 and 256 paths';
+  const paint=v=>v===undefined||v==='none'||v==='currentColor'||(typeof v==='string'&&RMT_HEX.test(v));
+  const num=(v,hi)=>v===undefined||(typeof v==='number'&&v>=0&&v<=hi);
+  for(const p of rec.p){
+    if(!p||typeof p!=='object'||Array.isArray(p))return 'each path is an object';
+    for(const k of Object.keys(p))if(RMT_ICON_KEYS.indexOf(k)<0)return 'unknown path field "'+k+'"';
+    if(typeof p.d!=='string'||!RMT_ICON_D.test(p.d))return 'path data may hold only path commands and numbers';
+    if(!paint(p.f)||!paint(p.s))return 'a path colour must be a #hex value, none or currentColor';
+    if(p.r!==undefined&&p.r!==1)return 'r is 1 for evenodd, or left out';
+    if(p.t!==undefined&&(typeof p.t!=='string'||!RMT_ICON_T.test(p.t)))
+      return 'a transform may only be matrix, translate, scale, rotate or skew, with numbers';
+    if(!num(p.w,10000)||!num(p.o,1))return 'stroke width and opacity must be numbers in range';
+    if((p.c!==undefined&&p.c!=='round'&&p.c!=='square')||(p.j!==undefined&&p.j!=='round'&&p.j!=='bevel'))
+      return 'line caps are round or square, and joins round or bevel';
+  }
+  return '';
+}
+// Replaces what RMT_ICONS holds rather than adding to it, so an icon from the
+// last style drawn can never turn up on a key of the next one.
+function useIcons(map){
+  for(const k of Object.keys(RMT_ICONS))delete RMT_ICONS[k];
+  if(map&&typeof map==='object')for(const k of Object.keys(map))
+    if(RMT_ICON_NAME.test(k))RMT_ICONS[k]=map[k];
+}
+// The icon: names a style uses, in the order it uses them. Walks buttons the
+// way the renderer reaches them — strip and rocker hold theirs one level down,
+// and an lcd section has none.
+function iconNames(t){
+  const out=[];
+  if(!t||!Array.isArray(t.sections))return out;
+  const look=it=>{
+    if(!Array.isArray(it)||typeof it[2]!=='string')return;
+    for(const tok of it[2].split(/\s+/))
+      if(tok.indexOf('icon:')===0&&out.indexOf(tok.slice(5))<0)out.push(tok.slice(5));
+  };
+  for(const s of t.sections){
+    if(!Array.isArray(s)||s[0]==='lcd')continue;
+    for(const it of s.slice(1)){
+      if(s[0]==='strip'||s[0]==='rocker'){if(Array.isArray(it))it.slice(1).forEach(look)}
+      else look(it);
+    }
+  }
+  return out;
+}
+// An icon's markup: one of ours by id, or an imported record. Top level because
+// the Button Icons panel draws its thumbnails and preview with it too. A record
+// is checked here as well as on import: it reaches this from the device, from
+// this browser's cache and from a restored backup, and only one of those went
+// through the importer. Every tag and attribute below is written here; only
+// checked values fill them.
+function icon(i){
+  if(typeof i==='string')return '<svg viewBox="0 0 24 24">'+RI[i]+'</svg>';
+  if(iconBad(i))return '';
+  return '<svg class="rmt-ico" viewBox="'+i.vb.trim()+'">'+i.p.map(p=>'<path d="'+p.d+'"'+
+    (p.f!==undefined?' fill="'+p.f+'"':'')+(p.r?' fill-rule="evenodd"':'')+
+    (p.t!==undefined?' transform="'+p.t+'"':'')+(p.s!==undefined?' stroke="'+p.s+'"':'')+
+    (p.w!==undefined?' stroke-width="'+p.w+'"':'')+(p.c!==undefined?' stroke-linecap="'+p.c+'"':'')+
+    (p.j!==undefined?' stroke-linejoin="'+p.j+'"':'')+(p.o!==undefined?' opacity="'+p.o+'"':'')+
+    '/>').join('')+'</svg>';
+}
 // Built-in styles. `default` reproduces the fixed markup the remote had before
 // styles existed, so a host that never picks one sees no change at all. The
 // rest are numbered rather than named after the devices they suit: the shapes
@@ -1434,23 +1572,30 @@ const RMT_BUILTIN=[
  ['rocker',['Vol','volume_up','volume_down'],['','mute'],['Ch','channel_up','channel_down']],
  ['apps',['spare5','App 1','light wide'],['spare6','App 2','light wide'],['spare7','App 3','light wide']],
  ['apps',['spare8','App 4','light wide']]]},
-// The one built-in with a screen. It reads @host and @state, which the firmware
-// always knows, so it says something useful the moment it is picked — no
-// sources, no sensor, nothing to configure. 16 characters wide so it sits
-// in the body as a display rather than a banner, and two reserved rows so it
-// holds its height as a host name changes length.
+// The built-in with a screen and logo keys. The screen reads @host and @state,
+// which the firmware always knows, so it says something useful the moment the
+// style is picked — no sources, no sensor, nothing to configure. 16 characters
+// wide so it sits in the body as a display rather than a banner, and two
+// reserved rows so it holds its height as a host name changes length.
+// Every spare names an imported icon with icon:<name>. Until one is imported
+// under that name the key shows its label, so each logo appears as it is added;
+// the last key uses one of the remote's own icons the same way. Pick it and
+// Export to see the syntax written out.
 {id:'style6',name:'Style 6',theme:{bg:'#17181d',border:'#2a2c33',radius:'34px',pad:'22px 12px',
- maxw:'280px',zoom:'1.27',btn_bg:'#232630',btn_fg:'#e8e8ec',btn_border:'#303341',
- ok_bg:'#454a5c',divider:'#303341'},sections:[
+ maxw:'280px',btn_bg:'#232630',btn_fg:'#e8e8ec',btn_border:'#303341',ring_bg:'#232630',
+ ring_fg:'#e8e8ec',ok_bg:'#454a5c',ok_fg:'#ffffff',label:'#8a8d99',divider:'#303341'},sections:[
  ['row','remote_power','|','search','mute'],
- ['dpad'],
- ['row','back','home','info'],
+ ['ring'],
+ ['row','back','home','menu'],
  ['media','rewind','play_pause','fast_forward'],
- ['strip',['Vol','volume_up','volume_down'],['Ch','channel_up','channel_down']],
+ ['rocker',['Vol','volume_up','volume_down'],['Ch','channel_up','channel_down']],
  ['-'],
  ['lcd',{cols:16,rows:2,fg:'#7fd4ff',bg:'#0e1014',label:'#5a6b78',border:'#303341'},
   ['','@host','centre'],['','@state','sm centre']],
- ['apps',['spare1','Spare 1'],['spare2','Spare 2'],['spare3','Spare 3'],['spare4','Spare 4']]]}];
+ ['apps',['spare1','Netflix','icon:netflix lg squircle'],['spare2','YouTube','icon:youtube lg squircle'],
+         ['spare3','Prime Video','icon:prime lg squircle'],['spare4','Disney+','icon:disney lg squircle']],
+ ['apps',['spare5','Spotify','icon:spotify lg squircle'],['spare6','Plex','icon:plex lg squircle'],
+         ['spare7','Kodi','icon:kodi lg squircle'],['spare8','TV','icon:tv lg squircle']]]}];
 // User-authored styles, fetched from the device. `index` is the storage slot
 // they came from, which is what an update or a delete addresses.
 // RMT_CUSTOM_LOADED says whether the device has been asked yet, which is what
@@ -1514,6 +1659,310 @@ function rememberedTemplate(){
     if(c.tpl)return(c.tpl.id===c.id&&Array.isArray(c.tpl.sections))?c.tpl:null;
     return RMT_BUILTIN.find(b=>b.id===c.id)||null;   // renamed or gone: draw nothing yet
   }catch(e){return null}
+}
+
+// ── Imported icons, as this browser has them ──
+// Kept in localStorage for the same reason the last style is: a reload would
+// otherwise draw every logo key as its label and swap the picture in a moment
+// later. The device still has the final say — each icon a draw uses is re-read
+// once per page load, and the remote redrawn only if it came back different.
+const ICON_KEY='blekb_icons';
+let ICON_CACHE={};
+try{
+  const c=JSON.parse(localStorage.getItem(ICON_KEY)||'{}');
+  if(c&&typeof c==='object'&&!Array.isArray(c))ICON_CACHE=c;
+}catch(e){}
+const ICON_FRESH={},ICON_WAIT={};
+function saveIconCache(){try{localStorage.setItem(ICON_KEY,JSON.stringify(ICON_CACHE))}catch(e){}}
+// A popped-out remote is another document with its own copy; this keeps the two
+// agreeing when an icon is imported or deleted in the main page.
+window.addEventListener('storage',e=>{
+  if(e.key!==ICON_KEY)return;
+  try{const c=JSON.parse(e.newValue||'{}');ICON_CACHE=(c&&typeof c==='object'&&!Array.isArray(c))?c:{}}catch(x){ICON_CACHE={}}
+  if(window.redrawRemote)window.redrawRemote();
+});
+// One icon from the device: the cached copy once it has been re-read this page
+// load, otherwise a fetch. null = the device has no icon by that name.
+function fetchIcon(n){
+  if(ICON_FRESH[n])return Promise.resolve(ICON_CACHE[n]||null);
+  if(ICON_WAIT[n])return ICON_WAIT[n];
+  const p=fetch('/api/ble_keyboard/icon?'+new URLSearchParams({name:n})).then(r=>{
+    if(r.status===404)return null;
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.text();
+  }).then(txt=>{
+    let rec=null;
+    if(txt!==null){try{rec=JSON.parse(txt)}catch(e){}if(rec&&iconBad(rec))rec=null}
+    setIcon(n,rec);
+    return rec;
+  });
+  ICON_WAIT[n]=p;
+  const done=()=>{delete ICON_WAIT[n]};
+  p.then(done,done);
+  return p;
+}
+// Records what the device holds for one name, and redraws the remote when that
+// changes something it is showing.
+function setIcon(n,rec){
+  ICON_FRESH[n]=true;
+  const was=ICON_CACHE[n]?JSON.stringify(ICON_CACHE[n]):'';
+  if(rec)ICON_CACHE[n]=rec;else delete ICON_CACHE[n];
+  if((rec?JSON.stringify(rec):'')===was)return;
+  saveIconCache();
+  if(window.redrawRemote)window.redrawRemote(n);
+}
+// Fetches whatever a style names that this page load has not re-read yet.
+function wantIcons(t){
+  iconNames(t).forEach(n=>{
+    if(!Object.prototype.hasOwnProperty.call(RI,n)&&!ICON_FRESH[n])fetchIcon(n).catch(()=>{});
+  });
+}
+
+// Turns a pasted <svg> into the record the device stores. Here rather than on
+// the device because this is the only place with a real SVG parser. DOMParser
+// builds an inert document: nothing in it runs, none of its nodes is ever put
+// into this page, and all that is kept is numbers, path commands and colours
+// read out of it — each of which iconBad() checks again before anything draws.
+// Returns {rec, len, notes} or {err}.
+function svgToIcon(text){
+  const notes=[];
+  const note=m=>{if(notes.indexOf(m)<0)notes.push(m)};
+  let src=String(text||'');
+  const a=src.search(/<svg[\s>]/i),z=src.toLowerCase().lastIndexOf('</svg>');
+  if(a<0||z<a){
+    if(src.indexOf('<')<0&&/\.svg\s*$/i.test(src))
+      return {err:'That is the file\'s name, not what is in it. Open the .svg in Notepad and copy the text, or drag the file onto the box.'};
+    return {err:'That is not SVG text — it should start with <svg. Open the .svg file in Notepad and copy all of it.'};
+  }
+  src=src.slice(a,z+6);
+  // XML first, which is what an .svg file is. A logo copied out of a web page
+  // is often not well-formed XML, and the HTML parser takes those.
+  let root=null;
+  try{
+    const x=new DOMParser().parseFromString(src,'image/svg+xml');
+    if(!x.getElementsByTagName('parsererror').length)root=x.documentElement;
+  }catch(e){}
+  if(!root){
+    try{root=new DOMParser().parseFromString(src,'text/html').querySelector('svg')}catch(e){}
+  }
+  if(!root||root.localName.toLowerCase()!=='svg')return {err:'That did not read as an SVG.'};
+  const doc=root.ownerDocument;
+  const attr=(el,k)=>el.getAttribute(k)!==null?el.getAttribute(k):el.getAttribute(k.toLowerCase());
+  const num=(el,k)=>parseFloat(el.getAttribute(k))||0;
+
+  let vb=(attr(root,'viewBox')||'').trim().replace(/[\s,]+/g,' ');
+  if(!RMT_ICON_VB.test(vb)){
+    const w=attr(root,'width')||'',h=attr(root,'height')||'';
+    if(parseFloat(w)>0&&parseFloat(h)>0&&w.indexOf('%')<0&&h.indexOf('%')<0)vb='0 0 '+parseFloat(w)+' '+parseFloat(h);
+    else return {err:'The SVG has no viewBox, and no width and height to size it by.'};
+  }
+  const vbn=vb.split(' ').map(Number);
+  const span=Math.max(Math.abs(vbn[2]),Math.abs(vbn[3]))||1;
+
+  const decl=s=>{
+    const o={};
+    String(s||'').split(';').forEach(d=>{
+      const i=d.indexOf(':');
+      if(i>0)o[d.slice(0,i).trim().toLowerCase()]=d.slice(i+1).replace(/!important/i,'').trim();
+    });
+    return o;
+  };
+  // Class and element rules from any <style>. Enough for what drawing programs
+  // write (.cls-1{fill:#e50914}); anything cleverer is left to the preview.
+  const rules=[];
+  for(const st of doc.getElementsByTagName('style')){
+    String(st.textContent||'').replace(/\/\*[\s\S]*?\*\//g,'').replace(/([^{}]+)\{([^}]*)\}/g,(m,sel,body)=>{
+      const d=decl(body);
+      sel.split(',').forEach(x=>{
+        x=x.trim();
+        if(/^\.[\w-]+$/.test(x))rules.push(['.'+x.slice(1),d]);
+        else if(/^[a-z]+$/i.test(x))rules.push([x.toLowerCase(),d]);
+      });
+      return '';
+    });
+  }
+  const PROPS=['fill','fill-rule','stroke','stroke-width','stroke-linecap','stroke-linejoin','opacity',
+               'fill-opacity','display','visibility','stop-color','stop-opacity'];
+  const props=el=>{
+    const o={};
+    for(const k of PROPS){const v=el.getAttribute(k);if(v!==null)o[k]=v.trim()}
+    const tag=el.localName.toLowerCase(),cls=(el.getAttribute('class')||'').split(/\s+/);
+    for(const [sel,d] of rules)if(sel===tag||(sel[0]==='.'&&cls.indexOf(sel.slice(1))>=0))Object.assign(o,d);
+    const st=el.getAttribute('style');
+    if(st)Object.assign(o,decl(st));
+    return o;
+  };
+  const byId=id=>{try{return doc.querySelector('[id="'+CSS.escape(id)+'"]')}catch(e){return null}};
+  const hrefOf=el=>el.getAttribute('href')||el.getAttribute('xlink:href')||
+                   el.getAttributeNS('http://www.w3.org/1999/xlink','href');
+  const NAMED={black:'#000',white:'#fff',red:'#f00',lime:'#0f0',green:'#008000',blue:'#00f',
+               yellow:'#ff0',orange:'#ffa500',gray:'#808080',grey:'#808080',silver:'#c0c0c0'};
+  const hex2=v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0');
+  // A gradient becomes one of its colours: the first stop that is mostly opaque,
+  // so one fading in from transparent does not fill its whole shape with the
+  // colour it was fading from.
+  function gradient(id,depth){
+    const g=byId(id);
+    if(!g||depth>4)return '';
+    let best='',bestOp=-1;
+    for(const s of g.getElementsByTagName('stop')){
+      const sp=props(s),c=paint(sp['stop-color']);
+      if(!c||c==='none'||c==='currentColor')continue;
+      const op=sp['stop-opacity']===undefined?1:parseFloat(sp['stop-opacity']);
+      if(!(op<.5))return c;
+      if(op>bestOp){best=c;bestOp=op}
+    }
+    if(best)return best;
+    const h=hrefOf(g);
+    return h&&h[0]==='#'?gradient(h.slice(1),depth+1):'';
+  }
+  // undefined = not set here, so whatever the parent had carries on.
+  function paint(v){
+    if(v===undefined||v===null||v==='')return undefined;
+    v=String(v).trim();
+    const low=v.toLowerCase();
+    if(low==='inherit')return undefined;
+    if(low==='none'||low==='transparent')return 'none';
+    if(low==='currentcolor')return 'currentColor';
+    if(RMT_HEX.test(v))return low;
+    if(NAMED[low])return NAMED[low];
+    let m=/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(v);
+    if(m)return '#'+hex2(+m[1])+hex2(+m[2])+hex2(+m[3]);
+    m=/^url\(\s*['"]?#([^'")\s]+)/i.exec(v);
+    if(m){
+      const c=gradient(m[1],0);
+      if(c){note('gradients became their first colour');return c}
+    }
+    note('a colour it could not read was left to the key\'s own');
+    return undefined;
+  }
+  const ell=(cx,cy,rx,ry)=>'M'+(cx-rx)+' '+cy+'a'+rx+' '+ry+' 0 1 0 '+(2*rx)+' 0a'+rx+' '+ry+' 0 1 0 '+(-2*rx)+' 0z';
+  function shape(el,tag){
+    switch(tag){
+      case 'path':return el.getAttribute('d')||'';
+      case 'rect':{
+        const x=num(el,'x'),y=num(el,'y'),w=num(el,'width'),h=num(el,'height');
+        if(w<=0||h<=0)return '';
+        let rx=el.hasAttribute('rx')?num(el,'rx'):NaN,ry=el.hasAttribute('ry')?num(el,'ry'):NaN;
+        if(isNaN(rx))rx=isNaN(ry)?0:ry;
+        if(isNaN(ry))ry=rx;
+        rx=Math.min(rx,w/2);ry=Math.min(ry,h/2);
+        if(!rx||!ry)return 'M'+x+' '+y+'h'+w+'v'+h+'h'+(-w)+'z';
+        const c=(dx,dy)=>'a'+rx+' '+ry+' 0 0 1 '+dx+' '+dy;
+        return 'M'+(x+rx)+' '+y+'h'+(w-2*rx)+c(rx,ry)+'v'+(h-2*ry)+c(-rx,ry)+'h'+(2*rx-w)+c(-rx,-ry)+'v'+(2*ry-h)+c(rx,-ry)+'z';
+      }
+      case 'circle':{const r=num(el,'r');return r>0?ell(num(el,'cx'),num(el,'cy'),r,r):''}
+      case 'ellipse':{const rx=num(el,'rx'),ry=num(el,'ry');return rx>0&&ry>0?ell(num(el,'cx'),num(el,'cy'),rx,ry):''}
+      case 'line':return 'M'+num(el,'x1')+' '+num(el,'y1')+'L'+num(el,'x2')+' '+num(el,'y2');
+      case 'polyline':case 'polygon':{
+        const pts=(el.getAttribute('points')||'').trim().split(/[\s,]+/).map(Number).filter(v=>!isNaN(v));
+        if(pts.length<4)return '';
+        let d='M'+pts[0]+' '+pts[1];
+        for(let i=2;i+1<pts.length;i+=2)d+='L'+pts[i]+' '+pts[i+1];
+        return tag==='polygon'?d+'z':d;
+      }
+    }
+    return '';
+  }
+  // Whitespace that path grammar does not need: around command letters, before
+  // a minus sign, and commas used as separators.
+  const minD=d=>String(d).replace(/[\s,]+/g,' ').replace(/ ?([A-Za-z]) ?/g,'$1').replace(/ -/g,'-').trim();
+  const SHAPES=['path','rect','circle','ellipse','line','polyline','polygon'];
+  const SKIP=['defs','clippath','mask','filter','style','title','desc','metadata','lineargradient',
+              'radialgradient','pattern','symbol','marker','script','foreignobject','switch'];
+  const paths=[];
+  function walk(el,ctx,depth,forced){
+    if(depth>40)return;
+    const tag=el.localName.toLowerCase();
+    if(!forced&&SKIP.indexOf(tag)>=0)return;
+    if(tag==='text'){note('text was dropped — turn it into outlines in a drawing program first');return}
+    if(tag==='image'){note('an embedded picture was dropped');return}
+    const p=props(el);
+    if(p.display==='none'||p.visibility==='hidden')return;
+    const c=Object.assign({},ctx);
+    const f=paint(p.fill);if(f!==undefined)c.f=f;
+    if(p['fill-rule']!==undefined)c.r=p['fill-rule']==='evenodd';
+    const s=paint(p.stroke);if(s!==undefined)c.s=s;
+    if(p['stroke-width']!==undefined&&parseFloat(p['stroke-width'])>=0)c.w=parseFloat(p['stroke-width']);
+    if(p['stroke-linecap']!==undefined)c.c=p['stroke-linecap'];
+    if(p['stroke-linejoin']!==undefined)c.j=p['stroke-linejoin'];
+    const op=v=>{v=parseFloat(v);return isNaN(v)?1:Math.max(0,Math.min(1,v))};
+    if(p.opacity!==undefined)c.o=c.o*op(p.opacity);
+    if(p['fill-opacity']!==undefined)c.fo=op(p['fill-opacity']);
+    const tr=(el.getAttribute('transform')||'').trim();
+    if(tr){
+      const t=tr.replace(/\s*\(\s*/g,'(').replace(/\s*\)\s*/g,') ').replace(/[\s,]+/g,' ').replace(/ \)/g,')').trim();
+      if(RMT_ICON_T.test(t))c.t=(c.t?c.t+' ':'')+t;
+      else note('a transform it could not read was ignored');
+    }
+    if(el.hasAttribute('clip-path')||el.hasAttribute('mask'))note('clipping and masks were ignored');
+    if(tag==='use'){
+      const h=hrefOf(el),ref=h&&h[0]==='#'?byId(h.slice(1)):null;
+      if(!ref||ref===el){note('a <use> that points nowhere was dropped');return}
+      const x=num(el,'x'),y=num(el,'y');
+      if(x||y)c.t=(c.t?c.t+' ':'')+'translate('+x+' '+y+')';
+      walk(ref,c,depth+1,true);
+      return;
+    }
+    if(SHAPES.indexOf(tag)>=0){
+      const d=minD(shape(el,tag));
+      if(!d)return;
+      if(!RMT_ICON_D.test(d)){note('a shape with unreadable path data was dropped');return}
+      const fill=c.f,stroke=c.s&&c.s!=='none'?c.s:undefined;
+      if(fill==='none'&&!stroke)return;          // paints nothing
+      const o=Math.round(c.o*(fill==='none'?1:c.fo)*1000)/1000;
+      if(o<=0)return;
+      const rec={d:d};
+      if(fill!==undefined)rec.f=fill;
+      if(c.r)rec.r=1;
+      if(c.t)rec.t=c.t;
+      if(stroke){
+        rec.s=stroke;
+        if(c.w!==undefined)rec.w=c.w;
+        if(c.c==='round'||c.c==='square')rec.c=c.c;
+        if(c.j==='round'||c.j==='bevel')rec.j=c.j;
+      }
+      if(o<1)rec.o=o;
+      paths.push(rec);
+      return;
+    }
+    for(const ch of Array.from(el.children))walk(ch,c,depth+1,false);
+  }
+  // A fill set nowhere is left unset, which draws in the key's own colour — the
+  // right thing for a one-colour glyph, where SVG's own default would be black.
+  walk(root,{f:undefined,r:false,s:undefined,w:undefined,o:1,fo:1,t:''},0,true);
+  if(!paths.length)return {err:'Nothing to draw was found in that SVG.'};
+
+  let rec={vb:vb,p:paths},len=JSON.stringify(rec).length;
+  // Over the limit, trade decimal places for room: in a 300-wide logo drawn 20px
+  // high a hundredth of a unit is far below a pixel. Scaled to the viewBox so a
+  // 24-unit glyph keeps a place more. Arcs are left alone — their flags may be
+  // packed against the next number, which a number-by-number pass would misread.
+  const extra=Math.max(0,Math.ceil(2-Math.log10(span)));
+  // Path data packs numbers together — "2.96.41" is 2.96 then .41, "1.2-.04" is
+  // 1.2 then -.04 — so rounding one can fuse it with its neighbour. Two cases
+  // need a space put back: a number that rounds to a whole one would take a
+  // following ".41" as its own fraction, and one whose minus sign rounds away
+  // loses the only thing separating it from the number before.
+  const round=(d,k)=>d.replace(/-?(?:[1-9]\d*|0)?\.\d+(?:[eE][-+]?\d+)?/g,(m,at,all)=>{
+    const v=+(+m).toFixed(k);
+    let s=(Math.abs(v)<1e-9?'0':String(v)).replace(/^(-?)0\./,'$1.');
+    if(m[0]==='-'&&s[0]!=='-')s=' '+s;
+    if(s.indexOf('.')<0&&all[at+m.length]==='.')s+=' ';
+    return s;
+  });
+  let places=0;
+  for(const k of [3,2,1]){
+    if(len<=RMT_ICON_LEN)break;
+    places=k+extra;
+    rec={vb:vb,p:paths.map(p=>/[Aa]/.test(p.d)?p:Object.assign({},p,{d:minD(round(p.d,places))}))};
+    len=JSON.stringify(rec).length;
+  }
+  if(places)note('coordinates were rounded to '+places+' decimal place'+(places>1?'s':'')+' to fit');
+  if(len>RMT_ICON_LEN)return {err:'Too detailed: '+len+' characters once converted, and the limit is '+RMT_ICON_LEN+'. A simpler version of the logo will fit.'};
+  const bad=iconBad(rec);
+  if(bad)return {err:'Converted, but '+bad+'.'};
+  return {rec:rec,len:len,notes:notes};
 }
 
 // ── Host Switcher ──
@@ -2396,8 +2845,29 @@ function appendStep(el,val){
     const ss=p.sections||[];
     out.push('  "sections": [');
     ss.forEach((s,i)=>out.push(tplSectionText(s)+(i<ss.length-1?',':'')));
-    out.push('  ]','}');
+    // One icon to a line: each is a single long record nobody edits by hand, and
+    // on a line of its own it can at least be deleted whole.
+    const ik=Object.keys(p.icons||{});
+    if(!ik.length){out.push('  ]','}');return out.join('\n')}
+    out.push('  ],','  "icons": {');
+    ik.forEach((k,i)=>out.push('    '+JSON.stringify(k)+': '+JSON.stringify(p.icons[k])+(i<ik.length-1?',':'')));
+    out.push('  }','}');
     return out.join('\n');
+  }
+  // A copy of a style with the imported icons it names attached, so an export is
+  // whole on its own: pasted into the Home Assistant card it draws its logos with
+  // no need to reach the device, and imported on another keyboard it brings them.
+  function withIcons(t){
+    const names=iconNames(t).filter(n=>!Object.prototype.hasOwnProperty.call(RI,n));
+    const out=Object.assign({},t);
+    delete out.icons;
+    if(!names.length)return Promise.resolve(out);
+    return Promise.all(names.map(n=>fetchIcon(n).catch(()=>null))).then(recs=>{
+      const icons={};
+      names.forEach((n,i)=>{if(recs[i])icons[n]=recs[i]});
+      if(Object.keys(icons).length)out.icons=icons;
+      return out;
+    });
   }
   // A section that no longer fits one line breaks between whole elements, never
   // inside one, so every line is still a complete group to move or delete.
@@ -2484,6 +2954,21 @@ function appendStep(el,val){
       if(typeof t.theme[k]!=='string')continue;
       const bad=themeValueBad(k,t.theme[k]);
       if(bad)return bad;
+    }
+    // The icons an exported style carries along with it. Optional; a style kept on
+    // the device never has them, since its icons are stored on their own.
+    if(t.icons!==undefined){
+      if(!t.icons||typeof t.icons!=='object'||Array.isArray(t.icons))
+        return 'icons must be an object of name: icon';
+      const names=Object.keys(t.icons);
+      if(names.length>RMT_ICON_MAX)return 'A style can carry up to '+RMT_ICON_MAX+' icons';
+      for(const n of names){
+        if(!RMT_ICON_NAME.test(n))return 'Icon names are 1-15 characters of a-z, 0-9 or _ — "'+n+'"';
+        if(Object.prototype.hasOwnProperty.call(RI,n))return 'Icon "'+n+'" has the name of a built-in icon — rename it';
+        const bad=iconBad(t.icons[n]);
+        if(bad)return 'Icon "'+n+'": '+bad;
+        if(JSON.stringify(t.icons[n]).length>RMT_ICON_LEN)return 'Icon "'+n+'" is over '+RMT_ICON_LEN+' characters';
+      }
     }
     for(const s of t.sections){
       if(!Array.isArray(s)||typeof s[0]!=='string')return 'Each section is an array starting with its kind';
@@ -2601,8 +3086,15 @@ function appendStep(el,val){
                 return 'lit: colour must be a #hex value — "'+tok+'"';
               continue;
             }
+            // icon:<name> — whether an icon by that name exists is not checked: it
+            // may be imported after the style, and a missing one shows the label.
+            if(tok.indexOf('icon:')===0){
+              if(!RMT_ICON_NAME.test(tok.slice(5)))
+                return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
+              continue;
+            }
             if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source> or '+RMT_OPTS.join(', ');
+              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name> or '+RMT_OPTS.join(', ');
           }
         }
         const a=arr?it[0]:it;
@@ -2621,7 +3113,7 @@ function appendStep(el,val){
   // body, and a style's JSON is several times that once encoded. Same chunking
   // rule as the paste bar — measure with formLen(), which is what actually goes
   // on the wire. seq 0 starts a fresh upload, so a failed one needs no cleanup.
-  function uploadTpl(index,text){
+  function uploadChunks(ep,text){
     const parts=[];let cur='',len=0;
     for(const ch of text){
       const el=formLen(ch);
@@ -2631,10 +3123,33 @@ function appendStep(el,val){
     if(cur)parts.push(cur);
     let chain=Promise.resolve();
     parts.forEach((p,i)=>{
-      chain=chain.then(()=>apiPost('remote_tpl_chunk',{seq:i,data:p})
+      chain=chain.then(()=>apiPost(ep,{seq:i,data:p})
         .then(r=>r.text().then(t=>{if(!r.ok)throw new Error(t);})));
     });
-    return chain.then(()=>post('remote_tpl_save',{index:index}));
+    return chain;
+  }
+  function uploadTpl(index,text){
+    return uploadChunks('remote_tpl_chunk',text).then(()=>post('remote_tpl_save',{index:index}));
+  }
+  // Icons go up the same way, into the same staging buffer on the device.
+  function uploadIcon(name,rec){
+    return uploadChunks('icon_chunk',JSON.stringify(rec))
+      .then(()=>post('icon_save',{name:name}))
+      .then(()=>setIcon(name,rec));
+  }
+  // The icons a pasted style brings go into the store under their own names
+  // before the style is saved, so it finds them the moment it is. One the device
+  // already holds, identical, is not written again.
+  function uploadCarriedIcons(t){
+    const icons=t.icons||{};
+    let chain=Promise.resolve(),sent=0;
+    Object.keys(icons).forEach(n=>{
+      chain=chain.then(()=>fetchIcon(n).catch(()=>null)).then(cur=>{
+        if(cur&&JSON.stringify(cur)===JSON.stringify(icons[n]))return;
+        return uploadIcon(n,icons[n]).then(()=>{sent++});
+      });
+    });
+    return chain.then(()=>sent);
   }
 
   if(tplExport)tplExport.addEventListener('click',()=>{
@@ -2648,8 +3163,12 @@ function appendStep(el,val){
       copy.id=copy.id+'_'+n;
       copy.name=(t.name+' copy').slice(0,24);
     }
-    tplJson.value=tplText(copy);
-    tplNote('Exported "'+t.name+'"'+(t.custom?'':' as "'+copy.id+'"')+' — edit it, then Import.');
+    withIcons(copy).then(c=>{
+      tplJson.value=tplText(c);
+      tplNote('Exported "'+t.name+'"'+(t.custom?'':' as "'+copy.id+'"')+
+              (c.icons?' with its '+Object.keys(c.icons).length+' icon'+(Object.keys(c.icons).length>1?'s':''):'')+
+              ' — edit it, then Import.');
+    });
   });
 
   // Every custom style at once, as the JSON list the Home Assistant card takes.
@@ -2665,9 +3184,11 @@ function appendStep(el,val){
       tplNote('No custom styles yet — Import one first, then Export all.',true);
       return;
     }
-    tplJson.value=JSON.stringify(RMT_CUSTOM.map(tplPlain));
-    tplNote('Exported all '+RMT_CUSTOM.length+' custom style'+(RMT_CUSTOM.length>1?'s':'')+
-            ' — paste this into the Home Assistant card to add them all to its list.');
+    Promise.all(RMT_CUSTOM.map(t=>withIcons(tplPlain(t)))).then(list=>{
+      tplJson.value=JSON.stringify(list);
+      tplNote('Exported all '+RMT_CUSTOM.length+' custom style'+(RMT_CUSTOM.length>1?'s':'')+
+              ' — paste this into the Home Assistant card to add them all to its list.');
+    });
   });
 
   if(tplImport)tplImport.addEventListener('click',()=>{
@@ -2696,12 +3217,16 @@ function appendStep(el,val){
     }
     if(index<0){tplNote('No room — the device holds '+RMT_CUSTOM_MAX+' custom styles. Delete one first.',true);return}
     tplNote('Uploading…');
-    uploadTpl(index,compact)
+    let sentIcons=0;
+    // Icons first: the style saved after them draws with them straight away.
+    uploadCarriedIcons(t).then(n=>{sentIcons=n})
+      .then(()=>uploadTpl(index,compact))
       .then(()=>refreshActiveTemplate())
       // After the refresh, so the style it draws in the preview's place is the
       // one that was just saved rather than the one being replaced.
       .then(()=>{tplEndPreview();fillTplSel();renderCustomList();
-                 tplNote('Saved "'+t.name.trim()+'". Pick it above to give it to a host.')})
+                 tplNote('Saved "'+t.name.trim()+'"'+(sentIcons?' and '+sentIcons+' icon'+(sentIcons>1?'s':''):'')+
+                         '. Pick it above to give it to a host.')})
       .catch(e=>tplNote('Import failed: '+e.message,true));
   });
 
@@ -2772,6 +3297,130 @@ function appendStep(el,val){
     // Closing the panel puts the host's own style back: a preview that outlived
     // the editor it belongs to just looks like the remote went wrong.
     else tplEndPreview();
+  });
+
+  // ── Button icons ──
+  const icoPanel=document.getElementById('ico-panel');
+  const icoToggle=document.getElementById('ico-toggle');
+  const icoList=document.getElementById('ico-list');
+  const icoName=document.getElementById('ico-name');
+  const icoSvg=document.getElementById('ico-svg');
+  const icoImport=document.getElementById('ico-import');
+  const icoPreview=document.getElementById('ico-preview');
+  const icoMsg=document.getElementById('ico-msg');
+  let icoItems=[],icoMax=RMT_ICON_MAX,icoPrevT=null;
+  function icoNote(m,err){if(icoMsg){icoMsg.textContent=m||'';icoMsg.style.color=err?'#c44':'var(--muted)'}}
+
+  function renderIcons(){
+    if(!icoList)return;
+    icoList.innerHTML='';
+    if(!icoItems.length){
+      const e=document.createElement('span');
+      e.className='prog-empty';e.textContent='No icons imported yet.';
+      icoList.appendChild(e);
+      return;
+    }
+    icoItems.forEach(it=>{
+      const row=document.createElement('div');
+      row.className='ovr-row';
+      const th=document.createElement('span');
+      th.className='ico-thumb';
+      // icon() writes the markup from a record it checks itself — the same guarded
+      // path the remote draws through, not a second one.
+      if(ICON_CACHE[it.name])th.innerHTML=icon(ICON_CACHE[it.name]);
+      const n=document.createElement('span');
+      n.className='ovr-name';n.textContent=it.name;
+      const a=document.createElement('span');
+      a.className='ovr-act';a.textContent='icon:'+it.name+' · '+it.size+' characters';
+      const db=document.createElement('button');
+      db.className='macro-act del';db.textContent='✕';db.title='Delete this icon. Keys using it show their label instead.';
+      db.addEventListener('click',()=>{
+        if(!confirm('Delete the icon "'+it.name+'"?\n\nKeys using it show their label instead.'))return;
+        post('icon_delete',{name:it.name})
+          .then(()=>{setIcon(it.name,null);return loadIcons()})
+          .then(()=>icoNote('Deleted.'))
+          .catch(e=>icoNote(e.message,true));
+      });
+      row.appendChild(th);row.appendChild(n);row.appendChild(a);row.appendChild(db);
+      icoList.appendChild(row);
+    });
+  }
+
+  function loadIcons(){
+    return fetch('/api/ble_keyboard/icons').then(r=>r.json()).then(d=>{
+      icoMax=d.max||icoMax;
+      icoItems=Array.isArray(d.items)?d.items:[];
+      // Whatever this browser cached for an icon the device no longer has goes.
+      const have=icoItems.map(i=>i.name);
+      let pruned=false;
+      Object.keys(ICON_CACHE).forEach(n=>{if(have.indexOf(n)<0){delete ICON_CACHE[n];pruned=true}});
+      if(pruned)saveIconCache();
+      renderIcons();
+      return Promise.all(have.map(n=>fetchIcon(n).catch(()=>null)));
+    }).then(renderIcons).catch(()=>icoNote('Could not read the icons.',true));
+  }
+
+  function icoShowPreview(){
+    if(!icoSvg||!icoPreview)return;
+    const raw=icoSvg.value.trim();
+    if(!raw){icoPreview.hidden=true;icoNote('');return}
+    const r=svgToIcon(raw);
+    if(r.err){icoPreview.hidden=true;icoNote(r.err,true);return}
+    const html=icon(r.rec);
+    icoPreview.querySelectorAll('.rmt-btn').forEach(el=>{el.innerHTML=html});
+    icoPreview.hidden=false;
+    icoNote(r.len+' of '+RMT_ICON_LEN+' characters'+(r.notes.length?' — '+r.notes.join('; '):'')+
+            '. Check it on both keys, then Import.');
+  }
+  if(icoSvg)icoSvg.addEventListener('input',()=>{clearTimeout(icoPrevT);icoPrevT=setTimeout(icoShowPreview,250)});
+  // Copying a logo in Explorer or Finder puts the file on the clipboard rather
+  // than its text, and pasting that into a text box gives nothing. So a file —
+  // pasted, where the browser hands it over, or dropped — is read as text here.
+  function icoTakeFile(file){
+    if(!/\.svg$/i.test(file.name||'')&&file.type!=='image/svg+xml'){
+      icoNote('That is not an SVG file. A PNG or JPG picture cannot be used — look for the logo as .svg.',true);
+      return;
+    }
+    if(file.size>512000){icoNote('That file is far too large to be a logo.',true);return}
+    file.text().then(t=>{icoSvg.value=t;icoShowPreview()})
+      .catch(()=>icoNote('Could not read that file.',true));
+  }
+  if(icoSvg){
+    icoSvg.addEventListener('paste',e=>{
+      const f=e.clipboardData&&e.clipboardData.files&&e.clipboardData.files[0];
+      if(f){e.preventDefault();icoTakeFile(f)}
+    });
+    icoSvg.addEventListener('dragover',e=>{
+      if(e.dataTransfer&&Array.from(e.dataTransfer.types||[]).indexOf('Files')>=0)e.preventDefault();
+    });
+    icoSvg.addEventListener('drop',e=>{
+      const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+      if(f){e.preventDefault();icoTakeFile(f)}
+    });
+  }
+
+  if(icoImport)icoImport.addEventListener('click',()=>{
+    const name=(icoName.value||'').trim().toLowerCase();
+    if(!RMT_ICON_NAME.test(name)){icoNote('Give it a name: 1-15 characters of a-z, 0-9 or _.',true);return}
+    // Built-in icons are found first, so an import under one of their names could
+    // never be seen.
+    if(Object.prototype.hasOwnProperty.call(RI,name)){icoNote('"'+name+'" is a built-in icon — pick another name.',true);return}
+    const r=svgToIcon(icoSvg.value);
+    if(r.err){icoNote(r.err,true);return}
+    const exists=icoItems.some(i=>i.name===name);
+    if(exists&&!confirm('Replace the icon "'+name+'"?'))return;
+    if(!exists&&icoItems.length>=icoMax){icoNote('No room — the device holds '+icoMax+' icons. Delete one first.',true);return}
+    icoNote('Uploading…');
+    uploadIcon(name,r.rec).then(loadIcons).then(()=>{
+      icoSvg.value='';icoName.value='';icoPreview.hidden=true;
+      icoNote('Saved "'+name+'". A style uses it as icon:'+name+'.');
+    }).catch(e=>icoNote('Import failed: '+e.message,true));
+  });
+
+  if(icoToggle)icoToggle.addEventListener('click',()=>{
+    icoPanel.classList.toggle('open');
+    icoToggle.innerHTML='Button Icons '+(icoPanel.classList.contains('open')?'▴':'▾');
+    if(icoPanel.classList.contains('open')){icoNote('');loadIcons()}
   });
 
   // ── Identity key (IRK) ──
@@ -2845,6 +3494,23 @@ function appendStep(el,val){
       if(!r.ok)throw new Error('HTTP '+r.status);
       return r.json();
     }).then(d=>{
+      // Icon bodies are gathered here rather than by the device: its backup is
+      // built in one string on the heap the Bluetooth stack shares, and sixteen
+      // logos would put tens of KB on it. Each comes over on a request of its own,
+      // and one that fails fails the backup rather than going missing from it.
+      return fetch('/api/ble_keyboard/icons').then(r=>r.json()).then(l=>{
+        const names=(l.items||[]).map(it=>it.name);
+        return Promise.all(names.map(n=>fetchIcon(n).then(rec=>{
+          if(!rec)throw new Error('could not read icon "'+n+'"');
+          return rec;
+        }))).then(recs=>{
+          const icons={};
+          names.forEach((n,i)=>{icons[n]=recs[i]});
+          d.icons=icons;
+          return d;
+        });
+      });
+    }).then(d=>{
       const ui={};
       UI_KEYS.forEach(k=>{const v=localStorage.getItem(k);if(v!==null)ui[k]=v});
       d.ui=ui;
@@ -2854,7 +3520,8 @@ function appendStep(el,val){
       a.href=url;a.download=name;a.click();
       setTimeout(()=>URL.revokeObjectURL(url),1000);
       const nm=(d.macros||[]).length, no=Object.keys(d.overrides||{}).length, nh=(d.hosts||[]).length;
-      status('Saved '+name+' — '+nm+' macro(s), '+no+' slot(s) with overrides, '+nh+' host(s).');
+      const ni=Object.keys(d.icons||{}).length;
+      status('Saved '+name+' — '+nm+' macro(s), '+no+' slot(s) with overrides, '+nh+' host(s), '+ni+' icon(s).');
     }).catch(e=>status('Backup failed: '+e.message,true));
   });
 
@@ -2887,6 +3554,7 @@ function appendStep(el,val){
         +'  • overrides on '+Object.keys(overrides).length+' host slot(s) — existing saved overrides are cleared\n'
         +'  • keyboard layout: '+(d.layout||'unchanged')+'\n'
         +'  • calibration for '+Object.keys(scales).length+' slot(s)\n'
+        +'  • '+(d.icons&&typeof d.icons==='object'?Object.keys(d.icons).length:0)+' button icon(s) — existing icons are deleted first\n'
         +'  • UI preferences (theme, zoom, section layout)';
       if(!confirm(msg)){bkFile.value='';return}
       let doHosts=false;
@@ -3000,6 +3668,23 @@ function appendStep(el,val){
         if(names.length)chain=chain.then(()=>post('hold_set',{slot:sl,names:names.join(',')}));
       });
       return chain;
+    }).then(()=>{
+      status('Restoring: button icons...');
+      // The same replace rule as the styles below: what the device holds is
+      // cleared, then the file's are written. A file from before icons existed
+      // carries none, and restoring it leaves none — which is what Replace means.
+      const icons=d.icons&&typeof d.icons==='object'&&!Array.isArray(d.icons)?d.icons:{};
+      return fetch('/api/ble_keyboard/icons').then(r=>r.json()).then(l=>{
+        let chain=Promise.resolve();
+        (l.items||[]).forEach(it=>{
+          chain=chain.then(()=>post('icon_delete',{name:it.name})).then(()=>setIcon(it.name,null));
+        });
+        Object.keys(icons).forEach(n=>{
+          if(!RMT_ICON_NAME.test(n)||iconBad(icons[n])){notes.push('icon "'+n+'" was not valid and was skipped');return}
+          chain=chain.then(()=>uploadIcon(n,icons[n]));
+        });
+        return chain;
+      });
     }).then(()=>{
       status('Restoring: remote styles...');
       // Custom styles first, then the per-host assignments that point at them.
@@ -3911,7 +4596,6 @@ buildKeyboard();
   // #media-card (see the pointer handlers above), so replacing the buttons
   // wholesale costs nothing to rewire — the new ones are picked up by the same
   // closest('.rmt-btn') lookup on the next press.
-  function icon(i){return '<svg viewBox="0 0 24 24">'+RI[i]+'</svg>'}
   // Custom labels come from imported styles, so they are the one user-supplied
   // string that reaches innerHTML anywhere on this page — style names go through
   // textContent and ids are regex-restricted. Everything else built into the
@@ -3930,9 +4614,8 @@ buildKeyboard();
     // across is its own job (see the note about esc()).
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
-    const face=(lab!=null&&lab!=='')?esc(lab):(b.i?icon(b.i):(b.x||''));
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='';
+    let cls='',css='',lit='',ic='';
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -3951,9 +4634,16 @@ buildKeyboard();
           // colour and the theme default then meet in one place, the CSS.
           if(bits[2]&&RMT_HEX.test(bits[2]))css+=(css?';':'')+'--rb-lit-bg:'+bits[2];
         }
+        else if(tok.indexOf('icon:')===0)ic=tok.slice(5);
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
+    // icon:<name> puts a picture on the face: one of ours first, then one imported
+    // onto the device. The label stays as the tooltip, and is the face again when
+    // the icon cannot be found — a key whose logo is missing still says what it is.
+    const own=o=>Object.prototype.hasOwnProperty.call(o,ic);
+    const pic=!ic?'':own(RI)?icon(ic):own(RMT_ICONS)?icon(RMT_ICONS[ic]):'';
+    const face=pic||((lab!=null&&lab!=='')?esc(lab):(b.i?icon(b.i):(b.x||'')));
     return '<button class="rmt-btn'+(b.c?' '+b.c:'')+cls+'" data-action="'+a+'"'+
            (b.r?' data-repeat="1"':'')+(lit?' data-lit="'+esc(lit)+'"':'')+
            (css?' style="'+css+'"':'')+
@@ -4077,6 +4767,21 @@ buildKeyboard();
     return '<div class="rmt-section">'+inner+'</div>';
   }
   let curTplId=null,curTplKey=null;
+  // Whatever drawTemplate last put on screen — the host's style, a preview, or the
+  // remembered one on load — so an icon arriving later redraws that and not a
+  // style looked up again by id, which the remembered one may not be yet.
+  let lastDrawnTpl=null,redrawTimer=null,redrawNames=[];
+  window.redrawRemote=function(name){
+    if(name)redrawNames.push(name);else redrawNames=null;
+    clearTimeout(redrawTimer);
+    redrawTimer=setTimeout(()=>{
+      const names=redrawNames;redrawNames=[];
+      if(!lastDrawnTpl)return;
+      // Only when the style on screen uses one of the icons that changed.
+      if(names&&!iconNames(lastDrawnTpl).some(n=>names.indexOf(n)>=0))return;
+      drawTemplate(lastDrawnTpl);
+    },40);
+  };
   // What is actually drawn, not just which style it came from. A style edited in
   // place keeps its id, so an id-only check would leave the old body on screen.
   const tplKey=t=>JSON.stringify([t.sections,t.theme||null]);
@@ -4101,7 +4806,12 @@ buildKeyboard();
     if(t.theme)for(const k of Object.keys(RMT_VARS))
       if(typeof t.theme[k]==='string'&&!themeValueBad(k,t.theme[k]))
         body.style.setProperty(RMT_VARS[k],t.theme[k]);
+    // The device's icons as this browser has them, with any the style carries
+    // itself on top — a pasted style being previewed brings its own.
+    useIcons(Object.assign({},ICON_CACHE,t.icons||{}));
     body.innerHTML=t.sections.map(sectionHtml).join('');
+    lastDrawnTpl=t;
+    wantIcons(t);
     // Forced: the buttons are new, so whatever this host hides has to be
     // reapplied even though the hidden set itself did not change.
     window.applyHidden(true);

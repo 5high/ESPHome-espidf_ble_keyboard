@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
+#include "nvs.h"
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -412,6 +413,33 @@ class BleKbWebHandler : public AsyncWebHandler {
       return;
     }
 
+    if (path == "memory") {
+      // For the Host Actions card, which asks once a minute — its own endpoint
+      // rather than more fields on /status, which is polled every 3 s. Internal
+      // RAM is the heap the Bluetooth stack, the web server and the stored styles
+      // all share, and the one that runs short. The lowest figure is since boot,
+      // so a device that came near the edge still says so after it recovered.
+      // Storage is NVS: entries are 32 bytes, and available_entries already
+      // leaves out the page NVS keeps free for itself.
+      std::string json = "{\"free\":";
+      json.reserve(128);
+      json += std::to_string(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+      json += ",\"min\":";
+      json += std::to_string(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+      json += ",\"block\":";
+      json += std::to_string(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+      nvs_stats_t nvs{};
+      if (nvs_get_stats(nullptr, &nvs) == ESP_OK) {
+        json += ",\"store_free\":";
+        json += std::to_string(nvs.available_entries * 32);
+        json += ",\"store_total\":";
+        json += std::to_string(nvs.total_entries * 32);
+      }
+      json += "}";
+      send_response(200, "application/json", json);
+      return;
+    }
+
     if (path == "buttons") {
       std::string json = "[";
       json.reserve(512);
@@ -777,6 +805,46 @@ class BleKbWebHandler : public AsyncWebHandler {
       }
       json += "]}";
       send_response(200, "application/json", json);
+      return;
+    }
+
+    if (path == "icons") {
+      // Names and sizes, never bodies: this is what a page or a card reads to
+      // learn what exists, and a list of sixteen logos would be tens of KB built
+      // on the heap the Bluetooth stack shares. Names are a-z, 0-9 and _ by the
+      // time they are stored, so they go in unescaped.
+      std::string json = "{\"max\":";
+      json.reserve(64 + EspidfBleKeyboard::MAX_ICONS * 36);
+      json += std::to_string(EspidfBleKeyboard::MAX_ICONS);
+      json += ",\"len\":";
+      json += std::to_string(EspidfBleKeyboard::MAX_ICON_LEN);
+      json += ",\"items\":[";
+      bool first = true;
+      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_ICONS; i++) {
+        const std::string &n = kb_->get_icon_name(i);
+        if (n.empty()) continue;
+        if (!first) json += ",";
+        first = false;
+        json += "{\"name\":\"" + n + "\",\"size\":" + std::to_string(kb_->get_icon_size(i)) + "}";
+      }
+      json += "]}";
+      send_response(200, "application/json", json);
+      return;
+    }
+
+    if (path == "icon") {
+      // One icon's stored record, sent as it was uploaded. Raw rather than
+      // wrapped in a string the way /remote_templates does it: this response
+      // carries exactly one body, so a malformed one can only break itself, and
+      // every reader validates what it parses before drawing any of it.
+      // Readable cross-origin like /hosts, because the cards draw from it.
+      std::string name = request->hasArg("name") ? request->arg("name").c_str() : "";
+      std::string body;
+      if (!kb_->read_icon(name, body)) {
+        send_response(404, "text/plain", "No icon by that name");
+        return;
+      }
+      send_response(200, "application/json", body);
       return;
     }
 
@@ -1432,6 +1500,50 @@ class BleKbWebHandler : public AsyncWebHandler {
         // back to the default for an id it can't resolve, so re-importing the
         // style under the same id puts every one of them back.
         kb_->delete_template((uint8_t) index);
+        send_response(200, "text/plain", "OK");
+      }
+
+    } else if (path == "icon_chunk") {
+      // One piece of an icon upload, into the same staging buffer a style uses.
+      int seq = request->hasArg("seq") ? atoi(request->arg("seq").c_str()) : -1;
+      std::string data = request->hasArg("data") ? request->arg("data").c_str() : "";
+      if (seq < 0 || seq > 65535) {
+        send_response(400, "text/plain", "Invalid chunk number");
+      } else if (!kb_->stage_icon_chunk((uint16_t) seq, data)) {
+        send_response(400, "text/plain",
+                      "Chunk rejected — start the upload again (icons are capped at 4200 characters)");
+      } else {
+        send_response(200, "text/plain", "OK");
+      }
+
+    } else if (path == "icon_save") {
+      std::string name = request->hasArg("name") ? request->arg("name").c_str() : "";
+      switch (kb_->commit_icon(name)) {
+        case EspidfBleKeyboard::IconSave::OK:
+          send_response(200, "text/plain", "OK");
+          break;
+        case EspidfBleKeyboard::IconSave::BAD_NAME:
+          send_response(400, "text/plain", "Invalid icon name (max 15 chars: a-z, 0-9, _)");
+          break;
+        case EspidfBleKeyboard::IconSave::NOTHING_STAGED:
+          send_response(400, "text/plain", "Nothing uploaded to save");
+          break;
+        case EspidfBleKeyboard::IconSave::FULL:
+          send_response(409, "text/plain", "No room — the device holds 16 icons. Delete one first.");
+          break;
+        default:
+          send_response(400, "text/plain", "Could not write the icon to storage");
+          break;
+      }
+
+    } else if (path == "icon_delete") {
+      // Like remote_tpl_delete, leaves the styles naming it alone: they fall back
+      // to their text label, and importing an icon under the same name restores
+      // every key that used it.
+      std::string name = request->hasArg("name") ? request->arg("name").c_str() : "";
+      if (!kb_->delete_icon(name)) {
+        send_response(404, "text/plain", "No icon by that name");
+      } else {
         send_response(200, "text/plain", "OK");
       }
 

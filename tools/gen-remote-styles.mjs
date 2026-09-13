@@ -65,6 +65,17 @@ const PARTS = [
   ['const RMT_HEX=', () => oneLine('const RMT_HEX=')],
   ['const RMT_CLIP=', () => oneLine('const RMT_CLIP=')],
   ['const RMT_FETCH=', () => oneLine('const RMT_FETCH=')],
+  ['const RMT_ICON_D=', () => oneLine('const RMT_ICON_D=')],
+  ['const RMT_ICON_VB=', () => oneLine('const RMT_ICON_VB=')],
+  ['const RMT_ICON_T=', () => oneLine('const RMT_ICON_T=')],
+  ['const RMT_ICON_NAME=', () => oneLine('const RMT_ICON_NAME=')],
+  ['const RMT_ICON_KEYS=', () => oneLine('const RMT_ICON_KEYS=')],
+  ['const RMT_ICON_LEN=', () => oneLine('const RMT_ICON_LEN=')],
+  ['const RMT_ICON_MAX=', () => oneLine('const RMT_ICON_MAX=')],
+  ['const RMT_ICONS=', () => oneLine('const RMT_ICONS=')],
+  ['function iconBad(', () => balanced('function iconBad(')],
+  ['function useIcons(', () => balanced('function useIcons(')],
+  ['function iconNames(', () => balanced('function iconNames(')],
   ['function icon(', () => balanced('function icon(')],
   ['function esc(', () => balanced('function esc(')],
   // Before validateTpl, which calls it — and the card's renderer calls it too,
@@ -82,6 +93,7 @@ const js = PARTS.map(([, take]) => take()).join('\n\n');
 // symptom was every button rendering as nothing at all — silently.
 const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS',
   'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_LCD_LABELLED', 'lcdLabel', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
+  'RMT_ICON_NAME', 'RMT_ICON_LEN', 'RMT_ICON_MAX', 'RMT_ICONS', 'iconBad', 'useIcons', 'iconNames',
   'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl'];
 const defined = new Set([...js.matchAll(/(?:^|\n)\s*(?:const|function)\s+([A-Za-z_$][\w$]*)/g)]
   .map(m => m[1]));
@@ -107,8 +119,14 @@ for (let i = 0; i < allCss.length; i++) {
   }
 }
 // Only the remote's own rules: the card has its own card chrome, and the page's
-// body/keyboard rules would be dead weight (or worse) inside a shadow root.
-const css = rules.filter(r => /(^|[,\s])\.rmt-/.test(r.split('{')[0])).join('\n');
+// body/keyboard rules would be dead weight (or worse) inside a shadow root. An
+// @supports block comes along when what it wraps is a remote rule — it is how a
+// newer CSS feature gets its fallback, and dropping it would leave the card on
+// the fallback for good.
+const css = rules.filter(r => {
+  const sel = r.split('{')[0];
+  return /(^|[,\s])\.rmt-/.test(sel) || (/^@supports\b/.test(sel.trim()) && /\.rmt-/.test(r));
+}).join('\n');
 for (const need of ['.rmt-btn{', '.rmt-ring{', '.rmt-rocker-col{', '.rmt-body{', '.rmt-lcd{']) {
   if (!css.includes(need)) throw new Error(`CSS is missing ${need}`);
 }
@@ -132,6 +150,20 @@ const lcdProbe = new Function(`${js}\nreturn sectionHtml(['lcd',['Room','temp'],
 if (!/data-lcd="temp"/.test(lcdProbe) || !/data-lcd="@host"/.test(lcdProbe) ||
     !/class="rmt-lcd-val lg"/.test(lcdProbe)) {
   throw new Error(`lcd section renders incorrectly:\n${lcdProbe}`);
+}
+// An imported icon drawn from its record, a key whose icon is missing falling
+// back to its label, and a record carrying markup refused outright — three
+// branches of btnHtml that none of the probes above reach.
+const iconProbe = new Function(`${js}
+useIcons({logo:{vb:'0 0 10 10',p:[{d:'M0 0h10v10z',f:'#e50914',r:1}]},
+          evil:{vb:'0 0 1 1',p:[{d:'M0 0"/><script>x</script>'}]}});
+return [sectionHtml(['row',['spare1','Logo','icon:logo wide']]),
+        sectionHtml(['row',['spare2','Gone','icon:absent']]),
+        sectionHtml(['row',['spare3','Bad','icon:evil']])];`)();
+if (!iconProbe[0].includes('<svg class="rmt-ico" viewBox="0 0 10 10"><path d="M0 0h10v10z" fill="#e50914" fill-rule="evenodd"/></svg>') ||
+    !iconProbe[1].includes('>Gone</button>') ||
+    !iconProbe[2].includes('>Bad</button>') || iconProbe[2].includes('script')) {
+  throw new Error(`icons render incorrectly:\n${iconProbe.join('\n')}`);
 }
 const builtins = new Function(`${js}\nreturn RMT_BUILTIN.map(t=>t.id);`)();
 

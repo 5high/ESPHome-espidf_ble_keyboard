@@ -1003,6 +1003,8 @@ A dangling reference is flagged: any override row pointing at a macro that no lo
 
 **Advertise over Bluetooth** is a tick under the picker, and it too applies to the slot shown rather than the active one. Untick it to turn that slot into [a remote page with no host behind it](#a-slot-that-never-advertises).
 
+A line under the card's heading shows the keyboard's free RAM — now, the lowest since it started, and the largest block — and how much storage is left for macros, styles, icons and pairing keys. It updates once a minute.
+
 The same card also hosts the [Backup & Restore](#backup-and-restore) buttons, the [Remote Buttons](#removing-remote-buttons-per-host) hiding panel, the [Hold to Repeat](#hold-to-repeat-per-host) panel and the [Press and Hold](#press-and-hold-per-host) panel.
 
 ### Removing Remote Buttons Per Host
@@ -1068,7 +1070,7 @@ The web remote can be drawn in a different **style** per host, so switching to a
 | **Style 3** | Compact strip: power, mute, volume and the full transport row. Good for a headless box. |
 | **Style 4** | The full set-top shape: number pad, colour keys, nav ring, back/home/TV, one-piece VOL·mute·CH rockers and four app pills. Dark body. |
 | **Style 5** | Style 4's layout on a pale body — the only light style, and easier to read on a bright screen. |
-| **Style 6** | A media-box slab with a **[screen](#lcd-panels)** above four spare pills. The screen names the host and says whether it is connected, which needs nothing configured. The largest of the built-ins — it draws about 356px wide. |
+| **Style 6** | A slab with a nav ring, rockers, a **[screen](#lcd-panels)** and eight **[logo](#logos-on-buttons)** keys. The screen names the host and says whether it is connected, which needs nothing configured. Each spare names an icon — `netflix`, `youtube`, `prime`, `disney`, `spotify`, `plex`, `kodi` — plus the built-in `tv`; until you import an icon under one of those names, its key shows the label. |
 
 Styles 4 and 5 take their key arrangement from [HA-Firemote](https://github.com/PRProd/HA-Firemote) (GPL-3.0). The buttons, icons and renderer are this project's own.
 
@@ -1130,7 +1132,9 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `sm` / `lg` / `xl` | 36 / 56 / 64 px instead of the usual 48 |
 | `wide` | an auto-width pill |
 | `sq` | square-ish corners |
+| `squircle` | an app tile — a rounded square whose corners flow into its sides, as TV launchers draw apps. Pairs with a size: `"lg squircle"` |
 | `lit:<source>` | Light the key while that [source](#configuration-variables) reads `on` — e.g. a power key that goes green while the TV is on. Takes the style's `lit_bg`/`lit_fg`; `lit:<source>:#43a047` colours this one button instead. |
+| `icon:<name>` | Put an icon on the key — a logo you imported, or one of the remote's own by its id (`icon:home`). See [Logos on buttons](#logos-on-buttons). |
 
 An unknown token is refused on import rather than ignored, so a typo shows up rather than silently doing nothing.
 
@@ -1161,6 +1165,33 @@ Three of those do more than they look:
 > `ring_fg` exists because a nav ring is often the opposite tone to the rest of the remote — a white ring on a black body, a black one on alloy. Without it the arrows inherit `btn_fg` and disappear.
 
 Deleting a custom style leaves the hosts using it on the full remote; re-importing it under the same id puts them all back.
+
+#### Logos on buttons
+
+A key can show a logo instead of a word. Open **Button Icons** in the Host Actions card and paste the **text** of the logo's `.svg` file — open it in Notepad and copy all of it, from `<svg` to `</svg>` — or drag the file onto the box. Give it a name and press **Import**. The page previews it on a dark and a light key, round and wide, before anything is saved. Then name it in a button's tokens:
+
+```json
+["apps", ["spare1", "Netflix", "icon:netflix lg sq"], ["spare2", "Spotify", "icon:spotify"]]
+```
+
+`lg sq` gives the logo a bigger, squarer key; `wide` suits a long wordmark. The label stays as the tooltip, and is what the key shows if the icon is ever missing — so a style never draws a blank key.
+
+**Style 6** is this written out: pick it, then **Export** to see every key's `icon:` token. Import logos named `netflix`, `youtube`, `prime`, `disney`, `spotify`, `plex` or `kodi` and they appear on its keys.
+
+The SVG is converted in the browser into plain shapes before it is stored, and only numbers, path commands and colours survive. Nothing in a pasted file can run or load anything: scripts, event handlers, embedded images and links are discarded, and the stored shapes are checked again every time they are drawn.
+
+* **Kept:** paths and basic shapes, fills and strokes, transforms, even-odd holes, line caps and joins, opacity, and `<use>` references.
+* **Simplified:** a gradient becomes one of its colours. The preview shows the result, so check it before importing.
+* **Dropped:** text (convert it to outlines first), embedded pictures, shadows and other filters, clipping and masks.
+* **A shape with no colour of its own** draws in the key's text colour, which is right for a one-colour glyph.
+
+The device holds **16** icons of up to **4200 characters** each once converted. Tested against 415 streaming-service logos, 393 fitted and 22 were too detailed; the importer rounds coordinates to make one fit before refusing it. Icons are stored apart from styles, and only their names are kept in memory — each one is read from storage when a page asks for it.
+
+**Export takes the icons along.** A style exported with Export or Export all carries the icons it uses, so pasted into the Home Assistant card it draws its logos without the card needing to reach the device. Imported on another keyboard, it adds them to that keyboard's icons.
+
+Deleting an icon leaves its keys showing their labels; importing one under the same name brings the logos back.
+
+> Imported logos are your own copies. None are shipped with the firmware.
 
 #### LCD panels
 
@@ -1278,7 +1309,7 @@ A key named there wins over the device's value for the same key.
 
 #### A complete example
 
-This is **Style 6**, the built-in with a screen, written out so you can see how one is put together — and copy it as the starting point for your own. The screen shows which host the keyboard is on and whether it is connected: both `@` values, so **it needs no `sources:` at all**. Add the `lcd` text sensor only if you want the panel filled on the Home Assistant card too.
+This is **Style 6**, the built-in with a screen and logo keys, written out so you can see how one is put together — and copy it as the starting point for your own. The screen shows which host the keyboard is on and whether it is connected: both `@` values, so **it needs no `sources:` at all**. Add the `lcd` text sensor only if you want the panel filled on the Home Assistant card too.
 
 The `id` below is deliberately not `style6` — a built-in's id is reserved, so an import has to use its own. Change the name and it joins the stepper beside the built-ins.
 
@@ -1292,33 +1323,37 @@ The `id` below is deliberately not `style6` — a built-in's id is reserved, so 
     "radius": "34px",
     "pad": "22px 12px",
     "maxw": "280px",
-    "zoom": "1.27",
     "btn_bg": "#232630",
     "btn_fg": "#e8e8ec",
     "btn_border": "#303341",
+    "ring_bg": "#232630",
+    "ring_fg": "#e8e8ec",
     "ok_bg": "#454a5c",
+    "ok_fg": "#ffffff",
+    "label": "#8a8d99",
     "divider": "#303341"
   },
   "sections": [
     ["row","remote_power","|","search","mute"],
-    ["dpad"],
-    ["row","back","home","info"],
+    ["ring"],
+    ["row","back","home","menu"],
     ["media","rewind","play_pause","fast_forward"],
-    ["strip",["Vol","volume_up","volume_down"],["Ch","channel_up","channel_down"]],
+    ["rocker",["Vol","volume_up","volume_down"],["Ch","channel_up","channel_down"]],
     ["-"],
     ["lcd",{"cols":16,"rows":2,"fg":"#7fd4ff","bg":"#0e1014","label":"#5a6b78","border":"#303341"},
       ["","@host","centre"],
       ["","@state","sm centre"]],
-    ["apps",["spare1","Spare 1"],["spare2","Spare 2"],["spare3","Spare 3"],["spare4","Spare 4"]]
+    ["apps",["spare1","Netflix","icon:netflix lg squircle"],["spare2","YouTube","icon:youtube lg squircle"],
+      ["spare3","Prime Video","icon:prime lg squircle"],["spare4","Disney+","icon:disney lg squircle"]],
+    ["apps",["spare5","Spotify","icon:spotify lg squircle"],["spare6","Plex","icon:plex lg squircle"],
+      ["spare7","Kodi","icon:kodi lg squircle"],["spare8","TV","icon:tv lg squircle"]]
   ]
 }
 ```
 
-The four app pills are [spare actions](#action-reference): they send nothing until you give each one a per-host override, which is what lets the same pill launch a different app on each machine. Rename them to whatever you point them at.
+The eight logo keys are app tiles — `lg squircle` — and [spare actions](#action-reference): they send nothing until you give each one a per-host override, which is what lets the same key launch a different app on each machine. Each names an icon with `icon:` — see [Logos on buttons](#logos-on-buttons) — and shows its label until that icon is imported. Rename them to whatever you point them at.
 
-The panel is a deliberate 16 characters wide, so it sits inside the 280px body as a screen rather than a banner, and `rows: 2` holds its height steady as the host name changes length. Its colours are its own, overriding the style's — swap `fg` to `#ffb000` on `#1a1206` for an amber display instead. Compact, this style is 715 characters of the 1500 a custom style may use.
-
-> `zoom: 1.27` on a `maxw` of 280px draws about **356px wide**, which is roomy on a phone and on the web page but wider than a narrow Home Assistant column — the card will scroll sideways there. Drop the zoom, or halve it and raise `maxw`, if you want it narrower.
+The panel is a deliberate 16 characters wide, so it sits inside the 280px body as a screen rather than a banner, and `rows: 2` holds its height steady as the host name changes length. Its colours are its own, overriding the style's — swap `fg` to `#ffb000` on `#1a1206` for an amber display instead. Compact, this style is 1066 characters of the 1500 a custom style may use.
 
 ### Action Reference
 
@@ -1987,6 +2022,7 @@ Macros, host actions and `mouse_goto` calibration only exist in the device's NVS
 - Per-host hold-to-repeat settings (a host left on the defaults is simply absent, and restores as "reset to defaults")
 - Per-host press-and-hold buttons
 - Per-host remote styles, and any custom styles stored on the device
+- Imported button icons
 - Occupied host slots — address, address type, and whether the device still holds a Bluetooth bond for it
 - This browser's interface preferences: theme, zoom, and which sections are shown and in what order
 
@@ -2404,6 +2440,8 @@ remote_style_json: '[{"id":"lounge","name":"Lounge box","sections":[["dpad"],["m
 ```
 
 Paste that in and every custom remote joins the card's dropdown together. There is no need to send them all — one style is enough if that is all your hosts use, and six of them is roughly 6 KB in the card's YAML.
+
+A style that uses [imported logos](#logos-on-buttons) exports with them attached, so the card draws them straight from the paste — nothing to fetch from the device, and it works on an https dashboard. Each logo adds one to four KB.
 
 > A custom style the card has **not** been given still resolves to an id it has no definition for, so `auto` falls back to the full remote for that host. Paste it in and the fallback goes away.
 

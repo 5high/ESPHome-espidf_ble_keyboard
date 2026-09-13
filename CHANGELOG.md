@@ -26,15 +26,27 @@ web control page shows the matching version badge.
   labels the key, so a spare labelled Netflix reads "Netflix". A new `lcd:<text>` action writes
   whatever you like to an `@msg` line, which chains onto the key that does the work.
 
-- **A sixth built-in remote style, the first with a screen.** A media-box slab whose display names the
-  active host and says whether it is connected, over four spare pills waiting for per-host overrides.
-  It reads values the firmware always has, so it says something useful the moment it is picked.
+- **A sixth built-in remote style, the first with a screen.** A slab with a nav ring and rockers whose
+  display names the active host and says whether it is connected, over eight spare keys that each
+  name a logo and wait for per-host overrides. It reads values the firmware always has, so it says
+  something useful the moment it is picked, and each key shows its label until its logo is imported.
+
+- **A button can show a logo.** Paste a logo's SVG into the web page and it is converted there into
+  plain shapes and stored on the keyboard; a style then puts it on any key by name, with the label
+  kept as the tooltip and as the fallback. Nothing in the pasted file survives except shapes and
+  colours. Exported styles carry their logos, so the Home Assistant card draws them too.
 
 - **A host slot can be told never to advertise.** Untick it in Host Actions and the slot keeps its
   style, overrides and place in the switcher while the radio stays quiet — a universal-remote page
   whose buttons drive Home Assistant rather than a host. It shows as No BLE instead of a connection
   state, and because the setting lives on the device it needs no reflash and survives a restore.
   Keys that were never overridden have nowhere to go on such a slot and do nothing.
+
+- **A button can be an app tile.** A `squircle` token gives a key the rounded-square shape TV
+  launchers draw apps in, and pairs with a colour, a size and a logo.
+
+- **Host Actions shows free memory.** RAM now, its lowest since boot and the largest free block,
+  plus the storage left for macros, styles, icons and pairing keys.
 
 - **One button can now step through the hosts.** `switch_host:next` and `switch_host:prev` move one
   slot forward or back and wrap around at the ends, so a physical button, a macro or a per-host

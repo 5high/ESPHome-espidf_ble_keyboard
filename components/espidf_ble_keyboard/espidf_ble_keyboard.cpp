@@ -2007,15 +2007,17 @@ const std::string &EspidfBleKeyboard::get_custom_template(uint8_t index) const {
     return index < MAX_CUSTOM_TEMPLATES ? custom_templates_[index] : none;
 }
 
-bool EspidfBleKeyboard::stage_template_chunk(uint16_t seq, const std::string &data) {
+bool EspidfBleKeyboard::stage_chunk_(uint16_t seq, const std::string &data, uint16_t cap,
+                                     uint8_t kind) {
     // seq 0 restarts, so an upload that died halfway needs no timeout to clean
     // up after it — the next one simply overwrites what it left behind.
     if (seq == 0) {
         tpl_staging_.clear();
         tpl_next_seq_ = 0;
+        staging_kind_ = kind;
     }
-    if (seq != tpl_next_seq_) return false;
-    if (tpl_staging_.size() + data.size() > MAX_TEMPLATE_LEN) return false;
+    if (kind != staging_kind_ || seq != tpl_next_seq_) return false;
+    if (tpl_staging_.size() + data.size() > cap) return false;
     // Control characters would break the JSON this is handed back inside, and
     // the page only ever sends compacted JSON, which contains none.
     for (char c : data) {
@@ -2026,12 +2028,22 @@ bool EspidfBleKeyboard::stage_template_chunk(uint16_t seq, const std::string &da
     return true;
 }
 
-bool EspidfBleKeyboard::commit_template(uint8_t index) {
-    if (index >= MAX_CUSTOM_TEMPLATES || tpl_staging_.empty()) return false;
-    custom_templates_[index] = tpl_staging_;
+void EspidfBleKeyboard::clear_staging_() {
     tpl_staging_.clear();
     tpl_staging_.shrink_to_fit();  // the staging copy is dead weight until the next upload
     tpl_next_seq_ = 0;
+    staging_kind_ = STAGED_NONE;
+}
+
+bool EspidfBleKeyboard::stage_template_chunk(uint16_t seq, const std::string &data) {
+    return stage_chunk_(seq, data, MAX_TEMPLATE_LEN, STAGED_STYLE);
+}
+
+bool EspidfBleKeyboard::commit_template(uint8_t index) {
+    if (index >= MAX_CUSTOM_TEMPLATES || staging_kind_ != STAGED_STYLE || tpl_staging_.empty())
+        return false;
+    custom_templates_[index] = tpl_staging_;
+    clear_staging_();
     save_template_(index);
     ESP_LOGI(TAG, "Saved custom remote style %u (%u bytes)", (unsigned) index,
              (unsigned) custom_templates_[index].size());
@@ -2084,6 +2096,127 @@ void EspidfBleKeyboard::save_template_(uint8_t index) {
     }
     nvs_commit(handle);
     nvs_close(handle);
+}
+
+// ── Imported icons (NVS-persisted, names only in RAM) ──────────────
+//
+// Bodies are blobs, not strings: NVS caps a string at 4000 bytes including its
+// terminator, which is under MAX_ICON_LEN, while a blob may span pages.
+
+const std::string &EspidfBleKeyboard::get_icon_name(uint8_t index) const {
+    static const std::string none;
+    return index < MAX_ICONS ? icon_names_[index] : none;
+}
+
+uint16_t EspidfBleKeyboard::get_icon_size(uint8_t index) const {
+    return index < MAX_ICONS ? icon_sizes_[index] : 0;
+}
+
+int EspidfBleKeyboard::find_icon_(const std::string &name) const {
+    if (name.empty()) return -1;
+    for (uint8_t i = 0; i < MAX_ICONS; i++) {
+        if (icon_names_[i] == name) return i;
+    }
+    return -1;
+}
+
+bool EspidfBleKeyboard::read_icon(const std::string &name, std::string &out) const {
+    int index = find_icon_(name);
+    if (index < 0) return false;
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READONLY, &handle) != ESP_OK) return false;
+    char key[12];
+    snprintf(key, sizeof(key), "icn%d", index);
+    size_t len = 0;
+    bool ok = false;
+    if (nvs_get_blob(handle, key, nullptr, &len) == ESP_OK && len > 0 && len <= MAX_ICON_LEN) {
+        out.resize(len);
+        ok = nvs_get_blob(handle, key, &out[0], &len) == ESP_OK;
+        if (!ok) out.clear();
+    }
+    nvs_close(handle);
+    return ok;
+}
+
+bool EspidfBleKeyboard::stage_icon_chunk(uint16_t seq, const std::string &data) {
+    return stage_chunk_(seq, data, MAX_ICON_LEN, STAGED_ICON);
+}
+
+EspidfBleKeyboard::IconSave EspidfBleKeyboard::commit_icon(const std::string &name) {
+    // Same rule as a style id, so a name can ride in a style's option string
+    // and in a URL without either needing escaping.
+    if (!valid_style_id(name)) return IconSave::BAD_NAME;
+    if (staging_kind_ != STAGED_ICON || tpl_staging_.empty()) return IconSave::NOTHING_STAGED;
+    int index = find_icon_(name);
+    for (uint8_t i = 0; index < 0 && i < MAX_ICONS; i++) {
+        if (icon_names_[i].empty()) index = i;
+    }
+    if (index < 0) return IconSave::FULL;
+
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return IconSave::WRITE_FAILED;
+    char bkey[12], nkey[12];
+    snprintf(bkey, sizeof(bkey), "icn%d", index);
+    snprintf(nkey, sizeof(nkey), "icnm%d", index);
+    // Body before name. The name is what makes a slot count as taken at boot, so
+    // a write that dies between the two leaves a free slot rather than a name
+    // pointing at nothing.
+    bool ok = nvs_set_blob(handle, bkey, tpl_staging_.data(), tpl_staging_.size()) == ESP_OK &&
+              nvs_set_str(handle, nkey, name.c_str()) == ESP_OK && nvs_commit(handle) == ESP_OK;
+    nvs_close(handle);
+    if (!ok) {
+        clear_staging_();
+        ESP_LOGW(TAG, "Could not save icon \"%s\" — NVS write failed", name.c_str());
+        return IconSave::WRITE_FAILED;
+    }
+    icon_names_[index] = name;
+    icon_sizes_[index] = (uint16_t) tpl_staging_.size();
+    clear_staging_();
+    ESP_LOGI(TAG, "Saved icon \"%s\" in slot %d (%u bytes)", name.c_str(), index,
+             (unsigned) icon_sizes_[index]);
+    return IconSave::OK;
+}
+
+bool EspidfBleKeyboard::delete_icon(const std::string &name) {
+    int index = find_icon_(name);
+    if (index < 0) return false;
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return false;
+    char bkey[12], nkey[12];
+    snprintf(bkey, sizeof(bkey), "icn%d", index);
+    snprintf(nkey, sizeof(nkey), "icnm%d", index);
+    // Name first, for the same reason commit_icon writes it last.
+    nvs_erase_key(handle, nkey);
+    nvs_erase_key(handle, bkey);
+    nvs_commit(handle);
+    nvs_close(handle);
+    icon_names_[index].clear();
+    icon_names_[index].shrink_to_fit();
+    icon_sizes_[index] = 0;
+    return true;
+}
+
+void EspidfBleKeyboard::load_icon_names_() {
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READONLY, &handle) != ESP_OK) return;
+    unsigned loaded = 0;
+    for (uint8_t i = 0; i < MAX_ICONS; i++) {
+        char bkey[12], nkey[12];
+        snprintf(bkey, sizeof(bkey), "icn%u", i);
+        snprintf(nkey, sizeof(nkey), "icnm%u", i);
+        char name[MAX_STYLE_LEN + 1];
+        size_t nlen = sizeof(name);
+        if (nvs_get_str(handle, nkey, name, &nlen) != ESP_OK || !valid_style_id(name)) continue;
+        // A null buffer asks for the length alone, so the body is never read.
+        size_t blen = 0;
+        if (nvs_get_blob(handle, bkey, nullptr, &blen) != ESP_OK || blen == 0 || blen > MAX_ICON_LEN)
+            continue;
+        icon_names_[i] = name;
+        icon_sizes_[i] = (uint16_t) blen;
+        loaded++;
+    }
+    nvs_close(handle);
+    if (loaded) ESP_LOGI(TAG, "Found %u imported icon(s)", loaded);
 }
 
 // ── Per-host press-and-hold (NVS-persisted) ───────────────────────
@@ -2673,6 +2806,7 @@ void EspidfBleKeyboard::setup() {
     load_broadcast_();
     load_remote_style_();
     load_templates_();
+    load_icon_names_();
     // Publish after loading, not just when the sensors are attached: the
     // set_*_sensor() calls run at registration, which is before this setup()
     // reads NVS, so their initial publish always described an empty list. Until

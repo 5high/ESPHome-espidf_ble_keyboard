@@ -405,6 +405,27 @@ class EspidfBleKeyboard : public Component
   bool commit_template(uint8_t index);   // staged bytes -> storage slot
   bool delete_template(uint8_t index);
 
+  // Imported button artwork: a logo pasted into the web page and converted there
+  // into a small JSON record of path data. Opaque here for the same reason
+  // styles are — the browser owns the validator, and re-applies it on every
+  // draw. Unlike styles, the bodies are NOT kept in RAM. A logo runs to a few KB,
+  // sixteen of them would sit against the ~23 KB free-heap trough, and the
+  // device never needs the bytes itself; only a browser does. So the names live
+  // here and a body is read from NVS when one is asked for, then dropped.
+  static const uint8_t MAX_ICONS = 16;
+  static const uint16_t MAX_ICON_LEN = 4200;
+  /// Name of the icon in storage slot `index`; empty when that slot is free.
+  const std::string &get_icon_name(uint8_t index) const;
+  uint16_t get_icon_size(uint8_t index) const;
+  /// One body, straight from NVS. False = no icon by that name, or a read failure.
+  bool read_icon(const std::string &name, std::string &out) const;
+  /// As stage_template_chunk, into the same buffer, capped at MAX_ICON_LEN.
+  bool stage_icon_chunk(uint16_t seq, const std::string &data);
+  enum class IconSave : uint8_t { OK, BAD_NAME, NOTHING_STAGED, FULL, WRITE_FAILED };
+  /// Staged bytes -> the slot already holding `name`, else the first free one.
+  IconSave commit_icon(const std::string &name);
+  bool delete_icon(const std::string &name);
+
   /// Run an action string on the component's own action task instead of the
   /// caller's. The web server's task has 4352 bytes, and a chain measured on
   /// device went seven execute_action frames deep with 52 bytes left — one more
@@ -987,8 +1008,22 @@ class EspidfBleKeyboard : public Component
   std::string custom_templates_[MAX_CUSTOM_TEMPLATES];
   std::string tpl_staging_;
   uint16_t tpl_next_seq_{0};
+  // What tpl_staging_ holds. Styles and icons share the buffer, and an upload of
+  // one kind must never be committed as the other — a style import cut short by
+  // an icon import would otherwise save a logo into a style slot.
+  enum : uint8_t { STAGED_NONE, STAGED_STYLE, STAGED_ICON };
+  uint8_t staging_kind_{STAGED_NONE};
+  bool stage_chunk_(uint16_t seq, const std::string &data, uint16_t cap, uint8_t kind);
+  void clear_staging_();
   void load_templates_();
   void save_template_(uint8_t index);
+
+  // Imported icons (NVS keys "icn<index>" for the body, "icnm<index>" for the
+  // name). Names and sizes only — see MAX_ICONS for why the bodies stay in flash.
+  std::string icon_names_[MAX_ICONS];
+  uint16_t icon_sizes_[MAX_ICONS]{};
+  void load_icon_names_();
+  int find_icon_(const std::string &name) const;
 
   // Multi-host state
   uint8_t host_slots_{MAX_HOST_SLOTS};

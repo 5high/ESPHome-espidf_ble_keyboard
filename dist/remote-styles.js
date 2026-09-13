@@ -183,27 +183,34 @@ const RMT_BUILTIN=[
  ['rocker',['Vol','volume_up','volume_down'],['','mute'],['Ch','channel_up','channel_down']],
  ['apps',['spare5','App 1','light wide'],['spare6','App 2','light wide'],['spare7','App 3','light wide']],
  ['apps',['spare8','App 4','light wide']]]},
-// The one built-in with a screen. It reads @host and @state, which the firmware
-// always knows, so it says something useful the moment it is picked — no
-// sources, no sensor, nothing to configure. 16 characters wide so it sits
-// in the body as a display rather than a banner, and two reserved rows so it
-// holds its height as a host name changes length.
+// The built-in with a screen and logo keys. The screen reads @host and @state,
+// which the firmware always knows, so it says something useful the moment the
+// style is picked — no sources, no sensor, nothing to configure. 16 characters
+// wide so it sits in the body as a display rather than a banner, and two
+// reserved rows so it holds its height as a host name changes length.
+// Every spare names an imported icon with icon:<name>. Until one is imported
+// under that name the key shows its label, so each logo appears as it is added;
+// the last key uses one of the remote's own icons the same way. Pick it and
+// Export to see the syntax written out.
 {id:'style6',name:'Style 6',theme:{bg:'#17181d',border:'#2a2c33',radius:'34px',pad:'22px 12px',
- maxw:'280px',zoom:'1.27',btn_bg:'#232630',btn_fg:'#e8e8ec',btn_border:'#303341',
- ok_bg:'#454a5c',divider:'#303341'},sections:[
+ maxw:'280px',btn_bg:'#232630',btn_fg:'#e8e8ec',btn_border:'#303341',ring_bg:'#232630',
+ ring_fg:'#e8e8ec',ok_bg:'#454a5c',ok_fg:'#ffffff',label:'#8a8d99',divider:'#303341'},sections:[
  ['row','remote_power','|','search','mute'],
- ['dpad'],
- ['row','back','home','info'],
+ ['ring'],
+ ['row','back','home','menu'],
  ['media','rewind','play_pause','fast_forward'],
- ['strip',['Vol','volume_up','volume_down'],['Ch','channel_up','channel_down']],
+ ['rocker',['Vol','volume_up','volume_down'],['Ch','channel_up','channel_down']],
  ['-'],
  ['lcd',{cols:16,rows:2,fg:'#7fd4ff',bg:'#0e1014',label:'#5a6b78',border:'#303341'},
   ['','@host','centre'],['','@state','sm centre']],
- ['apps',['spare1','Spare 1'],['spare2','Spare 2'],['spare3','Spare 3'],['spare4','Spare 4']]]}];
+ ['apps',['spare1','Netflix','icon:netflix lg squircle'],['spare2','YouTube','icon:youtube lg squircle'],
+         ['spare3','Prime Video','icon:prime lg squircle'],['spare4','Disney+','icon:disney lg squircle']],
+ ['apps',['spare5','Spotify','icon:spotify lg squircle'],['spare6','Plex','icon:plex lg squircle'],
+         ['spare7','Kodi','icon:kodi lg squircle'],['spare8','TV','icon:tv lg squircle']]]}];
 
 const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','lcd','-'];
 
-const RMT_OPTS=['light','sm','lg','xl','wide','sq'];
+const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle'];
 
 const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 
@@ -220,7 +227,77 @@ const RMT_CLIP=/^polygon\(\s*[-0-9%.,\s]+\)$/i;
 
 const RMT_FETCH=/(url|image-set)\s*\(/i;
 
-function icon(i){return '<svg viewBox="0 0 24 24">'+RI[i]+'</svg>'}
+const RMT_ICON_D=/^[MmZzLlHhVvCcSsQqTtAa0-9eE .,+-]+$/;
+
+const RMT_ICON_VB=/^-?[\d.]+(?:e[-+]?\d+)?(?:[ ,]+-?[\d.]+(?:e[-+]?\d+)?){3}$/i;
+
+const RMT_ICON_T=/^(?:(?:matrix|translate|scale|rotate|skewX|skewY)\([-\d.eE ,]+\) ?)+$/;
+
+const RMT_ICON_NAME=/^[a-z0-9_]{1,15}$/;
+
+const RMT_ICON_KEYS=['d','f','r','t','s','w','c','j','o'];
+
+const RMT_ICON_LEN=4200;
+
+const RMT_ICON_MAX=16;
+
+const RMT_ICONS={};
+
+function iconBad(rec){
+  if(!rec||typeof rec!=='object'||Array.isArray(rec))return 'an icon is an object with a vb and a list of paths';
+  if(typeof rec.vb!=='string'||!RMT_ICON_VB.test(rec.vb.trim()))return 'its viewBox must be four numbers';
+  if(!Array.isArray(rec.p)||!rec.p.length||rec.p.length>256)return 'it needs between 1 and 256 paths';
+  const paint=v=>v===undefined||v==='none'||v==='currentColor'||(typeof v==='string'&&RMT_HEX.test(v));
+  const num=(v,hi)=>v===undefined||(typeof v==='number'&&v>=0&&v<=hi);
+  for(const p of rec.p){
+    if(!p||typeof p!=='object'||Array.isArray(p))return 'each path is an object';
+    for(const k of Object.keys(p))if(RMT_ICON_KEYS.indexOf(k)<0)return 'unknown path field "'+k+'"';
+    if(typeof p.d!=='string'||!RMT_ICON_D.test(p.d))return 'path data may hold only path commands and numbers';
+    if(!paint(p.f)||!paint(p.s))return 'a path colour must be a #hex value, none or currentColor';
+    if(p.r!==undefined&&p.r!==1)return 'r is 1 for evenodd, or left out';
+    if(p.t!==undefined&&(typeof p.t!=='string'||!RMT_ICON_T.test(p.t)))
+      return 'a transform may only be matrix, translate, scale, rotate or skew, with numbers';
+    if(!num(p.w,10000)||!num(p.o,1))return 'stroke width and opacity must be numbers in range';
+    if((p.c!==undefined&&p.c!=='round'&&p.c!=='square')||(p.j!==undefined&&p.j!=='round'&&p.j!=='bevel'))
+      return 'line caps are round or square, and joins round or bevel';
+  }
+  return '';
+}
+
+function useIcons(map){
+  for(const k of Object.keys(RMT_ICONS))delete RMT_ICONS[k];
+  if(map&&typeof map==='object')for(const k of Object.keys(map))
+    if(RMT_ICON_NAME.test(k))RMT_ICONS[k]=map[k];
+}
+
+function iconNames(t){
+  const out=[];
+  if(!t||!Array.isArray(t.sections))return out;
+  const look=it=>{
+    if(!Array.isArray(it)||typeof it[2]!=='string')return;
+    for(const tok of it[2].split(/\s+/))
+      if(tok.indexOf('icon:')===0&&out.indexOf(tok.slice(5))<0)out.push(tok.slice(5));
+  };
+  for(const s of t.sections){
+    if(!Array.isArray(s)||s[0]==='lcd')continue;
+    for(const it of s.slice(1)){
+      if(s[0]==='strip'||s[0]==='rocker'){if(Array.isArray(it))it.slice(1).forEach(look)}
+      else look(it);
+    }
+  }
+  return out;
+}
+
+function icon(i){
+  if(typeof i==='string')return '<svg viewBox="0 0 24 24">'+RI[i]+'</svg>';
+  if(iconBad(i))return '';
+  return '<svg class="rmt-ico" viewBox="'+i.vb.trim()+'">'+i.p.map(p=>'<path d="'+p.d+'"'+
+    (p.f!==undefined?' fill="'+p.f+'"':'')+(p.r?' fill-rule="evenodd"':'')+
+    (p.t!==undefined?' transform="'+p.t+'"':'')+(p.s!==undefined?' stroke="'+p.s+'"':'')+
+    (p.w!==undefined?' stroke-width="'+p.w+'"':'')+(p.c!==undefined?' stroke-linecap="'+p.c+'"':'')+
+    (p.j!==undefined?' stroke-linejoin="'+p.j+'"':'')+(p.o!==undefined?' opacity="'+p.o+'"':'')+
+    '/>').join('')+'</svg>';
+}
 
 function esc(s){
     return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -245,9 +322,8 @@ function btnHtml(item){
     // across is its own job (see the note about esc()).
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
-    const face=(lab!=null&&lab!=='')?esc(lab):(b.i?icon(b.i):(b.x||''));
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='';
+    let cls='',css='',lit='',ic='';
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -266,9 +342,16 @@ function btnHtml(item){
           // colour and the theme default then meet in one place, the CSS.
           if(bits[2]&&RMT_HEX.test(bits[2]))css+=(css?';':'')+'--rb-lit-bg:'+bits[2];
         }
+        else if(tok.indexOf('icon:')===0)ic=tok.slice(5);
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
+    // icon:<name> puts a picture on the face: one of ours first, then one imported
+    // onto the device. The label stays as the tooltip, and is the face again when
+    // the icon cannot be found — a key whose logo is missing still says what it is.
+    const own=o=>Object.prototype.hasOwnProperty.call(o,ic);
+    const pic=!ic?'':own(RI)?icon(ic):own(RMT_ICONS)?icon(RMT_ICONS[ic]):'';
+    const face=pic||((lab!=null&&lab!=='')?esc(lab):(b.i?icon(b.i):(b.x||'')));
     return '<button class="rmt-btn'+(b.c?' '+b.c:'')+cls+'" data-action="'+a+'"'+
            (b.r?' data-repeat="1"':'')+(lit?' data-lit="'+esc(lit)+'"':'')+
            (css?' style="'+css+'"':'')+
@@ -407,6 +490,21 @@ function validateTpl(t){
       const bad=themeValueBad(k,t.theme[k]);
       if(bad)return bad;
     }
+    // The icons an exported style carries along with it. Optional; a style kept on
+    // the device never has them, since its icons are stored on their own.
+    if(t.icons!==undefined){
+      if(!t.icons||typeof t.icons!=='object'||Array.isArray(t.icons))
+        return 'icons must be an object of name: icon';
+      const names=Object.keys(t.icons);
+      if(names.length>RMT_ICON_MAX)return 'A style can carry up to '+RMT_ICON_MAX+' icons';
+      for(const n of names){
+        if(!RMT_ICON_NAME.test(n))return 'Icon names are 1-15 characters of a-z, 0-9 or _ — "'+n+'"';
+        if(Object.prototype.hasOwnProperty.call(RI,n))return 'Icon "'+n+'" has the name of a built-in icon — rename it';
+        const bad=iconBad(t.icons[n]);
+        if(bad)return 'Icon "'+n+'": '+bad;
+        if(JSON.stringify(t.icons[n]).length>RMT_ICON_LEN)return 'Icon "'+n+'" is over '+RMT_ICON_LEN+' characters';
+      }
+    }
     for(const s of t.sections){
       if(!Array.isArray(s)||typeof s[0]!=='string')return 'Each section is an array starting with its kind';
       if(RMT_KINDS.indexOf(s[0])<0)return 'Unknown section kind "'+s[0]+'" — use '+RMT_KINDS.join(', ');
@@ -523,8 +621,15 @@ function validateTpl(t){
                 return 'lit: colour must be a #hex value — "'+tok+'"';
               continue;
             }
+            // icon:<name> — whether an icon by that name exists is not checked: it
+            // may be imported after the style, and a missing one shows the label.
+            if(tok.indexOf('icon:')===0){
+              if(!RMT_ICON_NAME.test(tok.slice(5)))
+                return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
+              continue;
+            }
             if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source> or '+RMT_OPTS.join(', ');
+              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name> or '+RMT_OPTS.join(', ');
           }
         }
         const a=arr?it[0]:it;
@@ -552,6 +657,7 @@ export const RMT_VER =
 // --border, --muted, --active, --accent), so whatever hosts this must map those
 // onto its own theme — inside a shadow root there is no :root to inherit from.
 export const RMT_CSS = `
+.ico-face .rmt-btn{cursor:default}
 .rmt-body,.rmt-body *{box-sizing:border-box}
 .rmt-body{zoom:var(--rb-zoom,1);background:var(--rb-bg,transparent);border:1px solid var(--rb-border,transparent);border-radius:var(--rb-radius,0);padding:var(--rb-pad,0);max-width:var(--rb-maxw,none);margin:0 auto;box-shadow:var(--rb-shadow,none);clip-path:var(--rb-clip,none)}
 .rmt-section{margin-bottom:10px}
@@ -635,6 +741,12 @@ export const RMT_CSS = `
 .rmt-btn.xl svg{width:26px;height:26px}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
+.rmt-btn.squircle{border-radius:42%}
+@supports (corner-shape:superellipse(1.4)){.rmt-btn.squircle{border-radius:50%;corner-shape:superellipse(1.4)}}
+.rmt-btn svg.rmt-ico{width:auto;max-width:78%;height:20px}
+.rmt-btn.sm svg.rmt-ico{height:16px}
+.rmt-btn.xl svg.rmt-ico{height:26px}
+.rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
   color:var(--rb-lit-fg,#fff);border-color:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)))}
 .rmt-btn.light{background:var(--rb-light-bg,#e9e9ee);color:var(--rb-light-fg,#16161a);border-color:var(--rb-light-bg,#e9e9ee)}
@@ -644,4 +756,4 @@ export const RMT_CSS = `
 .rmt-head .macro-edit-btn{margin-left:0}
 `;
 
-export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, themeValueBad, btnHtml, sectionHtml, validateTpl };
+export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl };

@@ -87,7 +87,7 @@
 // `node tools/gen-remote-styles.mjs` after changing styles in web_control.cpp.
 import {
   RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, RMT_LCD_LABELLED, lcdLabel,
-  sectionHtml, validateTpl, themeValueBad,
+  sectionHtml, validateTpl, themeValueBad, useIcons,
 } from './remote-styles.js?v=1.10.0-dev';
 
 // Which build of this file the browser actually loaded, read from the ?v= its
@@ -958,6 +958,10 @@ class BleRemoteCard extends HTMLElement {
           body.style.setProperty(RMT_VARS[k], style.theme[k]);
       }
     }
+    // A style's imported icons travel inside it: the web page's Export attaches
+    // them, and this card has no other way to reach them on an https dashboard.
+    // Replaced on every draw, so one style's logo never lands on another's key.
+    useIcons(style.icons || {});
     body.innerHTML = style.sections.map(sectionHtml).join('');
     // Kept for _applyLcd: @last and @station arrive as an action, and this
     // is the only thing that knows the style calls it something.
