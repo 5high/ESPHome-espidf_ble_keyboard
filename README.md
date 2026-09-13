@@ -529,6 +529,8 @@ espidf_ble_keyboard:
 | `"mouse_goto:<x>:<y>"` | Move to a **Windows virtual-desktop pixel** across **all monitors** (homes the absolute pointer to the desktop origin, then steps relatively). X/Y are Windows coordinates (primary monitor top-left = 0,0; screens left of it are negative). Use this when the absolute pointer is confined to the primary monitor. Needs "Enhance pointer precision" **off** and a fixed pointer-speed slider position (the per-axis calibration is tied to it) for pixel accuracy. |
 | `"switch_host:N"` | Switch to host slot N (0–9). Reconnects to stored host or advertises for new pairing. |
 | `"switch_host:next"` / `"switch_host:prev"` | Step to the next or previous host slot, wrapping around at the ends. Cycles through every configured slot, so an unpaired one is reached too (and advertises for pairing). Does nothing when only one slot is configured. |
+| `"switch_host:back"` | Return to the host slot that was active before the last switch, however that switch was made. Pressed again, it goes back again. |
+| `"wait:connected"` / `"wait:connected:N"` | Pause a macro until the active host is connected and ready for keys, for at most N ms (default 10000, max 60000). On timeout the macro carries on. |
 | `"forget_host:N"` | Remove BLE bond for host slot N (0–9) and clear the slot. |
 | `"lcd:<text>"` | Put text on an [LCD panel](#lcd-panels)'s `@msg` line. Everything after the colon is the text. |
 | `"if:<source>: <when on> \|\| <when off>"` | Run one branch or the other depending on a [source](#branching-on-real-state). Does nothing until the source has a state. |
@@ -879,6 +881,16 @@ button:
 The rotation covers every slot up to `host_slots`, including ones nothing is paired to yet — landing on an empty slot advertises for new pairing, exactly as `switch_host:N` on that slot would. With `host_slots: 1` it does nothing rather than dropping the link and re-advertising.
 
 From Home Assistant, the `switch_host` service takes a slot number only; reach the cycling form with `run_action` and the action string `switch_host:next`.
+
+**Visiting another host and coming back.** `switch_host:back` returns to whichever slot was active before the last switch, and `wait:connected` holds a macro until the new host has actually reconnected — which takes a few seconds and varies by host, so a fixed `delay:` is a guess:
+
+```
+switch_host:3 | wait:connected | play_pause | switch_host:back
+```
+
+Keys sent before a host is ready are lost, so put `wait:connected` after every switch that is followed by keys. If the host never connects, the wait gives up after 10 seconds (`wait:connected:20000` for longer) and the rest of the macro still runs, so the `switch_host:back` at the end brings the keyboard home either way. A slot with Bluetooth turned off never connects, so the wait returns straight away there.
+
+> Run such macros from the web page, a remote key or Home Assistant's `run_action`, which all use the keyboard's own action task. The YAML `espidf_ble_keyboard.run_action` automation action runs on ESPHome's main loop, which stalls for as long as the wait lasts.
 
 ### A Slot That Never Advertises
 
@@ -1361,6 +1373,8 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 |---|---|
 | `"switch_host:N"` | Switch to host slot N (0–9). If the slot has a stored host, uses directed advertising to reconnect. If empty, starts normal advertising for new pairing. |
 | `"switch_host:next"` / `"switch_host:prev"` | Step one slot forward or back, wrapping at the ends — the same cycling the host switcher arrows on the cards do, but on the device, so a single remote key or macro can rotate through hosts. Empty slots are included in the rotation. |
+| `"switch_host:back"` | Return to the slot active before the last switch. See [Visiting another host and coming back](#multi-host-switching). |
+| `"wait:connected"` | Hold a macro until the active host is ready for keys, up to 10 s (`wait:connected:N` for N ms). |
 | `"forget_host:N"` | Remove the bond for host slot N (0–9). Clears the stored address and removes the BLE bond from the ESP32. If the forgotten host is currently connected, it is disconnected. |
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
 | `"alternate:<a> \|\| <b> \|\| …"` | Run **one branch** per press, advancing each time. Branches split on `\|\|`; a single `\|` still means "next step", so a branch can be a whole sequence. See [Toggling one button between two actions](#toggling-one-button-between-two-actions). |

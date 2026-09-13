@@ -441,6 +441,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                 ESP_LOGI(TAG, "GAP: Pairing Successful");
                 if (s_instance) {
                     s_instance->queue_paired_state(true);
+                    s_instance->mark_link_secure();
                     // Matched by identity, so a phone that reconnected on a fresh
                     // resolvable address is still recognised as the slot's owner.
                     int8_t known = s_instance->find_slot_for_peer(param->ble_security.auth_cmpl.bd_addr);
@@ -2673,6 +2674,10 @@ void EspidfBleKeyboard::switch_host(uint8_t slot) {
     // left holding the key until it notices the disconnect.
     release_held();
 
+    // Remembered whichever way the switch was asked for — a verb, a button, the
+    // web page or Home Assistant — so switch_host:back always means "where it
+    // was before this".
+    if (slot != active_slot_) previous_slot_ = (int8_t) active_slot_;
     active_slot_ = slot;
     save_host_slots_();
     if (active_host_sensor_ != nullptr)
@@ -4077,6 +4082,41 @@ __attribute__((noinline)) void EspidfBleKeyboard::run_if_(const std::string &act
         return;
     }
 
+// Blocks the calling task until the active slot's host is connected and ready
+// for keys, or `timeout_ms` passes. Ready means the link was made for the active
+// slot and is encrypted, or the host has subscribed to reports. It is not
+// is_connected_: switch_host() closes the old link asynchronously, so for a
+// moment after a switch the previous host still reads as connected — and a wait
+// that trusted that would let the next keys go to the wrong machine.
+//
+// On timeout the macro carries on, so a switch_host:back at its end still
+// brings the keyboard home. Both readiness flags are written on the Bluetooth
+// task, so this works on the action task and, for the YAML run_action that runs
+// inline, on the loop too — where the watchdog is fed while it waits.
+bool EspidfBleKeyboard::wait_host_ready_(uint32_t timeout_ms) {
+    if (!slot_broadcasts(active_slot_)) return false;   // nothing will ever connect
+    auto ready = [this]() {
+        return is_connected_ && link_slot_.load() == (int8_t) active_slot_ &&
+               (link_secure_.load() || ((report_ccc_val | boot_kb_in_ccc_val | consumer_ccc_val) & 0x0001));
+    };
+    if (ready()) return true;
+    const bool on_loop = xTaskGetCurrentTaskHandle() != action_task_;
+    const uint32_t start = millis();
+    while (millis() - start < timeout_ms) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+        if (on_loop) App.feed_wdt();
+        if (ready()) {
+            // A host subscribes to its reports straight after encryption, and
+            // keys sent in that gap are dropped.
+            vTaskDelay(pdMS_TO_TICKS(400));
+            ESP_LOGD(TAG, "wait:connected ready after %u ms", (unsigned) (millis() - start));
+            return true;
+        }
+    }
+    ESP_LOGW(TAG, "wait:connected gave up after %u ms; carrying on with the macro", (unsigned) timeout_ms);
+    return false;
+}
+
 // Kept out of execute_action's frame, for the reason run_alternate_ gives: the
 // step string here is the last of the big locals that every nested frame was
 // reserving whether or not it split anything.
@@ -4249,6 +4289,14 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
             vTaskDelay(pdMS_TO_TICKS(ms));
         return;
     }
+    // wait:connected[:ms] — hold the macro until the host is ready for keys,
+    // rather than guessing how long a reconnect takes after a switch.
+    if (action.find("wait:connected") == 0) {
+        int ms = 10000;
+        if (action.size() > 15 && action[14] == ':') ms = atoi(action.c_str() + 15);
+        wait_host_ready_((uint32_t) std::clamp(ms, 100, 60000));
+        return;
+    }
     // Parametric actions
     if (action.find("combo:") == 0) {
         int mod = 0, key = 0;
@@ -4374,6 +4422,15 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         // The >1 test guards the modulo and stops a one-slot config from
         // "switching" to the slot it is already on — switch_host() tears the
         // link down unconditionally, so that would drop the host for nothing.
+        if (arg == "back") {
+            // Where the keyboard was before the last switch. Pressed again it goes
+            // back again, so two hosts can be toggled.
+            if (previous_slot_ >= 0 && previous_slot_ < host_slots_ && previous_slot_ != (int8_t) active_slot_)
+                switch_host((uint8_t) previous_slot_);
+            else
+                ESP_LOGW(TAG, "switch_host:back has no earlier host to return to");
+            return;
+        }
         if (arg == "next" || arg == "prev" || arg == "previous") {
             if (host_slots_ > 1) {
                 int delta = (arg == "next") ? 1 : -1;

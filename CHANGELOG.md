@@ -54,6 +54,10 @@ web control page shows the matching version badge.
   existed only as arrows on the Home Assistant cards, computed in the browser. Unpaired slots stay
   in the rotation, and a single-slot setup ignores it rather than dropping its link.
 
+- **A macro can visit another host and come back.** A new step returns to whichever host was active
+  before the last switch, and another holds the macro until the new host is ready for keys instead of
+  guessing a delay. If the host never connects the macro carries on, so the return still happens.
+
 ### Fixed
 - **A long or deeply nested action no longer reboots the device.** Action strings ran on whichever
   task asked for them: the web server's, with 4352 bytes, where a chain measured seven frames deep

@@ -534,6 +534,10 @@ class EspidfBleKeyboard : public Component
   void set_connected(bool connected, uint16_t conn_id) {
     is_connected_ = connected;
     conn_id_ = conn_id;
+    // Which slot this link was made for. Advertising only ever runs for the
+    // active slot, so that is the one a new connection belongs to.
+    link_slot_.store(connected ? (int8_t) active_slot_ : (int8_t) -1);
+    link_secure_.store(false);
     pending_lcd_publish_.store(true);   // @state
     // Drop held state rather than releasing it: the link is already gone, so no
     // report would reach the host anyway, and a host releases everything itself
@@ -547,6 +551,8 @@ class EspidfBleKeyboard : public Component
   }
   bool is_connected() const { return is_connected_; }
   uint16_t conn_id() const { return conn_id_; }
+  /// Called from the GAP task once the current link is encrypted.
+  void mark_link_secure() { link_secure_.store(true); }
 
   // Multi-host switching
   void switch_host(uint8_t slot);
@@ -990,6 +996,13 @@ class EspidfBleKeyboard : public Component
   // ~240 bytes a frame, seven frames on the deepest real chain, so 6 KB leaves
   // room for roughly twice that depth.
   static const uint32_t ACTION_TASK_STACK = 6144;
+  // For switch_host:back and wait:connected. previous_slot_ is the slot active
+  // before the last switch; link_slot_ and link_secure_ are written from the
+  // Bluetooth task and read by whichever task runs the macro.
+  int8_t previous_slot_{-1};
+  std::atomic<int8_t> link_slot_{-1};
+  std::atomic<bool> link_secure_{false};
+  bool wait_host_ready_(uint32_t timeout_ms);
   static const uint8_t ACTION_QUEUE_DEPTH = 8;
   QueueHandle_t action_queue_{nullptr};
   TaskHandle_t action_task_{nullptr};

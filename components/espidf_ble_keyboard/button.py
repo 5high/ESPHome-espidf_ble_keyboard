@@ -64,7 +64,10 @@ def validate_action(value):
             return f"mouse_goto:{x}:{y}"
         elif action_type == "switch_host":
             slot = value.get("slot", 0)
-            # "next"/"prev" cycle through the configured slots on the device
+            # "next"/"prev" cycle through the configured slots on the device;
+            # "back" returns to the slot active before the last switch
+            if isinstance(slot, str) and slot.lower() == "back":
+                return "switch_host:back"
             if isinstance(slot, str) and slot.lower() in ("next", "prev", "previous"):
                 return f"switch_host:{'prev' if slot.lower().startswith('prev') else 'next'}"
             return f"switch_host:{int(slot)}"
