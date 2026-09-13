@@ -1782,7 +1782,7 @@ function svgToIcon(text){
     });
   }
   const PROPS=['fill','fill-rule','stroke','stroke-width','stroke-linecap','stroke-linejoin','opacity',
-               'fill-opacity','display','visibility','stop-color','stop-opacity'];
+               'fill-opacity','display','visibility','stop-color','stop-opacity','mask','clip-path','clip-rule'];
   const props=el=>{
     const o={};
     for(const k of PROPS){const v=el.getAttribute(k);if(v!==null)o[k]=v.trim()}
@@ -1871,7 +1871,28 @@ function svgToIcon(text){
   const SKIP=['defs','clippath','mask','filter','style','title','desc','metadata','lineargradient',
               'radialgradient','pattern','symbol','marker','script','foreignobject','switch'];
   const paths=[];
-  function walk(el,ctx,depth,forced){
+  const urlRef=v=>{const m=/url\(\s*['"]?#([^'")\s]+)/i.exec(v||'');return m?byId(m[1]):null};
+  // Whether shapes are one plain rectangle: its outline is as long as its
+  // bounding box's perimeter. Measured on a path built here from checked path
+  // data — never a pasted node — in an off-screen svg removed straight after.
+  function isRect(recs){
+    if(recs.length!==1)return false;
+    const NS='http://www.w3.org/2000/svg',s=document.createElementNS(NS,'svg');
+    try{
+      s.setAttribute('style','position:absolute;left:-9999px;top:0;width:1px;height:1px;visibility:hidden');
+      const pth=document.createElementNS(NS,'path');
+      pth.setAttribute('d',recs[0].d);
+      s.appendChild(pth);document.body.appendChild(s);
+      const bb=pth.getBBox(),len=pth.getTotalLength(),per=2*(bb.width+bb.height);
+      return bb.width>0&&bb.height>0&&Math.abs(len-per)<=per*0.005;
+    }catch(e){return false}
+    finally{s.remove()}
+  }
+  // forced: draw this element even if it is one SKIP would pass over (a <use>
+  // target, or the root). out: where shapes go. paintAs: set when drawing the
+  // inside of a mask or clip — geometry only, painted with what it reveals.
+  // bare: this element's own mask has already been dealt with.
+  function walk(el,ctx,depth,forced,out,paintAs,bare){
     if(depth>40)return;
     const tag=el.localName.toLowerCase();
     if(!forced&&SKIP.indexOf(tag)>=0)return;
@@ -1880,28 +1901,61 @@ function svgToIcon(text){
     const p=props(el);
     if(p.display==='none'||p.visibility==='hidden')return;
     const c=Object.assign({},ctx);
-    const f=paint(p.fill);if(f!==undefined)c.f=f;
-    if(p['fill-rule']!==undefined)c.r=p['fill-rule']==='evenodd';
-    const s=paint(p.stroke);if(s!==undefined)c.s=s;
-    if(p['stroke-width']!==undefined&&parseFloat(p['stroke-width'])>=0)c.w=parseFloat(p['stroke-width']);
-    if(p['stroke-linecap']!==undefined)c.c=p['stroke-linecap'];
-    if(p['stroke-linejoin']!==undefined)c.j=p['stroke-linejoin'];
     const op=v=>{v=parseFloat(v);return isNaN(v)?1:Math.max(0,Math.min(1,v))};
-    if(p.opacity!==undefined)c.o=c.o*op(p.opacity);
-    if(p['fill-opacity']!==undefined)c.fo=op(p['fill-opacity']);
+    if(paintAs){
+      // A mask's own colours say how much shows through, not what colour it is,
+      // so they are replaced here; its fill rule still decides where holes are.
+      c.f=paintAs.f;c.s=undefined;c.o=paintAs.o;c.fo=1;
+      const rule=p['fill-rule']!==undefined?p['fill-rule']:p['clip-rule'];
+      if(rule!==undefined)c.r=rule==='evenodd';
+    }else{
+      const f=paint(p.fill);if(f!==undefined)c.f=f;
+      if(p['fill-rule']!==undefined)c.r=p['fill-rule']==='evenodd';
+      const s=paint(p.stroke);if(s!==undefined)c.s=s;
+      if(p['stroke-width']!==undefined&&parseFloat(p['stroke-width'])>=0)c.w=parseFloat(p['stroke-width']);
+      if(p['stroke-linecap']!==undefined)c.c=p['stroke-linecap'];
+      if(p['stroke-linejoin']!==undefined)c.j=p['stroke-linejoin'];
+      if(p.opacity!==undefined)c.o=c.o*op(p.opacity);
+      if(p['fill-opacity']!==undefined)c.fo=op(p['fill-opacity']);
+    }
     const tr=(el.getAttribute('transform')||'').trim();
     if(tr){
       const t=tr.replace(/\s*\(\s*/g,'(').replace(/\s*\)\s*/g,') ').replace(/[\s,]+/g,' ').replace(/ \)/g,')').trim();
       if(RMT_ICON_T.test(t))c.t=(c.t?c.t+' ':'')+t;
       else note('a transform it could not read was ignored');
     }
-    if(el.hasAttribute('clip-path')||el.hasAttribute('mask'))note('clipping and masks were ignored');
+    // Masks and clip paths cannot be stored. Two uses of them can be drawn
+    // without one, and they want opposite answers. A plain rectangle shown only
+    // through the logo's shape — Illustrator's favourite — covers everything if
+    // drawn as it is, so the mask's shape is drawn instead, in the rectangle's
+    // colour. A logo clipped to a rectangular frame is already the right shape,
+    // so the clip is dropped. Anything else keeps what it masks, as before.
+    // Found through classes and styles as well as attributes, which is where
+    // Illustrator puts them.
+    const holder=!bare&&!paintAs&&(p.mask!==undefined||p['clip-path']!==undefined)?(urlRef(p.mask)||urlRef(p['clip-path'])):null;
+    if(!bare&&!paintAs&&(p.mask!==undefined||p['clip-path']!==undefined)&&!holder)
+      note('a mask or clipping it could not follow was ignored');
+    if(holder){
+      const revealed=[],masked=[];
+      walk(el,ctx,depth,forced,revealed,null,true);
+      if(!revealed.length)return;
+      for(const ch of Array.from(holder.children))
+        walk(ch,c,depth+1,false,masked,{f:revealed[0].f,o:revealed[0].o===undefined?1:revealed[0].o},false);
+      if(masked.length&&isRect(revealed)&&!isRect(masked)){
+        for(const r of masked)out.push(r);
+        note('a masked patch of colour was drawn in the shape of its mask');
+      }else{
+        for(const r of revealed)out.push(r);
+        if(masked.length&&!isRect(masked))note('clipping and masks were ignored');
+      }
+      return;
+    }
     if(tag==='use'){
       const h=hrefOf(el),ref=h&&h[0]==='#'?byId(h.slice(1)):null;
       if(!ref||ref===el){note('a <use> that points nowhere was dropped');return}
       const x=num(el,'x'),y=num(el,'y');
       if(x||y)c.t=(c.t?c.t+' ':'')+'translate('+x+' '+y+')';
-      walk(ref,c,depth+1,true);
+      walk(ref,c,depth+1,true,out,paintAs,false);
       return;
     }
     if(SHAPES.indexOf(tag)>=0){
@@ -1923,14 +1977,14 @@ function svgToIcon(text){
         if(c.j==='round'||c.j==='bevel')rec.j=c.j;
       }
       if(o<1)rec.o=o;
-      paths.push(rec);
+      out.push(rec);
       return;
     }
-    for(const ch of Array.from(el.children))walk(ch,c,depth+1,false);
+    for(const ch of Array.from(el.children))walk(ch,c,depth+1,false,out,paintAs,false);
   }
   // A fill set nowhere is left unset, which draws in the key's own colour — the
   // right thing for a one-colour glyph, where SVG's own default would be black.
-  walk(root,{f:undefined,r:false,s:undefined,w:undefined,o:1,fo:1,t:''},0,true);
+  walk(root,{f:undefined,r:false,s:undefined,w:undefined,o:1,fo:1,t:''},0,true,paths,null,false);
   if(!paths.length)return {err:'Nothing to draw was found in that SVG.'};
 
   let rec={vb:vb,p:paths},len=JSON.stringify(rec).length;
