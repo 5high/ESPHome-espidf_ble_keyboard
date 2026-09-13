@@ -1,9 +1,10 @@
 # ESP32 BLE HID Keyboard for ESPHome
 
-This is a custom [ESPHome](https://esphome.io) component that transforms an ESP32 into a Bluetooth Low Energy (BLE) HID Keyboard. This component targets **ESP-IDF Bluedroid GATTS** (rather than NimBLE), chosen for the HID behavior and host compatibility validated in this project.
+This is a custom [ESPHome](https://esphome.io) component that turns an ESP32 into a Bluetooth Low Energy (BLE) HID keyboard and mouse that can switch between up to ten paired hosts. It serves its own web remote and ships Home Assistant dashboard cards. A host slot can have Bluetooth turned off and its keys drive Home Assistant actions instead — such as IR commands — making it a universal remote as well. This component targets **ESP-IDF Bluedroid GATTS** (rather than NimBLE), chosen for the HID behavior and host compatibility validated in this project.
 
 ## Features
 
+* **Universal Remote:** A web remote and Home Assistant card, drawn in built-in or your own styles with logos and a small status screen. Any key can fire a Home Assistant action, such as sending an IR command, and a host slot can have Bluetooth turned off to act purely as a remote page. See [A slot that never advertises](#a-slot-that-never-advertises).
 * **Standard HID Keyboard:** Recognized as a native keyboard by Windows, Android, and iOS. Full HOGP-compliant BLE HID with Device Information and Battery services. Use `passkey_mode: legacy` for Windows (Just Works for Android), `passkey_mode: secure_connections` for iOS.
 * **Secure Pairing:** Supports a configurable 6-digit static passkey (PIN) for secure bonding on Windows and iOS. Android uses Just Works pairing (no PIN) due to HID compatibility limitations.
 * **Efficient Memory Usage:** Direct API implementation ensures stability even with complex ESPHome configurations.
