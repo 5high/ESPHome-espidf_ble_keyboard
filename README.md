@@ -1597,28 +1597,6 @@ In a **sections** dashboard, all three cards support the resize handles and the 
 
 > **HACS installs the cards only — not the firmware.** There is no HACS category for ESPHome external components, so the `espidf_ble_keyboard` component is still added to your device YAML with `external_components:` (see [Usage Example](#usage-example)) and updated by re-flashing the device. A HACS update for this repository updates the dashboard cards and nothing else.
 
-Prefer not to use HACS? Every card section below also lists the manual copy-to-`www` steps, and the card files live in [`dist/`](dist/).
-
----
-
-## Developing the Cards
-
-If you're editing the card files in [`dist/`](dist/), don't iterate through HACS — it needs a commit, a tag and a release for every change. Work directly against `config/www/` instead:
-
-1. Copy the card (or symlink it, if Home Assistant runs on the machine you're editing on) to `config/www/`.
-2. Add it once as a resource: **Settings → Dashboards → Resources**, URL `/local/remote-card.js?v=1`, type **JavaScript Module**.
-3. After each edit, bump that number — `?v=2`, `?v=3`. Editing the existing resource is enough; there's no need to delete and re-add it.
-
-**Why the cache is so stubborn.** Home Assistant's frontend registers a *service worker*, which serves cached assets before the browser's normal cache rules apply — so a hard reload (`Ctrl+Shift+R`) often still hands you the old card. The `?v=` change works because it's a different URL entirely.
-
-For a tighter loop, skip the version bumping: keep browser devtools open with **Disable cache** ticked, or work in a private window. Both bypass the service worker, so a plain reload always picks up the new file.
-
-**The companion app caches separately.** Its webview keeps its own copy, so an updated card can be live in a desktop browser while the app still runs the old code — which reads like a device-side or platform-specific bug rather than a cache. Force-stop and reopen the app after updating a card, or clear its frontend cache from the app's own settings.
-
-> The device's own web UI has no such problem — it is served with `Cache-Control: no-cache`, so a firmware flash always shows the new interface. That only covers the page served by the ESP32; the Lovelace cards are files in Home Assistant and cache like any other web asset.
-
-Publishing a change to HACS users is maintainer process rather than something you need to use the cards — it lives in [CONTRIBUTING.md](CONTRIBUTING.md).
-
 ---
 
 ## Mouse Control Card for Home Assistant
@@ -1674,14 +1652,7 @@ api:
 
 ### 2. Install the card
 
-**With HACS (recommended)** — installs all three cards and keeps them updated; see [Installing the cards via HACS](#installing-the-cards-via-hacs).
-
-**By hand:**
-
-1. Copy `dist/mouse-card.js` to your Home Assistant `config/www/` folder.
-2. In Home Assistant: **Settings -> Dashboards -> Resources -> Add Resource**
-   - URL: `/local/mouse-card.js`
-   - Type: **JavaScript Module**
+Install the cards with HACS — see [Installing the cards via HACS](#installing-the-cards-via-hacs). One download installs all three and keeps them updated.
 
 ### 3. Add to a dashboard
 
@@ -2258,14 +2229,7 @@ api:
 
 ### 2. Install the card
 
-**With HACS (recommended)** — installs all three cards and keeps them updated; see [Installing the cards via HACS](#installing-the-cards-via-hacs).
-
-**By hand:**
-
-1. Copy `dist/keyboard-card.js` to your Home Assistant `config/www/` folder.
-2. In Home Assistant: **Settings -> Dashboards -> Resources -> Add Resource**
-   - URL: `/local/keyboard-card.js`
-   - Type: **JavaScript Module**
+Install the cards with HACS — see [Installing the cards via HACS](#installing-the-cards-via-hacs). One download installs all three and keeps them updated.
 
 ### 3. Add to a dashboard
 
@@ -2371,14 +2335,7 @@ api:
 
 ### 2. Install the card
 
-**With HACS (recommended)** — installs all three cards and keeps them updated; see [Installing the cards via HACS](#installing-the-cards-via-hacs).
-
-**By hand:**
-
-1. Copy `dist/remote-card.js` to your Home Assistant `config/www/` folder.
-2. In Home Assistant: **Settings -> Dashboards -> Resources -> Add Resource**
-   - URL: `/local/remote-card.js`
-   - Type: **JavaScript Module**
+Install the cards with HACS — see [Installing the cards via HACS](#installing-the-cards-via-hacs). One download installs all three and keeps them updated.
 
 ### 3. Add to a dashboard
 
