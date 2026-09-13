@@ -374,6 +374,18 @@ class EspidfBleKeyboard : public Component
   // out with /hosts, and the page decides what it looks like. That way a new
   // built-in style is a page change alone, and an id this firmware has never
   // heard of (a custom one, or a newer page) still round-trips.
+  // A slot that never advertises: a remote page whose keys drive Home Assistant
+  // (an IR blaster, say) with no host on the other end. Everything else about a
+  // slot still applies — its style, overrides, hidden/hold/repeat lists and its
+  // place in the switcher — only the radio stays quiet. HID actions on such a
+  // slot go nowhere, because there is nothing connected to send them to.
+  bool slot_broadcasts(uint8_t slot) const {
+    return slot >= MAX_HOST_SLOTS || (broadcast_mask_ & (uint16_t) (1u << slot)) != 0;
+  }
+  /// Persist the choice, and act on it now when it is the active slot — the tick
+  /// would otherwise do nothing until the next host switch. False = bad slot.
+  bool set_slot_broadcast(uint8_t slot, bool on);
+
   static const uint8_t MAX_STYLE_LEN = 15;
   const std::string &get_remote_style(uint8_t slot) const;
   /// Empty clears the slot back to the default style. False = bad slot or id.
@@ -890,6 +902,14 @@ class EspidfBleKeyboard : public Component
   void save_hidden_(uint8_t slot);
   void publish_hidden_();  // push the active slot's list to the text sensor
   void publish_remote_style_();  // push the active slot's style id to the text sensor
+
+  // One bit per slot, set = that slot advertises. A bitmask in a single NVS key
+  // rather than ten keys: it is one boolean per slot and one write. An absent
+  // key reads as all-set, so a device updating to this firmware keeps behaving
+  // exactly as it did.
+  uint16_t broadcast_mask_{0xFFFF};
+  void load_broadcast_();
+  void save_broadcast_();
 
   // LCD panel sources, and the last payload published for them. Every declared
   // source raises a flag on change rather than publishing from whatever task

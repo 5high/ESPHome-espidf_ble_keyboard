@@ -739,6 +739,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <select id="ov-slot"></select>
 <button id="ov-forget" title="Remove the BLE bond for the selected host slot and clear its stored address.&#10;Disconnects it if it is the active host.&#10;&#10;Tap once to arm, tap again to confirm.">Forget Host</button>
 </div>
+<label class="kb-paste-auto" id="ov-bcast-lbl" style="margin-bottom:8px" title="On: an ordinary BLE host slot &mdash; it advertises, pairs and sends HID.&#10;&#10;Off: the radio stays silent on this slot. Nothing can find or connect to it and HID keys go nowhere, so use it as a remote page whose buttons drive Home Assistant instead &mdash; an IR blaster, say.&#10;&#10;Turning it off while this slot is the active one disconnects its host straight away."><input type="checkbox" id="ov-bcast">Advertise over Bluetooth</label>
 <div id="ov-list"><span class="prog-empty">Loading...</span></div>
 <div class="macro-form">
 <input id="ov-name" list="ov-names" placeholder="Action name (e.g. record)" maxlength="31" title="The named action to remap on this host &mdash; start typing to pick from the list.&#10;Only named actions can be overridden; parametric forms like combo: and consumer: always mean exactly what they say.">
@@ -1173,9 +1174,12 @@ const dname=document.getElementById('dname');
 function pollStatus(){
   fetch('/api/ble_keyboard/status').then(r=>r.json()).then(d=>{
     const c=d.connected,p=d.paired;
-    sdot.className='status-dot'+(p?' paired':c?' connected':'');
-    stxt.className='status-text'+((c||p)?' on':'');
-    stxt.textContent=p?'Paired':c?'Connected':'Disconnected';
+    // A slot marked as never advertising is not disconnected — there is nothing
+    // for it to connect to. Saying "Disconnected" there reads as a fault.
+    const noBle=d.broadcast===false;
+    sdot.className='status-dot'+(noBle?'':p?' paired':c?' connected':'');
+    stxt.className='status-text'+((!noBle&&(c||p))?' on':'');
+    stxt.textContent=noBle?'No BLE':p?'Paired':c?'Connected':'Disconnected';
     if(d.device_name){dname.textContent='('+d.device_name+')';document.title=d.device_name+(POPOUT?' — Remote':' — BLE Control')}
     // Hide the ha_action preset when the YAML opt-in is off, so nobody
     // composes an action that would only log a warning. By class and on every
@@ -1570,7 +1574,10 @@ function rememberedTemplate(){
         // independently of the name — see .slot-addr.
         const addr=document.createElement('span');
         addr.className='slot-addr';
-        addr.textContent=s.occupied?(s.identity||s.addr):'Empty';
+        // A slot that never advertises has no host and never will, so neither an
+        // address nor "Empty" is the truth about it — "Empty" reads as a slot
+        // waiting to be paired.
+        addr.textContent=s.broadcast===false?'No BLE':(s.occupied?(s.identity||s.addr):'Empty');
         b.appendChild(addr);
         onTap(b,()=>{
           // Mark the new host at once, then re-read as soon as the device has
@@ -1872,7 +1879,11 @@ function appendStep(el,val){
   const saveBtn=document.getElementById('ov-save');
   const preset=document.getElementById('ov-preset');
   const forgetBtn=document.getElementById('ov-forget');
+  const bcastCk=document.getElementById('ov-bcast');
   if(!slotSel)return;
+  // Whether each slot advertises, as /hosts last reported it. Kept so the tick
+  // can follow the picker without a fetch per slot change.
+  let bcastBySlot={};
   let slot=null;  // null until the first load picks the active slot
   // The slot the device is actually on, which is not necessarily the one being
   // edited — a style change only redraws the remote when the two agree.
@@ -1912,10 +1923,32 @@ function appendStep(el,val){
         o.textContent=label+' — slot '+s.slot+(s.slot===d.active?' (active)':'')+(unbonded?' ⚠ not bonded':'');
         if(unbonded)o.title='The keyboard has no pairing key for this host. Pair it again from the host itself; nothing needs clearing here first.';
         slotSel.appendChild(o);
+        bcastBySlot[s.slot]=s.broadcast!==false;
       });
       slotSel.value=slot;
+      syncBcast();
     });
   }
+
+  // A device from before this setting existed answers without the field, and
+  // every slot on it advertises — hence !==false rather than a truth test.
+  function syncBcast(){
+    if(!bcastCk)return;
+    bcastCk.checked=bcastBySlot[slot]!==false;
+  }
+  if(bcastCk)bcastCk.addEventListener('change',()=>{
+    const on=bcastCk.checked,target=slot;
+    bcastBySlot[target]=on;
+    apiPost('broadcast_set',{slot:target,on:on?1:0}).then(r=>{
+      if(r.ok)return;
+      // Put the tick back where the device still has it.
+      bcastBySlot[target]=!on;
+      if(slot===target)syncBcast();
+    }).catch(()=>{
+      bcastBySlot[target]=!on;
+      if(slot===target)syncBcast();
+    });
+  });
 
   // Mark overrides whose macro: reference no longer resolves. Runs after the
   // list renders and again whenever the macro list changes, so renaming or
@@ -2003,6 +2036,7 @@ function appendStep(el,val){
     slot=parseInt(slotSel.value);
     // An armed confirm belongs to the slot it was armed on, never the new one.
     if(forgetBtn)resetForget();
+    syncBcast();
     load();
     if(hidPanel&&hidPanel.classList.contains('open'))loadHidden();
     if(rptPanel&&rptPanel.classList.contains('open'))loadRepeat();
@@ -2981,8 +3015,14 @@ function appendStep(el,val){
       // Every slot, including ones the file omits, so Replace really does put
       // an unmentioned host back on the full remote.
       const sty=d.remote_styles&&typeof d.remote_styles==='object'?d.remote_styles:{};
+      // The file lists only the slots that do NOT advertise, so a slot it omits
+      // restores as an ordinary host — which is also what a file from before this
+      // setting existed means.
+      const bc=d.broadcast&&typeof d.broadcast==='object'?d.broadcast:{};
       slots.forEach(sl=>{
         chain=chain.then(()=>post('remote_style_set',{slot:sl,id:sty[sl]||sty[String(sl)]||''}));
+        const off=bc[sl]===false||bc[String(sl)]===false;
+        chain=chain.then(()=>post('broadcast_set',{slot:sl,on:off?0:1}));
       });
       return chain;
     }).then(()=>{

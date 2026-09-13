@@ -30,6 +30,12 @@ web control page shows the matching version badge.
   active host and says whether it is connected, over four spare pills waiting for per-host overrides.
   It reads values the firmware always has, so it says something useful the moment it is picked.
 
+- **A host slot can be told never to advertise.** Untick it in Host Actions and the slot keeps its
+  style, overrides and place in the switcher while the radio stays quiet — a universal-remote page
+  whose buttons drive Home Assistant rather than a host. It shows as No BLE instead of a connection
+  state, and because the setting lives on the device it needs no reflash and survives a restore.
+  Keys that were never overridden have nowhere to go on such a slot and do nothing.
+
 - **One button can now step through the hosts.** `switch_host:next` and `switch_host:prev` move one
   slot forward or back and wrap around at the ends, so a physical button, a macro or a per-host
   override can rotate through the paired machines without naming a slot. Until now that cycling

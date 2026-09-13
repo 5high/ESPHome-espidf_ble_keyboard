@@ -880,6 +880,20 @@ The rotation covers every slot up to `host_slots`, including ones nothing is pai
 
 From Home Assistant, the `switch_host` service takes a slot number only; reach the cycling form with `run_action` and the action string `switch_host:next`.
 
+### A Slot That Never Advertises
+
+Not every slot has to be a Bluetooth host. Untick **Advertise over Bluetooth** in the [Host Actions](#host-actions-per-host-overrides) card and the slot keeps everything that makes a slot useful — its own remote style, per-host overrides, hidden/hold/repeat lists, a place in the host switcher — but the radio stays silent on it. Nothing advertises, nothing can find it, nothing can connect.
+
+What you get is a remote page with no host behind it: a universal-remote page whose buttons drive Home Assistant instead. Override them with `ha_action:` and they reach an IR blaster, a media player, a scene — anything HA can call.
+
+> **HID actions on such a slot go nowhere.** There is no host to send them to, so a button you have not overridden — Volume Up, the D-pad, a `string:` step — does nothing at all. Every button that should work on the page needs an override that leaves via Home Assistant.
+
+* The setting is stored per slot on the device, so changing it needs no reflash, and it travels in [Backup & Restore](#backup-and-restore).
+* Switching *to* the slot disconnects whichever host was live. That is the point: otherwise keys would keep reaching the old host while the screen says you are on the IR page.
+* `switch_host:next` does **not** skip it — reaching the page is why it exists.
+* It reports **No BLE** wherever a connection state is shown: the web page's host bar, the dashboard cards, and an `@state` line on an [LCD panel](#lcd-panels). "Disconnected" would read as a fault.
+* Tick it back on and the slot is an ordinary host again; it advertises straight away, and a host bonded to it earlier reconnects.
+
 ### Protecting a Bonded Host Slot
 
 Once a slot is bonded to a host, only that host can hold it. A different device that pairs while that slot is active is turned away: its bond is removed, it is disconnected, and the slot keeps its original host. To hand a slot to a different machine, forget it first.
@@ -986,6 +1000,8 @@ A dangling reference is flagged: any override row pointing at a macro that no lo
 <img src="docs/host_actions.png" width="420" alt="Host Actions card in the web UI">
 
 **Forget Host** sits next to the slot picker and removes the BLE bond for whichever slot the picker shows — including one that isn't the active host. It takes two taps: the first turns it red and reads `Confirm?`, the second does it, and it disarms itself after three seconds or if you change slot.
+
+**Advertise over Bluetooth** is a tick under the picker, and it too applies to the slot shown rather than the active one. Untick it to turn that slot into [a remote page with no host behind it](#a-slot-that-never-advertises).
 
 The same card also hosts the [Backup & Restore](#backup-and-restore) buttons, the [Remote Buttons](#removing-remote-buttons-per-host) hiding panel, the [Hold to Repeat](#hold-to-repeat-per-host) panel and the [Press and Hold](#press-and-hold-per-host) panel.
 

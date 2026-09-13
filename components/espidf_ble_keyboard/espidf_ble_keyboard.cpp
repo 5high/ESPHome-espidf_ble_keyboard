@@ -320,6 +320,16 @@ static void apply_security_params(bool use_static_passkey) {
 }
 
 static void do_start_advertising() {
+    // A slot can be marked as never advertising — a remote page whose keys drive
+    // Home Assistant rather than a connected host. Gated here rather than at each
+    // caller: advertising starts from four places (services up at boot, after a
+    // disconnect, a host switch, and the directed-advertising timeout), and a
+    // fifth added later is covered by being here.
+    if (s_instance != nullptr && !s_instance->slot_broadcasts(s_instance->active_host_slot())) {
+        ESP_LOGD(TAG, "ADV: slot %u does not advertise; staying quiet",
+                 s_instance->active_host_slot());
+        return;
+    }
     // Set per-slot random address so each slot appears as a different BLE device.
     // This prevents hosts bonded to other slots from auto-reconnecting.
     if (s_instance) {
@@ -1779,7 +1789,10 @@ std::vector<std::pair<std::string, std::string>> EspidfBleKeyboard::lcd_values()
     // is what lets an imported style say something useful straight away.
     out.emplace_back("@host", host_label(active_slot_));
     out.emplace_back("@slot", std::to_string((unsigned) active_slot_));
-    out.emplace_back("@state", is_paired_ ? "Paired" : (is_connected_ ? "Connected" : "Disconnected"));
+    // A slot with no radio is not disconnected — there is nothing to connect to,
+    // and "Disconnected" on a deliberate IR page reads as a fault.
+    out.emplace_back("@state", !slot_broadcasts(active_slot_) ? "No BLE"
+                               : (is_paired_ ? "Paired" : (is_connected_ ? "Connected" : "Disconnected")));
     out.emplace_back("@layout", active_layout_id());
     out.emplace_back("@battery", std::to_string((unsigned) battery_level()) + "%");
     if (has_rssi_) out.emplace_back("@rssi", std::to_string((int) last_rssi_) + " dBm");
@@ -1902,6 +1915,54 @@ void EspidfBleKeyboard::publish_lcd_() {
     if (lcd_sensor_json_ == last_lcd_json_) return;   // states stream; publish on change
     last_lcd_json_ = lcd_sensor_json_;
     lcd_sensor_->publish_state(lcd_sensor_json_);
+}
+
+void EspidfBleKeyboard::load_broadcast_() {
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READONLY, &handle) != ESP_OK) return;
+    uint16_t mask = 0xFFFF;
+    // Absent key leaves every slot advertising, which is what this firmware did
+    // before the setting existed.
+    if (nvs_get_u16(handle, "bcast", &mask) == ESP_OK) broadcast_mask_ = mask;
+    nvs_close(handle);
+    for (uint8_t s = 0; s < MAX_HOST_SLOTS; s++)
+        if (!slot_broadcasts(s)) ESP_LOGI(TAG, "Host slot %u does not advertise", s);
+}
+
+void EspidfBleKeyboard::save_broadcast_() {
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return;
+    nvs_set_u16(handle, "bcast", broadcast_mask_);
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+bool EspidfBleKeyboard::set_slot_broadcast(uint8_t slot, bool on) {
+    if (slot >= MAX_HOST_SLOTS) return false;
+    const uint16_t bit = (uint16_t) (1u << slot);
+    const bool was = (broadcast_mask_ & bit) != 0;
+    if (was == on) return true;
+    if (on) broadcast_mask_ |= bit; else broadcast_mask_ &= (uint16_t) ~bit;
+    save_broadcast_();
+    ESP_LOGI(TAG, "Host slot %u %s advertise", slot, on ? "will" : "will not");
+
+    // Only the active slot's radio state is live; any other slot takes effect
+    // when it is switched to.
+    if (slot != active_slot_) return true;
+    pending_lcd_publish_.store(true);   // @state changes with it
+    if (on) {
+        // Same path switch_host() takes when it is not connected.
+        esp_ble_gap_stop_advertising();
+        do_start_advertising();
+    } else if (is_connected_) {
+        // Dropping the link is the point: otherwise HID keeps reaching the host
+        // that is still connected while this slot claims to have no radio. The
+        // disconnect handler's restart is gated by the same flag.
+        esp_ble_gatts_close(s_gatts_if, conn_id_);
+    } else {
+        esp_ble_gap_stop_advertising();
+    }
+    return true;
 }
 
 void EspidfBleKeyboard::load_remote_style_() {
@@ -2453,7 +2514,7 @@ void EspidfBleKeyboard::switch_host(uint8_t slot) {
 
     ESP_LOGI(TAG, "Switching to host slot %u", slot);
 
-    if (hosts_[slot].occupied) {
+    if (hosts_[slot].occupied && slot_broadcasts(slot)) {
         // Check if stored address is a resolvable private address (RPA).
         // RPA has bits [7:6] of first byte = 01. Android rotates these, so
         // directed advertising to a stale RPA will always fail.
@@ -2609,6 +2670,7 @@ void EspidfBleKeyboard::setup() {
     load_hidden_();
     load_repeat_();
     load_hold_();
+    load_broadcast_();
     load_remote_style_();
     load_templates_();
     // Publish after loading, not just when the sensors are attached: the
@@ -2635,7 +2697,7 @@ void EspidfBleKeyboard::setup() {
 
     // If active slot has a bonded host, use directed advertising on startup
     // Skip directed for RPA addresses (Android rotates these)
-    if (hosts_[active_slot_].occupied) {
+    if (hosts_[active_slot_].occupied && slot_broadcasts(active_slot_)) {
         uint8_t addr_top = hosts_[active_slot_].addr[0] >> 6;
         if (addr_top == 0x01) {
             ESP_LOGI(TAG, "Startup: host slot %u has RPA address — using undirected advertising", active_slot_);

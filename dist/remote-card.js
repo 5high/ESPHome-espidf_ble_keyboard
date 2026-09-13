@@ -795,8 +795,12 @@ class BleRemoteCard extends HTMLElement {
       // identity is the address the host keeps across reconnects and is what the
       // host MAC sensor publishes; addr is what it happened to connect with and
       // rotates on Android. Prefer identity, fall back when it can't be resolved.
+      // A slot marked as never advertising has no host and never will, so
+      // neither an address nor 'Empty' is the truth about it -- 'Empty' reads as
+      // a slot waiting to be paired.
+      const noBle = apiSlot && apiSlot.broadcast === false;
       const addr = apiSlot && apiSlot.occupied && (apiSlot.identity || apiSlot.addr);
-      this._hostAddrEl.textContent = addr || 'Empty';
+      this._hostAddrEl.textContent = noBle ? 'No BLE' : (addr || 'Empty');
     }
   }
 

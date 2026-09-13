@@ -378,6 +378,10 @@ class BleKbWebHandler : public AsyncWebHandler {
       json += kb_->is_paired() ? "true" : "false";
       json += ",\"ha_action\":";
       json += kb_->ha_action_enabled() ? "true" : "false";
+      // Whether the active slot has a radio at all. Without it the badge reads
+      // "Disconnected" on a slot that is never meant to connect.
+      json += ",\"broadcast\":";
+      json += kb_->slot_broadcasts(kb_->active_host_slot()) ? "true" : "false";
       // Escaped like every other endpoint's strings. ESPHome restricts device
       // names, so this is consistency rather than a live bug — but a /status
       // that cannot be parsed takes the whole page down with it.
@@ -517,6 +521,8 @@ class BleKbWebHandler : public AsyncWebHandler {
         json += std::to_string(i);
         json += ",\"occupied\":";
         json += h.occupied ? "true" : "false";
+        json += ",\"broadcast\":";
+        json += kb_->slot_broadcasts(i) ? "true" : "false";
         if (h.occupied) {
           char addr_str[18];
           format_bd_addr(h.addr, addr_str);
@@ -895,6 +901,14 @@ class BleKbWebHandler : public AsyncWebHandler {
         if (!first_style) json += ",";
         first_style = false;
         json += "\"" + std::to_string(s) + "\":\"" + st + "\"";
+      }
+      json += "},\"broadcast\":{";
+      bool first_bcast = true;
+      for (uint8_t s = 0; s < kb_->host_slots(); s++) {
+        if (kb_->slot_broadcasts(s)) continue;  // the norm; an absent slot restores as advertising
+        if (!first_bcast) json += ",";
+        first_bcast = false;
+        json += "\"" + std::to_string(s) + "\":false";
       }
       json += "},\"remote_templates\":[";
       bool first_tpl = true;
@@ -1355,6 +1369,18 @@ class BleKbWebHandler : public AsyncWebHandler {
       } else if (!kb_->set_hold((uint8_t) slot, list)) {
         send_response(400, "text/plain", "Invalid button name in list");
       } else {
+        send_response(200, "text/plain", "OK");
+      }
+
+    } else if (path == "broadcast_set") {
+      // Whether a slot advertises at all. Off makes it a remote page with no
+      // radio behind it — see set_slot_broadcast() for what it does live.
+      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : -1;
+      bool on = request->hasArg("on") && std::string(request->arg("on").c_str()) == "1";
+      if (slot < 0 || slot >= kb_->host_slots()) {
+        send_response(400, "text/plain", "Invalid slot");
+      } else {
+        kb_->set_slot_broadcast((uint8_t) slot, on);
         send_response(200, "text/plain", "OK");
       }
 
