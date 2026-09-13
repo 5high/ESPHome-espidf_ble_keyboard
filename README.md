@@ -2420,7 +2420,7 @@ Features:
 - **Host switcher** — optional prev/next buttons in the header to change the active BLE host, with its name and MAC address. Switching here also repaints the card's [per-host hidden buttons](#removing-remote-buttons-per-host). See [Host switcher on the cards](#host-switcher-on-the-cards).
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 
-![Remote HA Card](docs/remote_ha_card.png)
+<img src="docs/remote_ha_card.png" height="560" alt="Remote HA card, full remote"> <img src="docs/remote_style6.png" height="560" alt="Remote in Style 6, with logo keys and a screen">
 
 ---
 
