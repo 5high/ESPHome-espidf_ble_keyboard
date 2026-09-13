@@ -70,7 +70,7 @@ CONF_LAYOUT = "layout"
 CONF_ACTIONS = "actions"
 CONF_BATTERY_LEVEL = "battery_level"
 # Keep in sync with EspidfBleKeyboard::MAX_OVERRIDES
-MAX_OVERRIDES_PER_HOST = 8
+MAX_OVERRIDES_PER_HOST = 32
 PASSKEY_MODE_LEGACY = "legacy"
 PASSKEY_MODE_SECURE_CONNECTIONS = "secure_connections"
 

@@ -296,9 +296,20 @@ class EspidfBleKeyboard : public Component
   // a Windows slot can remap it to Game Bar's Win+Alt+R while a TV slot keeps
   // the HID usage. YAML sets defaults; the web UI persists overrides to NVS.
   // Resolution order: NVS override, then YAML override, then built-in.
-  static const uint8_t MAX_OVERRIDES = 8;  // per slot
+  // 32 a slot: a No BLE slot sends no HID, so an IR page needs one on every key
+  // it uses — Style 6 alone has 26. Eight was sized for remapping Record.
+  static const uint8_t MAX_OVERRIDES = 32;  // per slot
+  // Overrides live in RAM, a typical ha_action: one about 130 bytes of heap, so
+  // the name and action text of every override — saved and YAML, all slots — is
+  // capped as well. 8000 is about a hundred typical ones, three full IR pages,
+  // for roughly 13 KB: enough to use, and not enough to take the ~25 KB
+  // free-heap trough down to where an allocation fails.
+  static const uint16_t MAX_OVERRIDE_TEXT = 8000;
   void set_host_slot_override(uint8_t slot, const std::string &name, const std::string &action);
-  bool set_override(uint8_t slot, const std::string &name, const std::string &action);
+  enum class OverrideSave : uint8_t { OK, BAD, HOST_FULL, TEXT_FULL, WRITE_FAILED };
+  OverrideSave set_override(uint8_t slot, const std::string &name, const std::string &action);
+  /// Name and action characters of every override held, saved and YAML.
+  size_t override_text() const;
   bool clear_override(uint8_t slot, const std::string &name);
   const std::vector<ButtonInfo> &get_yaml_overrides(uint8_t slot) const { return yaml_overrides_[slot]; }
   const std::vector<ButtonInfo> &get_nvs_overrides(uint8_t slot) const { return nvs_overrides_[slot]; }
@@ -915,7 +926,7 @@ class EspidfBleKeyboard : public Component
 
   const std::string *find_override_(uint8_t slot, const std::string &name) const;
   void load_overrides_();
-  void save_overrides_(uint8_t slot);
+  bool save_overrides_(uint8_t slot);
 
   // Per-host hidden buttons (NVS key "hid<slot>", comma-separated names).
   std::vector<std::string> hidden_[MAX_HOST_SLOTS];

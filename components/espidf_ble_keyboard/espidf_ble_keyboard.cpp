@@ -1333,9 +1333,13 @@ void EspidfBleKeyboard::save_host_slots_() {
 
 // ── Per-host action overrides (YAML defaults + NVS, web-editable) ─
 //
-// Stored one NVS entry per slot (key "ovr<slot>"), value the slot's overrides
-// serialised as "name=action\n" records. Names reject '=', '|', whitespace and
-// newlines so a payload can never break the encoding it is stored in.
+// Stored one NVS entry per slot, value the slot's overrides serialised as
+// "name=action\n" records. Names reject '=', '|', whitespace and newlines so a
+// payload can never break the encoding it is stored in.
+//
+// The entry is a blob under "ovb<slot>". It used to be a string under
+// "ovr<slot>", but NVS caps a string at 4000 bytes and a full slot of 32 is up
+// to 9216 — so the old key is still read, and erased on the slot's next save.
 
 bool EspidfBleKeyboard::valid_override_name(const std::string &name) {
     if (name.empty() || name.size() > 31) return false;
@@ -1354,6 +1358,21 @@ void EspidfBleKeyboard::set_host_slot_override(uint8_t slot, const std::string &
     }
     if (yaml_overrides_[slot].size() < MAX_OVERRIDES)
         yaml_overrides_[slot].push_back({name, action});
+    // Compile-time configuration, so it is kept either way — but saying so beats
+    // finding out when the web page refuses every save.
+    if (override_text() > MAX_OVERRIDE_TEXT)
+        ESP_LOGW(TAG, "YAML overrides use %u characters, over the %u shared by all hosts — "
+                 "overrides saved from the web page will be refused",
+                 (unsigned) override_text(), (unsigned) MAX_OVERRIDE_TEXT);
+}
+
+size_t EspidfBleKeyboard::override_text() const {
+    size_t n = 0;
+    for (uint8_t s = 0; s < MAX_HOST_SLOTS; s++) {
+        for (const auto &o : nvs_overrides_[s]) n += o.name.size() + o.action.size();
+        for (const auto &o : yaml_overrides_[s]) n += o.name.size() + o.action.size();
+    }
+    return n;
 }
 
 const std::string *EspidfBleKeyboard::find_override_(uint8_t slot, const std::string &name) const {
@@ -1365,26 +1384,39 @@ const std::string *EspidfBleKeyboard::find_override_(uint8_t slot, const std::st
     return nullptr;
 }
 
-bool EspidfBleKeyboard::set_override(uint8_t slot, const std::string &name,
-                                     const std::string &action) {
-    if (slot >= MAX_HOST_SLOTS || !valid_override_name(name)) return false;
-    if (action.empty() || action.size() > 255) return false;
+EspidfBleKeyboard::OverrideSave EspidfBleKeyboard::set_override(uint8_t slot, const std::string &name,
+                                                               const std::string &action) {
+    if (slot >= MAX_HOST_SLOTS || !valid_override_name(name)) return OverrideSave::BAD;
+    if (action.empty() || action.size() > 255) return OverrideSave::BAD;
     if (action.find('\n') != std::string::npos || action.find('\r') != std::string::npos)
-        return false;
+        return OverrideSave::BAD;
 
-    for (auto &o : nvs_overrides_[slot]) {
-        if (o.name == name) {
-            o.action = action;
-            save_overrides_(slot);
-            ESP_LOGI(TAG, "Override slot %u: %s -> %s", (unsigned) slot, name.c_str(), action.c_str());
-            return true;
+    auto &list = nvs_overrides_[slot];
+    for (auto &o : list) {
+        if (o.name != name) continue;
+        // Replacing one counts only what it adds, so an edit that shortens an
+        // action is never refused.
+        if (action.size() > o.action.size() &&
+            override_text() + (action.size() - o.action.size()) > MAX_OVERRIDE_TEXT)
+            return OverrideSave::TEXT_FULL;
+        std::string was = o.action;
+        o.action = action;
+        if (!save_overrides_(slot)) {
+            o.action = was;  // RAM must not claim what storage lost
+            return OverrideSave::WRITE_FAILED;
         }
+        ESP_LOGI(TAG, "Override slot %u: %s -> %s", (unsigned) slot, name.c_str(), action.c_str());
+        return OverrideSave::OK;
     }
-    if (nvs_overrides_[slot].size() >= MAX_OVERRIDES) return false;
-    nvs_overrides_[slot].push_back({name, action});
-    save_overrides_(slot);
+    if (list.size() >= MAX_OVERRIDES) return OverrideSave::HOST_FULL;
+    if (override_text() + name.size() + action.size() > MAX_OVERRIDE_TEXT) return OverrideSave::TEXT_FULL;
+    list.push_back({name, action});
+    if (!save_overrides_(slot)) {
+        list.pop_back();
+        return OverrideSave::WRITE_FAILED;
+    }
     ESP_LOGI(TAG, "Override slot %u: %s -> %s", (unsigned) slot, name.c_str(), action.c_str());
-    return true;
+    return OverrideSave::OK;
 }
 
 bool EspidfBleKeyboard::clear_override(uint8_t slot, const std::string &name) {
@@ -1406,21 +1438,28 @@ void EspidfBleKeyboard::load_overrides_() {
 
     for (uint8_t slot = 0; slot < MAX_HOST_SLOTS; slot++) {
         char key[12];
-        snprintf(key, sizeof(key), "ovr%u", slot);
-
-        size_t len = 0;
-        if (nvs_get_str(handle, key, nullptr, &len) != ESP_OK || len == 0) continue;
         // Cap: MAX_OVERRIDES records of "name=action\n" (31 + 1 + 255 + 1)
-        if (len > (size_t) (MAX_OVERRIDES * 288 + 1)) {
-            ESP_LOGW(TAG, "Override blob for slot %u is oversized (%u bytes) — ignoring",
-                     (unsigned) slot, (unsigned) len);
-            continue;
+        const size_t cap = (size_t) MAX_OVERRIDES * 288 + 1;
+        std::string blob;
+        size_t len = 0;
+        snprintf(key, sizeof(key), "ovb%u", slot);
+        if (nvs_get_blob(handle, key, nullptr, &len) == ESP_OK && len > 0) {
+            if (len > cap) {
+                ESP_LOGW(TAG, "Override blob for slot %u is oversized (%u bytes) — ignoring",
+                         (unsigned) slot, (unsigned) len);
+                continue;
+            }
+            blob.resize(len);
+            if (nvs_get_blob(handle, key, &blob[0], &len) != ESP_OK) continue;
+        } else {
+            // Written by firmware from before the blob, which stored a string.
+            snprintf(key, sizeof(key), "ovr%u", slot);
+            if (nvs_get_str(handle, key, nullptr, &len) != ESP_OK || len == 0 || len > cap) continue;
+            std::vector<char> buf(len);
+            if (nvs_get_str(handle, key, buf.data(), &len) != ESP_OK) continue;
+            blob = buf.data();
         }
 
-        std::vector<char> buf(len);
-        if (nvs_get_str(handle, key, buf.data(), &len) != ESP_OK) continue;
-
-        std::string blob(buf.data());
         size_t start = 0;
         while (start < blob.size() && nvs_overrides_[slot].size() < MAX_OVERRIDES) {
             size_t end = blob.find('\n', start);
@@ -1435,21 +1474,28 @@ void EspidfBleKeyboard::load_overrides_() {
             if (!valid_override_name(name) || action.empty()) continue;
 
             nvs_overrides_[slot].push_back({name, action});
-            ESP_LOGI(TAG, "Loaded override slot %u: %s -> %s", (unsigned) slot, name.c_str(),
+            ESP_LOGD(TAG, "Loaded override slot %u: %s -> %s", (unsigned) slot, name.c_str(),
                      action.c_str());
         }
+        // One line a slot rather than one an override: a full set is 32 of them
+        // on each of several slots, every boot.
+        if (!nvs_overrides_[slot].empty())
+            ESP_LOGI(TAG, "Loaded %u override(s) for slot %u", (unsigned) nvs_overrides_[slot].size(),
+                     (unsigned) slot);
     }
     nvs_close(handle);
 }
 
-void EspidfBleKeyboard::save_overrides_(uint8_t slot) {
-    if (slot >= MAX_HOST_SLOTS) return;
+bool EspidfBleKeyboard::save_overrides_(uint8_t slot) {
+    if (slot >= MAX_HOST_SLOTS) return false;
     nvs_handle_t handle;
-    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return false;
 
-    char key[12];
-    snprintf(key, sizeof(key), "ovr%u", slot);
+    char key[12], legacy[12];
+    snprintf(key, sizeof(key), "ovb%u", slot);
+    snprintf(legacy, sizeof(legacy), "ovr%u", slot);
 
+    bool ok = true;
     if (nvs_overrides_[slot].empty()) {
         nvs_erase_key(handle, key);
     } else {
@@ -1460,10 +1506,15 @@ void EspidfBleKeyboard::save_overrides_(uint8_t slot) {
             blob += o.action;
             blob += '\n';
         }
-        nvs_set_str(handle, key, blob.c_str());
+        ok = nvs_set_blob(handle, key, blob.data(), blob.size()) == ESP_OK;
     }
-    nvs_commit(handle);
+    // Only once the blob is safely down: a failed write leaves the old string
+    // for the next boot to read, rather than nothing at all.
+    if (ok) nvs_erase_key(handle, legacy);
+    ok = nvs_commit(handle) == ESP_OK && ok;
     nvs_close(handle);
+    if (!ok) ESP_LOGW(TAG, "Could not save the overrides for slot %u", (unsigned) slot);
+    return ok;
 }
 
 // ── Per-host hidden remote buttons (NVS-persisted) ────────────────

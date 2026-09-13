@@ -985,7 +985,7 @@ The replacement can be any action string, including a multi-step chain: `record:
 - **Every button on both remotes is remappable.** All of them — D-pad, Power, Channel, Rewind/FF, the colour keys and app launchers — fire named actions for exactly this reason. The one exception is the number pad, which types digits rather than sending a fixed HID code.
 - Only **named** actions can be overridden (`record`, `up`, `channel_up`, `play_pause`, …) — the ones in the [Action Types](#action-types) table with no `:` parameter. Parametric forms like `combo:` and `consumer:` are dispatched before the override lookup, so they always mean exactly what they say. That's deliberate: `consumer:0x00B5` must never silently become something else.
 - Resolution order is **web-UI override → YAML `actions:` → built-in behaviour**.
-- Max 8 overrides per host slot. Names are max 31 characters and may not contain `=`, `|`, or whitespace; replacements are max 255 characters.
+- Max 32 overrides per host slot, and 8000 characters of overrides across all hosts together — they are kept in memory, and the shared limit stops a few full hosts from running the keyboard out of it. Names are max 31 characters and may not contain `=`, `|`, or whitespace; replacements are max 255 characters.
 - An override body is executed with overrides disabled, so `record: "record"` safely runs the built-in Record rather than looping.
 - Overrides apply everywhere the named action is used — remote buttons, macros, YAML `button` actions, and the `run_action` HA service — not just the remote.
 

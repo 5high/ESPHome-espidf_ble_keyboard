@@ -679,8 +679,14 @@ class BleKbWebHandler : public AsyncWebHandler {
       // so the list shows exactly what would run.
       const auto &nvs = kb_->get_nvs_overrides((uint8_t) slot);
       const auto &yaml = kb_->get_yaml_overrides((uint8_t) slot);
+      // Reserved from what is stored, as /backup does: a slot of 32 long
+      // ha_action: strings would otherwise realloc its way up on the shared heap.
+      // Doubling covers the escaping, since only " and \ expand.
+      size_t est = 64;
+      for (const auto &o : nvs) est += (o.name.size() + o.action.size()) * 2 + 40;
+      for (const auto &o : yaml) est += (o.name.size() + o.action.size()) * 2 + 40;
       std::string json = "{\"slot\":";
-      json.reserve(512);
+      json.reserve(est);
       json += std::to_string(slot);
       json += ",\"active\":";
       json += std::to_string(kb_->active_host_slot());
@@ -1327,10 +1333,30 @@ class BleKbWebHandler : public AsyncWebHandler {
                       "actions can be overridden (e.g. record, play_pause, stop).");
       } else if (action.empty() || action.size() > 255) {
         send_response(400, "text/plain", "Action required, max 255 chars");
-      } else if (!kb_->set_override((uint8_t) slot, name, action)) {
-        send_response(400, "text/plain", "Max overrides reached for this host (8)");
       } else {
-        send_response(200, "text/plain", "OK");
+        switch (kb_->set_override((uint8_t) slot, name, action)) {
+          case EspidfBleKeyboard::OverrideSave::OK:
+            send_response(200, "text/plain", "OK");
+            break;
+          case EspidfBleKeyboard::OverrideSave::HOST_FULL:
+            send_response(409, "text/plain",
+                          "This host has " + std::to_string(EspidfBleKeyboard::MAX_OVERRIDES) +
+                              " overrides, the most one host can hold. Delete one first.");
+            break;
+          case EspidfBleKeyboard::OverrideSave::TEXT_FULL:
+            send_response(409, "text/plain",
+                          "Overrides across all hosts are at their " +
+                              std::to_string(EspidfBleKeyboard::MAX_OVERRIDE_TEXT) +
+                              "-character limit, which keeps them from running the keyboard out of "
+                              "memory. Delete or shorten one first.");
+            break;
+          case EspidfBleKeyboard::OverrideSave::WRITE_FAILED:
+            send_response(400, "text/plain", "Could not save the override to storage");
+            break;
+          default:
+            send_response(400, "text/plain", "Invalid override");
+            break;
+        }
       }
 
     } else if (path == "hidden_set") {

@@ -80,6 +80,10 @@ web control page shows the matching version badge.
   repeated reallocation instead — on the one heap that has the Bluetooth stack in it.
 
 ### Changed
+- **A host takes 32 action overrides instead of 8.** A slot with Bluetooth turned off needs an
+  override on every key it uses, and there are sixteen spares. Overrides across all hosts share a
+  size limit so several full ones cannot exhaust memory, and a full slot now saves reliably.
+
 - **`lcd_sources:` is now `sources:`.** It feeds panels, `if:` branches and button colours, so the
   name no longer fits. Renamed before release rather than after; anyone on a dev build renames the key.
 
