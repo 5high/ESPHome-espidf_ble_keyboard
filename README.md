@@ -1958,41 +1958,28 @@ In Home Assistant, the sensor value will be a URL like `http://192.168.1.100/ble
 
 ### Popping the remote out
 
-**Pop out** in the Remote heading moves the remote into a window of its own, leaving a placeholder in the page. Closing that window puts the remote back exactly where it was, including wherever you have since dragged it to — or press **Pin back** on the placeholder, which does the same without going to find the window first. What you get is the remote and nothing else — no host bar, no toolbar, no card behind it. The window opens sized to the remote it holds and no larger, so there is as little window around it as a window can have — and it resizes itself when the remote changes shape, so switching to a host whose style is a different size takes the window with it. Where you put the window is remembered; its size always follows the remote. It still follows the active host too, re-skinning when you switch machines; switching them stays on the page you popped it out of.
+**Pop out** in the Remote heading moves the remote into a window of its own, sized to the remote and showing nothing else. Close the window, or press **Pin back** on the placeholder it leaves, to put the remote back. The window follows the active host and resizes when a host's style is a different size; its position is remembered.
 
-**The always-on-top window is a little different**, because browsers only allow one to be resized during a click. It therefore settles on your first press rather than the instant it appears: pop it out and it may open with a small margin around the remote, which disappears as soon as you press anything. Switching hosts sizes it within that same press, so it follows the new style straight away. Where a window cannot be sized at all, the remote is scaled to fit it instead — but only as far as its keys can take: nothing shrinks below a usable button, and past that point the remote scrolls rather than becoming unhittable.
+The same remote-only view is at `http://<device>/ble_keyboard#remote` — bookmark it or add it to a phone's home screen.
 
-That window is this same page at `http://<device>/ble_keyboard#remote`, which shows the remote and nothing else. You can open that address directly — bookmark it, or add it to a phone's home screen — for a remote-only page without popping anything out. It is drawn at whatever zoom the page is set to, so the remote does not change size by being moved; the zoom and theme controls themselves stay on the page.
+**Keeping it on top.** There are two ways:
 
-There are two ways to keep that window above your other windows, and they have nothing to do with each other: the page's own **on top** tick box, or the operating system pinning an ordinary window for you. The first is the neater of the two — the window is on top from the moment it opens, sized to the remote, and it holds the live remote rather than a second copy of it — but it needs a secure page, which a plain `http://` device address is not. The second asks nothing of the page at all and works in any browser, at the cost of a keystroke each time you open the window.
+- **The page's own on top tick box.** It needs Chrome or Edge on a **secure page**, so it is hidden on a plain `http://` device address. Two ways to get one:
+  - Forward a local port — browsers treat `localhost` as secure. On Windows, in an Administrator PowerShell:
 
-**The page's own on top.** The tick box beside **Pop out** needs the browser's Document Picture-in-Picture support, which is a Chromium feature (Chrome, Edge) and only offered on a **secure page** — so on a plain `http://` device address the tick box is not shown at all and Pop out opens an ordinary window instead. Two ways to get a secure page, and one that looks like a third but is not:
+    ```powershell
+    netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8080 connectaddress=<device-ip> connectport=80
+    ```
 
-- **Reach the page through `localhost`, which needs no certificate at all.** Browsers count
-  `http://localhost` as a secure context in its own right, so forwarding a local port to the device
-  is the shortest route to a working **on top**. On Windows, in an Administrator PowerShell:
+    Then browse `http://localhost:8080/ble_keyboard`. Remove it with `delete` and the two `listen` arguments.
+  - Put the device behind an HTTPS reverse proxy with a trusted certificate.
 
-  ```powershell
-  netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8080 connectaddress=<device-ip> connectport=80
-  ```
+  The `unsafely-treat-insecure-origin-as-secure` Chrome flag does **not** work: the window never appears. The remote detects this, falls back to an ordinary window and stops offering on top for that address.
 
-  Then browse `http://localhost:8080/ble_keyboard`. Undo it with the same command using `delete` and
-  just the two `listen` arguments. It only works from the machine running the forward — binding it
-  to anything but loopback puts you back on an insecure origin.
-- Or reach the device through an HTTPS reverse proxy, for something permanent and available to every
-  machine on the network. The device speaks plain HTTP only, so the certificate lives on the proxy;
-  a self-signed one will not do, since a page with an untrusted certificate is not a secure context
-  either.
-- **What does *not* work: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`.** It makes the
-  tick box available and looks like it should be enough, but Chrome then grants a window that has no
-  size and is never shown, with no error of any kind. The remote finds this out by trying it once:
-  it falls back to an ordinary window, says so, and switches **on top** off for that address so it
-  neither pretends nor asks again. (Since that verdict is remembered per address, reaching the same
-  device through `localhost` or https asks again from scratch.)
+  An on-top window only resizes during a click, so it may open with a small margin that goes on your first press.
+- **Let the operating system pin it** — works on any address and browser. On Windows, PowerToys' **Always on Top**: focus the window and press `Win+Ctrl+T`. Most Linux desktops offer it in the title-bar menu; macOS needs a third-party tool.
 
-**The operating system pins it.** Any ordinary window can be pinned by the desktop itself, which wants no certificate, no port forwarding and no particular browser — so this is the route when the tick box is not on offer, and the whole of it on a plain `http://` address. On Windows that is PowerToys' **Always on Top**: install PowerToys, click the popped-out window to focus it, and press `Win+Ctrl+T`; the same chord unpins it. It pins whatever window has focus, so it works just as well on the `#remote` address opened in a window of its own, without popping anything out of a page first. Most Linux desktops offer the same from the title-bar menu; macOS has no built-in equivalent and needs a third-party tool.
-
-If the browser refuses the always-on-top window for any other reason, the remote still pops out as an ordinary window and the placeholder left in the page names what the browser said, so there is something to act on rather than a button that appears to do nothing.
+If the browser refuses the on-top window for any other reason, the remote opens as an ordinary window and the placeholder shows why.
 
 ### Backup and restore
 
