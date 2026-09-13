@@ -664,7 +664,7 @@ export const RMT_CSS = `
 .rmt-section:last-child{margin-bottom:0}
 .rmt-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;margin-bottom:8px}
 .rmt-row:last-child{margin-bottom:0}
-.rmt-btn{width:48px;height:48px;border:1px solid var(--rb-btn-border,var(--border));border-radius:var(--rb-btn-radius,50%);background:var(--rb-btn-bg,var(--bg));color:var(--rb-btn-fg,var(--fg));font-size:12px;font-weight:500;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;transition:background .1s,transform .1s;user-select:none;-webkit-user-select:none}
+.rmt-btn{width:48px;height:48px;padding:0;margin:0;border:1px solid var(--rb-btn-border,var(--border));border-radius:var(--rb-btn-radius,50%);background:var(--rb-btn-bg,var(--bg));color:var(--rb-btn-fg,var(--fg));font-size:12px;font-weight:500;cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;transition:background .1s,transform .1s;user-select:none;-webkit-user-select:none}
 .rmt-btn:active,.rmt-btn.p{background:var(--active);color:#fff;border-color:var(--active);transform:scale(.93)}
 .rmt-btn svg{width:20px;height:20px;fill:currentColor;pointer-events:none}
 .rmt-btn.power{background:#c62828;color:#fff;border-color:#c62828}

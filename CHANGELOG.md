@@ -66,6 +66,10 @@ web control page shows the matching version badge.
   else — and a remote too tall for the screen was shrunk on both axes, throwing that width away
   again. Height that does not fit now scrolls, and all three surfaces measure alike.
 
+- **Button faces fit the same on the Home Assistant card as on the web page.** Keys on the card kept
+  the browser's own side padding, so a label or logo had 12px less room than the same key on the page
+  and logos drew visibly smaller.
+
 - **The Home Assistant remote now draws the same size as the web page's.** The page resets box-sizing
   globally, which never reached the card's shadow root, so every border and padding landed outside
   the width a style asked for and the whole remote came out wider. A style with its own width now
