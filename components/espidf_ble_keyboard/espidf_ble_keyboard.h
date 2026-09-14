@@ -296,9 +296,12 @@ class EspidfBleKeyboard : public Component
   // a Windows slot can remap it to Game Bar's Win+Alt+R while a TV slot keeps
   // the HID usage. YAML sets defaults; the web UI persists overrides to NVS.
   // Resolution order: NVS override, then YAML override, then built-in.
-  // 32 a slot: a No BLE slot sends no HID, so an IR page needs one on every key
-  // it uses — Style 6 alone has 26. Eight was sized for remapping Record.
-  static const uint8_t MAX_OVERRIDES = 32;  // per slot
+  // 48 a slot: a No BLE slot sends no HID, so an IR page needs one on every key
+  // it uses — Style 6 alone has 26 — and a tablet page can program all 32 spares
+  // with room left for the keys around them. Eight was sized for remapping
+  // Record. Raising it costs nothing held: the lists grow only as overrides are
+  // added, and MAX_OVERRIDE_TEXT below is what bounds the memory.
+  static const uint8_t MAX_OVERRIDES = 48;  // per slot
   // Overrides live in RAM, a typical ha_action: one about 130 bytes of heap, so
   // the name and action text of every override — saved and YAML, all slots — is
   // capped as well. 8000 is about a hundred typical ones, three full IR pages,
@@ -324,10 +327,12 @@ class EspidfBleKeyboard : public Component
   // Spare remote buttons: `spare1`..`spare<MAX_SPARES>`. They send nothing on
   // their own and exist purely as names to hang a per-host override on, for the
   // keys a remote layout needs that have no standard HID usage worth guessing.
-  // 16, because a real remote's app-launcher row alone wants four to ten of
-  // them on top of the keys that have no standard usage (Input, Settings,
-  // Replay…). Eight ran out on the fuller layouts.
-  static const uint8_t MAX_SPARES = 16;
+  // 32: a real remote's app-launcher row alone wants four to ten of them on top
+  // of the keys that have no standard usage (Input, Settings, Replay…), and a
+  // tablet page of programmed keys wants a grid of them. Eight ran out on the
+  // fuller layouts, sixteen on the grids. The count costs nothing here — this is
+  // a bound, not a table — and is_spare_action's two-digit parse covers it.
+  static const uint8_t MAX_SPARES = 32;
   static bool is_spare_action(const std::string &action);
 
   // 64, not the button count: "None" in the Remote Buttons panel saves *every*

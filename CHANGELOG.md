@@ -11,6 +11,15 @@ web control page shows the matching version badge.
   whatever host is active, so a wall tablet shows the same remote all day while another tab — even
   on the same computer — goes on following the host. Nothing is stored on the device; a bookmark or
   home-screen shortcut keeps it.
+- **A tab can show a host's page without switching to it.** Its keys run that host's Host Actions
+  and any it leaves unset reach the active host, so a slot that never advertises becomes a tablet's
+  own programmable remote. A new action does the same from a macro or a button.
+- **Rectangular keys, and a grid section.** Two new button options make keys share a row's width
+  and set their height; a grid section lays out equal rectangles in columns, saying the layout once
+  so each key is just its action and name — a page of 32 named keys fits a stored style easily. On
+  the web page and the Home Assistant card alike.
+- **32 spare keys, and 48 Host Actions per host.** Double the spares, so a tablet page can hold a
+  full grid of programmed keys, and room on one host to program every one of them.
 
 ## v1.10.0 — 2026-09-14
 

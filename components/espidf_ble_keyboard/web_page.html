@@ -328,6 +328,12 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.yellow{background:#fdd835}
 .rmt-btn.blue{background:#1e88e5}
 .rmt-app-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+/* A grid section: equal cells in the number of columns its settings name, set
+   inline by the renderer as a whole number. Its keys are rectangles, so they
+   take a rectangle's corners unless the style says otherwise — before the
+   shape tokens below, so sq, wide and squircle on a key still win. */
+.rmt-grid{display:grid;gap:8px}
+.rmt-grid .rmt-btn{border-radius:var(--rb-btn-radius,10px)}
 .rmt-btn.app{width:auto;height:38px;border-radius:19px;padding:0 14px;font-size:11px}
 /* ── Circular D-pad ──────────────────────────────────────────────
    The nav ring most remotes actually have, as an alternative to the square
@@ -419,6 +425,16 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.xl svg{width:26px;height:26px}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
+/* A key that shares its row's width equally with the other fill keys in it, so
+   a grid of them lines up in columns whatever each label says. A basis of 0 is
+   what stops a long label claiming more than its share, and min-width:0 lets the
+   key sit narrower than its text, which wraps and then clips. After the size
+   rules, whose fixed widths this replaces; their heights still apply, and h:<px>
+   sets any other. */
+.rmt-btn.fill{flex:1 1 0;width:auto;min-width:0;padding:0 8px;overflow:hidden;text-align:center;line-height:1.2}
+/* A grid key fills its cell the way a fill key fills its share of a row. After
+   the size and shape rules, whose fixed widths it replaces; their heights stay. */
+.rmt-grid .rmt-btn{width:auto;min-width:0;padding:0 6px;overflow:hidden;text-align:center;line-height:1.2}
 /* An app tile: a rounded square whose corners run on into its sides, the shape
    TV launchers draw apps in, on the round side: superellipse(2) is the classic
    squircle and 1 a circle. Where the browser has corner-shape it draws the true
@@ -434,6 +450,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.sm svg.rmt-ico{height:16px}
 .rmt-btn.xl svg.rmt-ico{height:26px}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
+.rmt-btn.fill svg.rmt-ico{max-width:80%}
 /* A key showing that the thing it controls is on. Falls back to the style's OK
    colour, so a style that sets nothing still lights up visibly. */
 .rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
@@ -790,6 +807,8 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <option value="spare1"><option value="spare2"><option value="spare3"><option value="spare4">
 <option value="spare5"><option value="spare6"><option value="spare7"><option value="spare8">
 <option value="spare9"><option value="spare10"><option value="spare11"><option value="spare12"><option value="spare13"><option value="spare14"><option value="spare15"><option value="spare16">
+<option value="spare17"><option value="spare18"><option value="spare19"><option value="spare20"><option value="spare21"><option value="spare22"><option value="spare23"><option value="spare24">
+<option value="spare25"><option value="spare26"><option value="spare27"><option value="spare28"><option value="spare29"><option value="spare30"><option value="spare31"><option value="spare32">
 <option value="ctrl_alt_del"><option value="power"><option value="sleep"><option value="shutdown"><option value="hibernate">
 <option value="left_click"><option value="right_click"><option value="middle_click"><option value="mouse_release">
 </datalist>
@@ -828,9 +847,9 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="hid-panel" id="tpl-panel">
 <button class="hid-toggle" id="tpl-toggle">Remote Style &#9662;</button>
 <div class="hid-body" id="tpl-body">
-<div style="font-size:12px;color:var(--muted);margin:6px 0">Choose the remote layout this host gets &mdash; switch to the host and the remote re-skins to match it. The hidden, repeat and hold settings above still apply on top of whatever style is showing, and every action stays available to macros, buttons and Home Assistant either way. <strong>This tab</strong> keeps just this tab on one style whatever host is active &mdash; it adds <code>?style=</code> and the style's id to the address, so bookmark it or add it to a tablet's home screen to keep it there, while other tabs go on following the host.</div>
+<div style="font-size:12px;color:var(--muted);margin:6px 0">Choose the remote layout this host gets &mdash; switch to the host and the remote re-skins to match it. The hidden, repeat and hold settings above still apply on top of whatever style is showing, and every action stays available to macros, buttons and Home Assistant either way. <strong>This tab</strong> keeps just this tab on one style whatever host is active &mdash; it adds <code>?style=</code> and the style's id to the address, so bookmark it or add it to a tablet's home screen to keep it there, while other tabs go on following the host. It can also show a host's <em>page</em> (<code>?host=</code>): that host's style and its Host Actions on every key, with any key that host leaves unset going to the active host as usual &mdash; so a slot that doesn't advertise becomes a tablet's own programmable remote.</div>
 <div class="macro-form" style="margin-top:0"><span class="tpl-lbl">This host</span><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><span class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in">Full remote</span><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste that into the Home Assistant remote card and they all join its style list">Export all</button></div>
-<div class="macro-form" style="margin-top:6px"><span class="tpl-lbl">This tab</span><div class="tpl-step"><button id="tpl-lock-prev" title="Previous style for this tab">&minus;</button><span class="tpl-name" id="tpl-lock-name" title="The style this tab keeps whatever host is active. Nothing is saved on the keyboard.">Follow the host</span><button id="tpl-lock-next" title="Next style for this tab">+</button></div></div>
+<div class="macro-form" style="margin-top:6px"><span class="tpl-lbl">This tab</span><div class="tpl-step"><button id="tpl-lock-prev" title="Previous style or host page for this tab">&minus;</button><span class="tpl-name" id="tpl-lock-name" title="What this tab keeps whatever host is active: a style, or a host's page with its Host Actions. Nothing is saved on the keyboard.">Follow the host</span><button id="tpl-lock-next" title="Next style or host page for this tab">+</button></div></div>
 <div id="tpl-custom"></div>
 <div class="tpl-help"><strong>Roll your own:</strong> Export a style, change its <code>id</code> and <code>name</code>, rearrange its <code>sections</code>, then Import. The remote card redraws as you type &mdash; nothing is saved until you press Import.
 <dl>
@@ -841,11 +860,12 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["rocker",…]</code></dt><dd>The same groups as one-piece rocker keys. <code>["","mute"]</code> is a single key of the same height.</dd>
 <dt><code>["media",…]</code></dt><dd>A row of small transport buttons.</dd>
 <dt><code>["apps",…]</code></dt><dd>A row of wide pills.</dd>
+<dt><code>["grid",…]</code></dt><dd>Equal rectangles in columns, the layout said once: <code>["grid",{"cols":2,"h":56,"opts":"sq"},["spare1","Copy"],["spare2","Paste"]]</code>. The settings are optional &mdash; <code>cols</code> 1&ndash;8 (2 if left out), <code>h</code> 24&ndash;160 pixels, and <code>opts</code> every key takes. A key's own options add to those, and <code>"|"</code> leaves a cell empty.</dd>
 <dt><code>["lcd",…]</code></dt><dd>A small screen: <code>["lcd",["Room","temp"],["Host","@host"]]</code>. Each line is a label and the value to show &mdash; <code>@host @slot @mac @state @rssi @battery @layout</code> come from the keyboard itself, <code>@last</code> and <code>@station</code> name the button just pressed, <code>@msg</code> shows what an <code>lcd:text</code> action wrote, and any other name is an entry in the component's <code>sources:</code>. A third entry sizes and justifies one line: <code>sm lg xl</code>, <code>left centre right</code>, or a <code>#hex</code> colour. Left alone a line spreads &mdash; label one side, value the other. A settings object in front of the lines sizes the panel itself like a real display: <code>{"cols":16,"rows":2}</code> is 16 characters by 2 lines (4&ndash;40 and 1&ndash;8), and <code>fg bg label border</code> colour that panel alone.</dd>
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
-A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq squircle</code>). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code> &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
+A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code> &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
 <div class="macro-form"><textarea id="tpl-json" placeholder="Paste a style JSON here to import&hellip;" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="tpl-import">Import</button></div>
 <div id="tpl-msg" style="font-size:11px;color:var(--muted)"></div>
 </div>
@@ -1366,8 +1386,24 @@ spare12:{t:'Spare 12',x:'12',g:8},
 spare13:{t:'Spare 13',x:'13',g:8},
 spare14:{t:'Spare 14',x:'14',g:8},
 spare15:{t:'Spare 15',x:'15',g:8},
-spare16:{t:'Spare 16',x:'16',g:8}};
-const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','lcd','-'];
+spare16:{t:'Spare 16',x:'16',g:8},
+spare17:{t:'Spare 17',x:'17',g:8},
+spare18:{t:'Spare 18',x:'18',g:8},
+spare19:{t:'Spare 19',x:'19',g:8},
+spare20:{t:'Spare 20',x:'20',g:8},
+spare21:{t:'Spare 21',x:'21',g:8},
+spare22:{t:'Spare 22',x:'22',g:8},
+spare23:{t:'Spare 23',x:'23',g:8},
+spare24:{t:'Spare 24',x:'24',g:8},
+spare25:{t:'Spare 25',x:'25',g:8},
+spare26:{t:'Spare 26',x:'26',g:8},
+spare27:{t:'Spare 27',x:'27',g:8},
+spare28:{t:'Spare 28',x:'28',g:8},
+spare29:{t:'Spare 29',x:'29',g:8},
+spare30:{t:'Spare 30',x:'30',g:8},
+spare31:{t:'Spare 31',x:'31',g:8},
+spare32:{t:'Spare 32',x:'32',g:8}};
+const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','grid','lcd','-'];
 // A theme may only set these, and each maps to a custom property the .rmt-*
 // rules already read. An imported template therefore cannot inject CSS: keys
 // outside this table are dropped, values only ever land in a --rb-* property.
@@ -1410,7 +1446,12 @@ function themeValueBad(k,v){
 // Appearance tokens a button may carry. Top level, not inside either IIFE: the
 // renderer applies them and the importer validates them, and they must agree —
 // keeping them in one place is what stops the two drifting apart.
-const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle'];
+const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle','fill'];
+// h:<px> sets a key's height, the one number a button option carries. The
+// bounds are what the renderer and the importer both test, so a style that
+// passed import cannot draw a key taller than this: past 160 a single key
+// outgrows any remote, and under 24 its label no longer fits.
+const RMT_KEY_H=[24,160];
 // The same two things for an lcd line: what a line may carry, and the values
 // this firmware can resolve on its own. A built-in is spelled with a leading @
 // so the two namespaces cannot collide — a key naming a `sources:` entry
@@ -1491,6 +1532,8 @@ function iconNames(t){
   };
   for(const s of t.sections){
     if(!Array.isArray(s)||s[0]==='lcd')continue;
+    // A grid's shared options reach every key in it, an icon included.
+    if(s[0]==='grid'&&s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))look(['','',s[1].opts]);
     for(const it of s.slice(1)){
       if(s[0]==='strip'||s[0]==='rocker'){if(Array.isArray(it))it.slice(1).forEach(look)}
       else look(it);
@@ -1649,19 +1692,47 @@ function styleSlot(d){return typeof d.style_slot==='number'?d.style_slot:d.activ
 // one tab can hold a style while another beside it follows the host — which is
 // why it lives in the address and not in localStorage, which every tab shares.
 // auto, or no id at all, follows the host.
+//
+// ?host=<slot> instead shows that host's page: its style, its hidden, hold and
+// repeat lists, and its Host Actions on every key — each press goes out as
+// host_action:<slot>:<key>, and a key that host leaves unset reaches the active
+// host as usual. What a No BLE slot is for on a tablet: keys programmed once,
+// whoever switches host. Numbered from 0, as switch_host: is. One or the other,
+// never both; a host wins if an address somehow carries the two.
 const lockId=v=>(v&&v!=='auto'&&/^[a-z0-9_]{1,15}$/.test(v))?v:null;
-let RMT_LOCK=lockId(new URLSearchParams(location.search).get('style'));
+const lockHost=v=>(typeof v==='string'&&/^\d$/.test(v))?Number(v):(typeof v==='number'&&v>=0&&v<=9?v:null);
+let RMT_HOST=lockHost(new URLSearchParams(location.search).get('host'));
+let RMT_LOCK=RMT_HOST===null?lockId(new URLSearchParams(location.search).get('style')):null;
 function styleLock(){return RMT_LOCK}
+function hostLock(){return RMT_HOST}
 // A function declaration so it is a property of window: the pop-out calls it on
-// the pop-up window it opened, which has an address of its own.
-function setStyleLock(id){
-  RMT_LOCK=lockId(id);
+// the pop-up window it opened, which has an address of its own. kind is 'style',
+// 'host', or anything else to follow the host again.
+function setTabLock(kind,value){
+  RMT_HOST=kind==='host'?lockHost(value):null;
+  RMT_LOCK=kind==='style'?lockId(value):null;
   try{
     const u=new URL(location.href);
-    if(RMT_LOCK)u.searchParams.set('style',RMT_LOCK);else u.searchParams.delete('style');
+    u.searchParams.delete('style');u.searchParams.delete('host');
+    if(RMT_HOST!==null)u.searchParams.set('host',RMT_HOST);
+    else if(RMT_LOCK)u.searchParams.set('style',RMT_LOCK);
     history.replaceState(history.state,'',u);
   }catch(e){}
 }
+// The same lock as it goes in an address, for the pop-out to carry along. Built
+// from the checked values, never copied from location.search.
+function tabLockQuery(){
+  return RMT_HOST!==null?'?host='+RMT_HOST:(RMT_LOCK?'?style='+RMT_LOCK:'');
+}
+// The slot the remote is drawn from in this tab: the page's host when the tab
+// shows one the device has, otherwise whatever styleSlot says.
+function drawSlot(d){
+  const h=hostLock();
+  return (h!==null&&(d.slots||[]).some(s=>s.slot===h))?h:styleSlot(d);
+}
+// ?slot= for the per-host lists, when this tab shows a host's page. Without it
+// the device answers for the slot the remote is drawn for.
+function pageSlotQuery(){return RMT_HOST!==null?'?slot='+RMT_HOST:''}
 // Re-reads the styles and redraws the shown host's, forcing the render even if
 // the id is unchanged — used after an import, which edits a style in place.
 // Pass false on load, where the drawn style came from the remembered one below
@@ -1670,7 +1741,7 @@ function refreshActiveTemplate(force){
   return loadCustomTpls()
     .then(()=>fetch('/api/ble_keyboard/hosts').then(r=>r.json()))
     .then(d=>{
-      const a=(d.slots||[]).find(s=>s.slot===styleSlot(d));
+      const a=(d.slots||[]).find(s=>s.slot===drawSlot(d));
       if(window.applyTemplate)window.applyTemplate((a&&a.tpl)||'default',force!==false);
     }).catch(()=>{});
 }
@@ -2079,7 +2150,7 @@ function svgToIcon(text){
       // and draw from that, rather than the full remote in its place. Once per
       // set of unknown ids, so a host left on a deleted style doesn't refetch on
       // every change.
-      const act=(d.slots||[]).find(s=>s.slot===styleSlot(d));
+      const act=(d.slots||[]).find(s=>s.slot===drawSlot(d));
       const missing=RMT_CUSTOM_LOADED?(d.slots||[]).map(s=>s.tpl).filter(id=>id&&!tplById(id)).join(','):'';
       const refetch=missing&&missing!==lastMissing;
       lastMissing=missing;
@@ -2849,6 +2920,7 @@ function appendStep(el,val){
   const tplExportAll=document.getElementById('tpl-export-all');
   const tplMsg=document.getElementById('tpl-msg');
   let slotTpl={};                       // slot -> stored style id ('' = default)
+  let slotNames={};                     // slot -> the name the host bar shows
   let tplOpts=[],tplIdx=0;              // the styles to step through, and where we are
   function tplNote(m,err){if(tplMsg){tplMsg.textContent=m||'';tplMsg.style.color=err?'#c44':'var(--muted)'}}
 
@@ -2878,7 +2950,7 @@ function appendStep(el,val){
   // says the style list was just re-read, so the custom list is redrawn too.
   window.onHostsChanged=function(d,fresh){
     const next={};
-    (d.slots||[]).forEach(s=>{next[s.slot]=s.tpl||''});
+    (d.slots||[]).forEach(s=>{next[s.slot]=s.tpl||'';slotNames[s.slot]=s.name||('Host '+(s.slot+1))});
     const same=JSON.stringify(next)===JSON.stringify(slotTpl);
     slotTpl=next;
     if(!tplPanel||!tplPanel.classList.contains('open')||(same&&!fresh))return;
@@ -2886,35 +2958,49 @@ function appendStep(el,val){
     if(fresh)renderCustomList();
   };
 
-  // ── This tab's style ──
-  // The same list with Follow the host in front of it. Nothing goes to the
-  // device: the choice is written into this tab's address (setStyleLock), which
+  // ── This tab ──
+  // Follow the host, then every host's page, then every style. Nothing goes to
+  // the device: the choice is written into this tab's address (setTabLock), which
   // is what keeps it to this one tab and brings it back on a reload.
   const lockPrev=document.getElementById('tpl-lock-prev');
   const lockNext=document.getElementById('tpl-lock-next');
   const lockName=document.getElementById('tpl-lock-name');
   let lockOpts=[],lockIdx=0;
+  // The host of a page this tab shows, if the device has that slot — else null,
+  // and the tab follows the host, as drawSlot does.
+  const pageSlot=()=>{const h=hostLock();return (h!==null&&Object.prototype.hasOwnProperty.call(slotTpl,h))?h:null};
   function fillLockSel(){
-    lockOpts=[{id:'',name:'Follow the host'}].concat(allTemplates());
-    lockIdx=lockOpts.findIndex(t=>t.id===(styleLock()||''));
+    lockOpts=[{kind:'',name:'Follow the host'}]
+      .concat(Object.keys(slotTpl).map(Number).sort((a,b)=>a-b)
+        .map(s=>({kind:'host',value:s,name:(slotNames[s]||('Host '+(s+1)))+' page'})))
+      .concat(allTemplates().map(t=>({kind:'style',value:t.id,name:t.name+(t.custom?' (custom)':'')})));
+    const h=hostLock(),k=styleLock();
+    lockIdx=lockOpts.findIndex(o=>h!==null?(o.kind==='host'&&o.value===h)
+                                          :(k?(o.kind==='style'&&o.value===k):o.kind===''));
     if(!lockName)return;
-    // An address naming a style this page doesn't have says so by its id. The
-    // remote draws the full one meanwhile, same as a host pointing at it would.
-    if(lockIdx<0){lockIdx=0;lockName.textContent=styleLock()+' (not found)';return}
-    const t=lockOpts[lockIdx];
-    lockName.textContent=t.name+(t.custom?' (custom)':'');
+    // An address naming a style or a slot this device doesn't have says so, in
+    // the address's own terms. The remote falls back meanwhile — the full remote
+    // for a style, the active host for a slot.
+    if(lockIdx<0){lockIdx=0;lockName.textContent=(h!==null?'?host='+h:k)+' (not found)';return}
+    lockName.textContent=lockOpts[lockIdx].name;
   }
   function stepLock(d){
     if(!lockOpts.length)return;
     tplEndPreview();
     lockIdx=(lockIdx+d+lockOpts.length)%lockOpts.length;
-    const id=lockOpts[lockIdx].id;
-    setStyleLock(id);
+    const o=lockOpts[lockIdx];
+    setTabLock(o.kind,o.value);
     fillLockSel();
-    // The lock stands in for whatever is asked, so this draws it; and when it
-    // was just lifted, the host's own style comes straight back.
-    if(window.applyTemplate)window.applyTemplate(slotTpl[activeSlot]||'default');
-    if(window.onStyleLock)window.onStyleLock(id);
+    // A kept style stands in for whatever is asked, so this draws it; a page
+    // draws its host's style; and with neither, the host's own comes straight back.
+    const p=pageSlot();
+    if(window.applyTemplate)window.applyTemplate(slotTpl[p!==null?p:activeSlot]||'default');
+    // A page brings its host's hidden, hold and repeat lists, and leaving one
+    // takes them away again — even when the style drawn happens to be the same.
+    if(window.applyHidden)window.applyHidden(true);
+    if(window.applyRepeat)window.applyRepeat(true);
+    if(window.applyHold)window.applyHold(true);
+    if(window.onStyleLock)window.onStyleLock(o.kind,o.value);
     tplNote('');
   }
   if(lockPrev)lockPrev.addEventListener('click',()=>stepLock(-1));
@@ -2944,12 +3030,19 @@ function appendStep(el,val){
         // Stepping through the active host's styles redraws the remote as you
         // go, which is the whole point — so there is nothing to announce. Say
         // something only when the change lands somewhere you can't see.
-        if(slot!==activeSlot)tplNote('Saved — switch to that host to see it.');
-        else if(styleLock()){
+        const page=pageSlot();
+        if(styleLock()&&slot===activeSlot){
           const k=tplById(styleLock());
           tplNote('Saved — this tab stays on '+(k?k.name:styleLock())+'.');
         }
-        else if(window.applyTemplate){window.applyTemplate(id);tplNote('')}
+        // The slot this tab draws: a page's host when it shows one.
+        else if(!styleLock()&&slot===(page!==null?page:activeSlot)){
+          if(window.applyTemplate)window.applyTemplate(id);
+          tplNote('');
+        }
+        else if(page!==null&&slot===activeSlot)
+          tplNote('Saved — this tab shows the '+(slotNames[page]||('Host '+(page+1)))+' page.');
+        else tplNote('Saved — switch to that host to see it.');
       });
   }
   if(tplPrev)tplPrev.addEventListener('click',()=>stepTpl(-1));
@@ -3106,6 +3199,43 @@ function appendStep(el,val){
   // Structure only — anything that would render as a broken remote is refused
   // here, because the device stores the JSON without ever looking inside it.
   function validateTpl(t){
+    // A button's option string, which a grid's settings carry as well: every
+    // token checked, '' when they all pass. Refused rather than ignored — a
+    // silently dropped typo looks like the renderer is broken. The hex test is
+    // the same one btnHtml applies, and is what keeps arbitrary CSS out of the
+    // inline style attribute it builds.
+    const optsBad=str=>{
+      for(const tok of str.split(/\s+/)){
+        if(!tok)continue;
+        if(tok.indexOf('lit:')===0){
+          // lit:<source>[:#hex] — lights the key while that source reads on.
+          const bits=tok.split(':');
+          if(bits.length>3)return 'lit: takes a source and an optional #hex colour — "'+tok+'"';
+          if(!/^[a-z0-9_]{1,16}$/.test(bits[1]||''))
+            return 'lit: needs a source name of 1-16 characters, a-z, 0-9 or _ — "'+tok+'"';
+          if(bits[2]!==undefined&&!RMT_HEX.test(bits[2]))
+            return 'lit: colour must be a #hex value — "'+tok+'"';
+          continue;
+        }
+        // icon:<name> — whether an icon by that name exists is not checked: it
+        // may be imported after the style, and a missing one shows the label.
+        if(tok.indexOf('icon:')===0){
+          if(!RMT_ICON_NAME.test(tok.slice(5)))
+            return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
+          continue;
+        }
+        // h:<px> — the key's height, a whole number within RMT_KEY_H.
+        if(tok.indexOf('h:')===0){
+          const n=/^h:\d{2,3}$/.test(tok)?Number(tok.slice(2)):NaN;
+          if(!(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1]))
+            return 'h: sets a height of '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels, e.g. h:80 — "'+tok+'"';
+          continue;
+        }
+        if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
+          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px> or '+RMT_OPTS.join(', ');
+      }
+      return '';
+    };
     if(!t||typeof t!=='object'||Array.isArray(t))return 'Top level must be a JSON object';
     if(typeof t.id!=='string'||!/^[a-z0-9_]{1,15}$/.test(t.id))
       return 'id must be 1-15 characters of a-z, 0-9 or _';
@@ -3222,11 +3352,38 @@ function appendStep(el,val){
             }
           }
         }
+      }else if(s[0]==='grid'){
+        // An optional settings object first — cols, h, and the options every key
+        // takes — then the keys, each written as it would be in a row.
+        let keys=s.slice(1);
+        if(keys.length&&keys[0]&&typeof keys[0]==='object'&&!Array.isArray(keys[0])){
+          const cfg=keys[0];
+          keys=keys.slice(1);
+          for(const k in cfg){
+            if(k==='opts'){
+              if(typeof cfg.opts!=='string')
+                return 'grid "opts" is a string of button options, e.g. {"opts":"sq light"}';
+              const bad=optsBad(cfg.opts);
+              if(bad)return bad;
+              continue;
+            }
+            if(k!=='cols'&&k!=='h')return 'A grid takes cols, h and opts — "'+k+'" is none of them';
+            const n=cfg[k];
+            if(typeof n!=='number'||!isFinite(n)||n!==Math.floor(n))
+              return 'grid "'+k+'" must be a whole number, e.g. {"cols":2,"h":56}';
+          }
+          if(cfg.cols!==undefined&&(cfg.cols<1||cfg.cols>8))
+            return 'grid "cols" is 1-8 — "'+cfg.cols+'" is outside that';
+          if(cfg.h!==undefined&&(cfg.h<RMT_KEY_H[0]||cfg.h>RMT_KEY_H[1]))
+            return 'grid "h" is '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels — "'+cfg.h+'" is outside that';
+        }
+        if(!keys.length)return 'A grid needs at least one key: ["grid",{"cols":2},["spare1","Copy"]]';
+        items=keys;
       }else{
         items=s.slice(1);
       }
       for(const it of items){
-        if(it==='|'&&s[0]==='row')continue;
+        if(it==='|'&&(s[0]==='row'||s[0]==='grid'))continue;
         // "action", ["action","Label"], or ["action","Label","opts"].
         const arr=Array.isArray(it);
         if(arr&&(it.length<2||it.length>3))
@@ -3238,32 +3395,8 @@ function appendStep(el,val){
           return 'Button labels are up to 16 characters — "'+it[1]+'" will not fit a key';
         if(arr&&it.length===3){
           if(typeof it[2]!=='string')return 'Button options must be a string, e.g. "light sm"';
-          for(const tok of it[2].split(/\s+/)){
-            if(!tok)continue;
-            // Refused rather than ignored: a silently dropped typo looks like
-            // the renderer is broken. The hex test here is the same one
-            // btnHtml applies, and is what keeps arbitrary CSS out of the
-            // inline style attribute it builds.
-            if(tok.indexOf('lit:')===0){
-              // lit:<source>[:#hex] — lights the key while that source reads on.
-              const bits=tok.split(':');
-              if(bits.length>3)return 'lit: takes a source and an optional #hex colour — "'+tok+'"';
-              if(!/^[a-z0-9_]{1,16}$/.test(bits[1]||''))
-                return 'lit: needs a source name of 1-16 characters, a-z, 0-9 or _ — "'+tok+'"';
-              if(bits[2]!==undefined&&!RMT_HEX.test(bits[2]))
-                return 'lit: colour must be a #hex value — "'+tok+'"';
-              continue;
-            }
-            // icon:<name> — whether an icon by that name exists is not checked: it
-            // may be imported after the style, and a missing one shows the label.
-            if(tok.indexOf('icon:')===0){
-              if(!RMT_ICON_NAME.test(tok.slice(5)))
-                return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
-              continue;
-            }
-            if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name> or '+RMT_OPTS.join(', ');
-          }
+          const bad=optsBad(it[2]);
+          if(bad)return bad;
         }
         const a=arr?it[0]:it;
         // hasOwnProperty rather than a truthiness test: RMT_BTNS is an object
@@ -3452,7 +3585,7 @@ function appendStep(el,val){
   function loadTpl(){
     return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
       slotTpl={};
-      (d.slots||[]).forEach(s=>{slotTpl[s.slot]=s.tpl||''});
+      (d.slots||[]).forEach(s=>{slotTpl[s.slot]=s.tpl||'';slotNames[s.slot]=s.name||('Host '+(s.slot+1))});
       activeSlot=styleSlot(d);
     }).then(loadCustomTpls).then(()=>{fillTplSel();renderCustomList()})
       .catch(()=>tplNote('Could not read the styles.',true));
@@ -4555,10 +4688,16 @@ buildKeyboard();
     endHold();  // a second finger, or a second key: only one hold at a time
     holdEl=el;el.classList.add('held');
     const drop=()=>{el.classList.remove('held');if(holdEl===el)holdEl=null};
-    apiPost('hold_action',{action:act})
-      .then(r=>{if(!r.ok){drop();api('press',{action:act})}})
+    apiPost('hold_action',{action:onPage(act)})
+      .then(r=>{if(!r.ok){drop();press(act)}})
       .catch(drop);
   }
+  // A key as it goes to the device. On a tab showing a host's page it is that
+  // host's Host Action — the device runs the key as an ordinary press when that
+  // host has nothing set for it. Wrapped here, at the one place presses leave, so
+  // the macro recorder captures the same thing and a replay does the same.
+  function onPage(a){const h=hostLock();return h===null?a:'host_action:'+h+':'+a}
+  function press(a){api('press',{action:onPage(a)})}
   // `fired` is what keeps hold and tap from both counting: once the hold timer
   // has sent anything, pointerup must NOT send its usual press on release.
   {let sx,sy,ok,ab,fired=false;
@@ -4584,14 +4723,14 @@ buildKeyboard();
     // fire-on-release rework this repeat was reinstated into.
     rt=setTimeout(()=>{
       rt=null;if(!ok)return;
-      fired=true;api('press',{action:act});
-      ri=setInterval(()=>api('press',{action:act}),rptRate);
+      fired=true;press(act);
+      ri=setInterval(()=>press(act),rptRate);
     },rptDelay);
   });
   card.addEventListener('pointermove',e=>{if(ok&&(Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy))>10){ok=false;if(ab)ab.classList.remove('p');stopRepeat()}});
   card.addEventListener('pointerup',()=>{
     if(ab)ab.classList.remove('p');
-    if(ok&&ab&&!fired){api('press',{action:ab.dataset.action})}
+    if(ok&&ab&&!fired){press(ab.dataset.action)}
     ok=false;ab=null;fired=false;stopRepeat();endHold();
   });
   const abort=()=>{if(ab)ab.classList.remove('p');ok=false;ab=null;fired=false;stopRepeat();endHold()};
@@ -4641,9 +4780,9 @@ buildKeyboard();
     if(holds(act)){startHold(el,act);return}
     // Sent on the way down, unlike the pointer path: a key press has no drag
     // to cancel it with, so there is nothing to wait for.
-    api('press',{action:act});
+    press(act);
     if(!repeats(el,act))return;
-    rt=setTimeout(()=>{rt=null;ri=setInterval(()=>api('press',{action:act}),rptRate)},rptDelay);
+    rt=setTimeout(()=>{rt=null;ri=setInterval(()=>press(act),rptRate)},rptDelay);
   });
   card.addEventListener('keyup',e=>{if(e.key===kbKey)kbEnd()});
   // Alt-tabbing or clicking elsewhere with the key still down never delivers
@@ -4656,7 +4795,7 @@ buildKeyboard();
   // that set it; the repeat itself is driven here, one ordinary press per tick.
   let lastRptKey=null;
   window.applyRepeat=function(force){
-    fetch('/api/ble_keyboard/repeat').then(r=>r.json()).then(d=>{
+    fetch('/api/ble_keyboard/repeat'+pageSlotQuery()).then(r=>r.json()).then(d=>{
       const key=d.slot+':'+(d.set?1:0)+':'+d.delay+':'+d.rate+':'+(d.buttons||[]).join(',');
       if(!force&&key===lastRptKey)return;
       lastRptKey=key;
@@ -4673,7 +4812,7 @@ buildKeyboard();
   // this one has no markup fallback: an unconfigured host holds nothing.
   let lastHldKey=null;
   window.applyHold=function(force){
-    fetch('/api/ble_keyboard/hold').then(r=>r.json()).then(d=>{
+    fetch('/api/ble_keyboard/hold'+pageSlotQuery()).then(r=>r.json()).then(d=>{
       const key=d.slot+':'+(d.buttons||[]).join(',');
       if(!force&&key===lastHldKey)return;
       lastHldKey=key;
@@ -4718,7 +4857,7 @@ buildKeyboard();
   // left empty so no stray label or divider is stranded behind them.
   let lastHiddenKey=null;
   window.applyHidden=function(force){
-    fetch('/api/ble_keyboard/hidden').then(r=>r.json()).then(d=>{
+    fetch('/api/ble_keyboard/hidden'+pageSlotQuery()).then(r=>r.json()).then(d=>{
       const key=d.slot+':'+(d.hidden||[]).join(',');
       if(!force&&key===lastHiddenKey)return;
       lastHiddenKey=key;
@@ -4783,10 +4922,18 @@ buildKeyboard();
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='',ic='';
+    let cls='',css='',lit='',ic='',hgt=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
+        // h:<px> — a whole number inside RMT_KEY_H, tested again here for the
+        // same reason the hex is: this is the other value that reaches the
+        // inline style attribute, and a stored style never saw the importer.
+        if(/^h:\d{2,3}$/.test(tok)){
+          const n=Number(tok.slice(2));
+          if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])hgt=n;
+          continue;
+        }
         // The only value that reaches an inline style attribute, so it is
         // matched against a strict hex pattern and nothing else — a token that
         // got this far already passed the same test at import.
@@ -4806,6 +4953,8 @@ buildKeyboard();
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
+    // Last, so a colour token written after it cannot replace it.
+    if(hgt)css+=(css?';':'')+'height:'+hgt+'px';
     // icon:<name> puts a picture on the face: one of ours first, then one imported
     // onto the device. The label stays as the tooltip, and is the face again when
     // the icon cannot be found — a key whose logo is missing still says what it is.
@@ -4878,6 +5027,27 @@ buildKeyboard();
     }else if(k==='media'||k==='apps'){
       inner='<div class="rmt-'+(k==='media'?'media-row':'app-row')+'">'+
             s.slice(1).map(a=>btnHtml(a)).join('')+'</div>';
+    }else if(k==='grid'){
+      // Equal rectangles in columns. The layout is said once, in an optional
+      // settings object — columns, a height, options every key takes — so each
+      // key carries only its action and label, and a page of named keys fits a
+      // stored style with room to spare. "|" leaves a cell empty.
+      const cfg=(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
+      // Whole numbers only, bounded here as well as at import: the column count
+      // is the one value this builds into an inline style.
+      const cols=cfg&&(cfg.cols|0)>=1&&(cfg.cols|0)<=8?(cfg.cols|0):2;
+      const h=cfg?cfg.h|0:0;
+      const shared=((cfg&&typeof cfg.opts==='string')?cfg.opts:'')+
+                   (h>=RMT_KEY_H[0]&&h<=RMT_KEY_H[1]?' h:'+h:'');
+      inner='<div class="rmt-grid" style="grid-template-columns:repeat('+cols+',minmax(0,1fr))">'+
+            s.slice(cfg?2:1).map(it=>{
+              if(it==='|')return '<div></div>';
+              const arr=Array.isArray(it);
+              // The key's own options come after the grid's, so its colour or
+              // height is the one that lands.
+              const own=arr&&typeof it[2]==='string'?it[2]:'';
+              return btnHtml([arr?it[0]:it,arr?it[1]:'',(shared+' '+own).trim()]);
+            }).join('')+'</div>';
     }else if(k==='lcd'){
       // The panel is drawn empty and filled in afterwards: the device page puts
       // numbers in it from its status poll, the Home Assistant card from entity
@@ -5029,9 +5199,9 @@ buildKeyboard();
     // Only what the device says this host uses reaches here, so this is the one
     // place worth remembering for the next load. The editor's preview goes
     // through drawTemplate directly and is deliberately never remembered.
-    // Nor is a kept style: the memory is shared by every tab, and a tab that
-    // follows the host would come up in it on its next reload.
-    if(!lk)rememberTemplate(t);
+    // Nor is a kept style or a host's page: the memory is shared by every tab,
+    // and a tab that follows the host would come up in it on its next reload.
+    if(!lk&&hostLock()===null)rememberTemplate(t);
     // Says it drew, so the caller knows the hidden set has already been applied
     // (forced, inside) and need not ask for it a second time.
     return true;
@@ -5059,6 +5229,9 @@ buildKeyboard();
   // custom one waits for the device like a first visit does.
   const lock=styleLock();
   if(lock&&(!seed||seed.id!==lock))seed=RMT_BUILTIN.find(b=>b.id===lock)||null;
+  // A host's page: which style that is comes with /hosts, so there is nothing
+  // to go on yet — and the shared memory belongs to tabs following the host.
+  if(hostLock()!==null)seed=null;
   if(seed){
     // Straight to drawTemplate, and the tracking set by hand, so the answer
     // below — which is nearly always this same style — finds nothing to redo.
@@ -5314,13 +5487,20 @@ buildKeyboard();
   const onTopLbl=document.getElementById('rmt-ontop-lbl');
   if(!popBtn)return;
   let ph=null,popRef=null,pipWin=null,poll=null,redock=null,pipRO=null;
-  // This tab's style changed while the remote sits in a pop-up window. That window
-  // has its own address and its own copy of the lock, so it is told directly —
-  // same origin, and both are function declarations on its window. A remote in
-  // picture-in-picture is still this document's and needs nothing.
-  window.onStyleLock=function(id){
+  // This tab's style or page changed while the remote sits in a pop-up window.
+  // That window has its own address and its own copy of the lock, so it is told
+  // directly — same origin, and everything called here is a property of its
+  // window. A remote in picture-in-picture is still this document's and needs
+  // nothing.
+  window.onStyleLock=function(kind,value){
     if(!popRef||popRef.closed)return;
-    try{popRef.setStyleLock(id);popRef.refreshActiveTemplate()}catch(e){}
+    try{
+      popRef.setTabLock(kind,value);popRef.refreshActiveTemplate();
+      // A page's hidden, hold and repeat lists go with it, as on this side.
+      if(popRef.applyHidden)popRef.applyHidden(true);
+      if(popRef.applyRepeat)popRef.applyRepeat(true);
+      if(popRef.applyHold)popRef.applyHold(true);
+    }catch(e){}
   };
   // Cleared the first time this address proves it cannot show one — after that
   // Pop out goes straight to window.open, in the click itself, which is also what
@@ -5690,10 +5870,10 @@ buildKeyboard();
                   :'Open in a window of its own.');
     let feat='popup=yes,width='+g.w+',height='+g.h;
     if(g.x!=null&&g.y!=null)feat+=',left='+g.x+',top='+g.y;
-    // A style this tab is kept on goes with the remote. Rebuilt from the checked
-    // id rather than copied from location.search, because the blocked-pop-up link
-    // below goes through innerHTML.
-    const popUrl='/ble_keyboard'+(styleLock()?'?style='+styleLock():'')+'#remote';
+    // A style or a page this tab is kept on goes with the remote. Rebuilt from the
+    // checked values rather than copied from location.search, because the
+    // blocked-pop-up link below goes through innerHTML.
+    const popUrl='/ble_keyboard'+tabLockQuery()+'#remote';
     popRef=window.open(popUrl,'blekb-remote',feat);
     if(!popRef){
       // Blocked. An anchor click is not blocked, so offer one rather than leave a

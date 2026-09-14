@@ -3825,6 +3825,22 @@ bool EspidfBleKeyboard::is_spare_action(const std::string &action) {
     return n >= 1 && n <= MAX_SPARES;
 }
 
+// Splits "host_action:<slot>:<name>". False for anything malformed — a slot that
+// isn't all digits (so "abc" is refused rather than read as slot 0) or no name —
+// which the callers report rather than guess at. The range check against the
+// configured slots is theirs, since this has no instance to ask.
+static bool split_host_action(const std::string &action, int &slot, std::string &name) {
+    size_t sep = action.find(':', 12);
+    if (sep == std::string::npos || sep == 12 || sep - 12 > 2 || sep + 1 >= action.size()) return false;
+    slot = 0;
+    for (size_t i = 12; i < sep; i++) {
+        if (action[i] < '0' || action[i] > '9') return false;
+        slot = slot * 10 + (action[i] - '0');
+    }
+    name = action.substr(sep + 1);
+    return true;
+}
+
 // Hold whatever `action` resolves to, instead of tapping it.
 //
 // Deliberately a separate dispatcher rather than a "hold mode" flag threaded
@@ -3836,6 +3852,25 @@ bool EspidfBleKeyboard::hold_action(const std::string &action) {
     // below, which would otherwise match the first step and quietly drop the
     // rest — better to hand the whole thing back and let it run once.
     if (action.find('|') != std::string::npos) return false;
+
+    // Another host's Host Action for this key, as in execute_action(): held from
+    // that slot's override when it has one, otherwise held as an ordinary key.
+    if (action.rfind("host_action:", 0) == 0) {
+        int slot = 0;
+        std::string name;
+        if (!split_host_action(action, slot, name) || slot >= host_slots_) return false;
+        if (override_depth_ == 0) {
+            const std::string *ovr = find_override_((uint8_t) slot, name);
+            if (ovr != nullptr) {
+                std::string body = *ovr;
+                override_depth_++;
+                bool held = hold_action(body);
+                override_depth_--;
+                return held;
+            }
+        }
+        return hold_action(name);
+    }
 
     // Parametric forms first and overrides after, the same order execute_action
     // uses — so `combo:` and `consumer:` always mean exactly what they say and
@@ -4296,12 +4331,18 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     // conditional or a repeat count on a panel instead of the key that was hit.
     if (action_depth_ == 1 && action.find("lcd:") != 0 && action.find("if:") != 0 &&
         action.find("alternate:") != 0 && action.find("repeat:") != 0) {
-        if (last_action_ != action) {
-            last_action_ = action;
+        // A key pressed on a tab showing another host's page arrives wrapped in
+        // host_action:N:, and the panel wants the key — the style labels it — not
+        // the wrapper.
+        std::string pressed = action;
+        int page_slot = 0;
+        if (action.rfind("host_action:", 0) == 0) split_host_action(action, page_slot, pressed);
+        if (last_action_ != pressed) {
+            last_action_ = pressed;
             pending_lcd_publish_.store(true);
         }
-        if (is_spare_action(action) && last_spare_ != action) {
-            last_spare_ = action;
+        if (is_spare_action(pressed) && last_spare_ != pressed) {
+            last_spare_ = pressed;
             pending_lcd_publish_.store(true);
         }
     }
@@ -4472,6 +4513,34 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         int tx = 0, ty = 0;
         if (sscanf(action.c_str(), "mouse_goto:%i:%i", &tx, &ty) == 2)
             send_mouse_goto(tx, ty);
+        return;
+    }
+    // Run a key as another host's Host Action, whichever host is active. This is
+    // how a tab showing a No BLE slot's page gets keys programmed on that slot
+    // while the device stays on the host it is on. A key the slot leaves alone
+    // runs as an ordinary press — the active host's own override, else the
+    // built-in — so a volume key beside the programmed ones still reaches the TV.
+    if (action.rfind("host_action:", 0) == 0) {
+        int slot = 0;
+        std::string name;
+        if (!split_host_action(action, slot, name) || slot >= host_slots_) {
+            ESP_LOGW(TAG, "host_action needs a configured slot and a name, e.g. host_action:3:spare1 — got %s",
+                     action.c_str());
+            return;
+        }
+        if (override_depth_ == 0) {
+            const std::string *ovr = find_override_((uint8_t) slot, name);
+            if (ovr != nullptr) {
+                // Copied and depth-counted exactly as the active host's override
+                // below, for the reasons given there.
+                std::string body = *ovr;
+                override_depth_++;
+                execute_action(body);
+                override_depth_--;
+                return;
+            }
+        }
+        execute_action(name);
         return;
     }
     if (action.find("switch_host:") == 0) {

@@ -58,6 +58,7 @@ const PARTS = [
   ['const RMT_BUILTIN=', () => balanced('const RMT_BUILTIN=', '[') + ';'],
   ['const RMT_KINDS=', () => oneLine('const RMT_KINDS=')],
   ['const RMT_OPTS=', () => oneLine('const RMT_OPTS=')],
+  ['const RMT_KEY_H=', () => oneLine('const RMT_KEY_H=')],
   ['const RMT_LCD_OPTS=', () => oneLine('const RMT_LCD_OPTS=')],
   ['const RMT_LCD_COLOURS=', () => oneLine('const RMT_LCD_COLOURS=')],
   ['const RMT_LCD_LABELLED=', () => oneLine('const RMT_LCD_LABELLED=')],
@@ -91,7 +92,7 @@ const js = PARTS.map(([, take]) => take()).join('\n\n');
 // Everything the bundle uses must be something it also defines. Checking this
 // by hand is what let RMT_OPTS slip out of the gallery's bundle once, and the
 // symptom was every button rendering as nothing at all — silently.
-const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS',
+const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS', 'RMT_KEY_H',
   'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_LCD_LABELLED', 'lcdLabel', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
   'RMT_ICON_NAME', 'RMT_ICON_LEN', 'RMT_ICON_MAX', 'RMT_ICONS', 'iconBad', 'useIcons', 'iconNames',
   'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl'];
@@ -164,6 +165,25 @@ if (!iconProbe[0].includes('<svg class="rmt-ico" viewBox="0 0 10 10"><path d="M0
     !iconProbe[1].includes('>Gone</button>') ||
     !iconProbe[2].includes('>Bad</button>') || iconProbe[2].includes('script')) {
   throw new Error(`icons render incorrectly:\n${iconProbe.join('\n')}`);
+}
+// h:<px> is the one button option that writes a number into a style attribute:
+// in range it must land, out of range or malformed it must not.
+const hProbe = new Function(`${js}
+return [sectionHtml(['row',['spare1','A','fill h:80 sq']]),
+        sectionHtml(['row',['spare2','B','h:10'],['spare3','C','h:999'],['spare4','D','h:8x']])];`)();
+if (!/class="rmt-btn fill sq"/.test(hProbe[0]) || !hProbe[0].includes('style="height:80px"') ||
+    hProbe[1].includes('height:')) {
+  throw new Error(`h:/fill render incorrectly:\n${hProbe.join('\n')}`);
+}
+// A grid: the column count reaches an inline style, the shared options reach
+// every key, a key's own come after them, and "|" is an empty cell.
+const gridProbe = new Function(`${js}
+return sectionHtml(['grid',{cols:3,h:60,opts:'sq'},['spare1','Copy'],'|',['spare2','Paste','#336699']]);`)();
+if (!gridProbe.includes('class="rmt-grid" style="grid-template-columns:repeat(3,minmax(0,1fr))"') ||
+    (gridProbe.match(/height:60px/g) || []).length !== 2 || !gridProbe.includes('<div></div>') ||
+    !/data-action="spare2" style="background:#336699;border-color:#336699;height:60px"/.test(gridProbe) ||
+    !/class="rmt-btn sq" data-action="spare1"/.test(gridProbe)) {
+  throw new Error(`grid renders incorrectly:\n${gridProbe}`);
 }
 const builtins = new Function(`${js}\nreturn RMT_BUILTIN.map(t=>t.id);`)();
 

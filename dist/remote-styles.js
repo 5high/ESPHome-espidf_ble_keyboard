@@ -101,7 +101,23 @@ spare12:{t:'Spare 12',x:'12',g:8},
 spare13:{t:'Spare 13',x:'13',g:8},
 spare14:{t:'Spare 14',x:'14',g:8},
 spare15:{t:'Spare 15',x:'15',g:8},
-spare16:{t:'Spare 16',x:'16',g:8}};
+spare16:{t:'Spare 16',x:'16',g:8},
+spare17:{t:'Spare 17',x:'17',g:8},
+spare18:{t:'Spare 18',x:'18',g:8},
+spare19:{t:'Spare 19',x:'19',g:8},
+spare20:{t:'Spare 20',x:'20',g:8},
+spare21:{t:'Spare 21',x:'21',g:8},
+spare22:{t:'Spare 22',x:'22',g:8},
+spare23:{t:'Spare 23',x:'23',g:8},
+spare24:{t:'Spare 24',x:'24',g:8},
+spare25:{t:'Spare 25',x:'25',g:8},
+spare26:{t:'Spare 26',x:'26',g:8},
+spare27:{t:'Spare 27',x:'27',g:8},
+spare28:{t:'Spare 28',x:'28',g:8},
+spare29:{t:'Spare 29',x:'29',g:8},
+spare30:{t:'Spare 30',x:'30',g:8},
+spare31:{t:'Spare 31',x:'31',g:8},
+spare32:{t:'Spare 32',x:'32',g:8}};
 
 const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb-pad',
 maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',
@@ -208,9 +224,11 @@ const RMT_BUILTIN=[
  ['apps',['spare5','Spotify','icon:spotify lg squircle'],['spare6','Plex','icon:plex lg squircle'],
          ['spare7','Kodi','icon:kodi lg squircle'],['spare8','TV','icon:tv lg squircle']]]}];
 
-const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','lcd','-'];
+const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','grid','lcd','-'];
 
-const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle'];
+const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle','fill'];
+
+const RMT_KEY_H=[24,160];
 
 const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 
@@ -280,6 +298,8 @@ function iconNames(t){
   };
   for(const s of t.sections){
     if(!Array.isArray(s)||s[0]==='lcd')continue;
+    // A grid's shared options reach every key in it, an icon included.
+    if(s[0]==='grid'&&s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))look(['','',s[1].opts]);
     for(const it of s.slice(1)){
       if(s[0]==='strip'||s[0]==='rocker'){if(Array.isArray(it))it.slice(1).forEach(look)}
       else look(it);
@@ -323,10 +343,18 @@ function btnHtml(item){
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='',ic='';
+    let cls='',css='',lit='',ic='',hgt=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
+        // h:<px> — a whole number inside RMT_KEY_H, tested again here for the
+        // same reason the hex is: this is the other value that reaches the
+        // inline style attribute, and a stored style never saw the importer.
+        if(/^h:\d{2,3}$/.test(tok)){
+          const n=Number(tok.slice(2));
+          if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])hgt=n;
+          continue;
+        }
         // The only value that reaches an inline style attribute, so it is
         // matched against a strict hex pattern and nothing else — a token that
         // got this far already passed the same test at import.
@@ -346,6 +374,8 @@ function btnHtml(item){
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
+    // Last, so a colour token written after it cannot replace it.
+    if(hgt)css+=(css?';':'')+'height:'+hgt+'px';
     // icon:<name> puts a picture on the face: one of ours first, then one imported
     // onto the device. The label stays as the tooltip, and is the face again when
     // the icon cannot be found — a key whose logo is missing still says what it is.
@@ -415,6 +445,27 @@ function sectionHtml(s){
     }else if(k==='media'||k==='apps'){
       inner='<div class="rmt-'+(k==='media'?'media-row':'app-row')+'">'+
             s.slice(1).map(a=>btnHtml(a)).join('')+'</div>';
+    }else if(k==='grid'){
+      // Equal rectangles in columns. The layout is said once, in an optional
+      // settings object — columns, a height, options every key takes — so each
+      // key carries only its action and label, and a page of named keys fits a
+      // stored style with room to spare. "|" leaves a cell empty.
+      const cfg=(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
+      // Whole numbers only, bounded here as well as at import: the column count
+      // is the one value this builds into an inline style.
+      const cols=cfg&&(cfg.cols|0)>=1&&(cfg.cols|0)<=8?(cfg.cols|0):2;
+      const h=cfg?cfg.h|0:0;
+      const shared=((cfg&&typeof cfg.opts==='string')?cfg.opts:'')+
+                   (h>=RMT_KEY_H[0]&&h<=RMT_KEY_H[1]?' h:'+h:'');
+      inner='<div class="rmt-grid" style="grid-template-columns:repeat('+cols+',minmax(0,1fr))">'+
+            s.slice(cfg?2:1).map(it=>{
+              if(it==='|')return '<div></div>';
+              const arr=Array.isArray(it);
+              // The key's own options come after the grid's, so its colour or
+              // height is the one that lands.
+              const own=arr&&typeof it[2]==='string'?it[2]:'';
+              return btnHtml([arr?it[0]:it,arr?it[1]:'',(shared+' '+own).trim()]);
+            }).join('')+'</div>';
     }else if(k==='lcd'){
       // The panel is drawn empty and filled in afterwards: the device page puts
       // numbers in it from its status poll, the Home Assistant card from entity
@@ -473,6 +524,43 @@ function sectionHtml(s){
   }
 
 function validateTpl(t){
+    // A button's option string, which a grid's settings carry as well: every
+    // token checked, '' when they all pass. Refused rather than ignored — a
+    // silently dropped typo looks like the renderer is broken. The hex test is
+    // the same one btnHtml applies, and is what keeps arbitrary CSS out of the
+    // inline style attribute it builds.
+    const optsBad=str=>{
+      for(const tok of str.split(/\s+/)){
+        if(!tok)continue;
+        if(tok.indexOf('lit:')===0){
+          // lit:<source>[:#hex] — lights the key while that source reads on.
+          const bits=tok.split(':');
+          if(bits.length>3)return 'lit: takes a source and an optional #hex colour — "'+tok+'"';
+          if(!/^[a-z0-9_]{1,16}$/.test(bits[1]||''))
+            return 'lit: needs a source name of 1-16 characters, a-z, 0-9 or _ — "'+tok+'"';
+          if(bits[2]!==undefined&&!RMT_HEX.test(bits[2]))
+            return 'lit: colour must be a #hex value — "'+tok+'"';
+          continue;
+        }
+        // icon:<name> — whether an icon by that name exists is not checked: it
+        // may be imported after the style, and a missing one shows the label.
+        if(tok.indexOf('icon:')===0){
+          if(!RMT_ICON_NAME.test(tok.slice(5)))
+            return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
+          continue;
+        }
+        // h:<px> — the key's height, a whole number within RMT_KEY_H.
+        if(tok.indexOf('h:')===0){
+          const n=/^h:\d{2,3}$/.test(tok)?Number(tok.slice(2)):NaN;
+          if(!(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1]))
+            return 'h: sets a height of '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels, e.g. h:80 — "'+tok+'"';
+          continue;
+        }
+        if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
+          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px> or '+RMT_OPTS.join(', ');
+      }
+      return '';
+    };
     if(!t||typeof t!=='object'||Array.isArray(t))return 'Top level must be a JSON object';
     if(typeof t.id!=='string'||!/^[a-z0-9_]{1,15}$/.test(t.id))
       return 'id must be 1-15 characters of a-z, 0-9 or _';
@@ -589,11 +677,38 @@ function validateTpl(t){
             }
           }
         }
+      }else if(s[0]==='grid'){
+        // An optional settings object first — cols, h, and the options every key
+        // takes — then the keys, each written as it would be in a row.
+        let keys=s.slice(1);
+        if(keys.length&&keys[0]&&typeof keys[0]==='object'&&!Array.isArray(keys[0])){
+          const cfg=keys[0];
+          keys=keys.slice(1);
+          for(const k in cfg){
+            if(k==='opts'){
+              if(typeof cfg.opts!=='string')
+                return 'grid "opts" is a string of button options, e.g. {"opts":"sq light"}';
+              const bad=optsBad(cfg.opts);
+              if(bad)return bad;
+              continue;
+            }
+            if(k!=='cols'&&k!=='h')return 'A grid takes cols, h and opts — "'+k+'" is none of them';
+            const n=cfg[k];
+            if(typeof n!=='number'||!isFinite(n)||n!==Math.floor(n))
+              return 'grid "'+k+'" must be a whole number, e.g. {"cols":2,"h":56}';
+          }
+          if(cfg.cols!==undefined&&(cfg.cols<1||cfg.cols>8))
+            return 'grid "cols" is 1-8 — "'+cfg.cols+'" is outside that';
+          if(cfg.h!==undefined&&(cfg.h<RMT_KEY_H[0]||cfg.h>RMT_KEY_H[1]))
+            return 'grid "h" is '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels — "'+cfg.h+'" is outside that';
+        }
+        if(!keys.length)return 'A grid needs at least one key: ["grid",{"cols":2},["spare1","Copy"]]';
+        items=keys;
       }else{
         items=s.slice(1);
       }
       for(const it of items){
-        if(it==='|'&&s[0]==='row')continue;
+        if(it==='|'&&(s[0]==='row'||s[0]==='grid'))continue;
         // "action", ["action","Label"], or ["action","Label","opts"].
         const arr=Array.isArray(it);
         if(arr&&(it.length<2||it.length>3))
@@ -605,32 +720,8 @@ function validateTpl(t){
           return 'Button labels are up to 16 characters — "'+it[1]+'" will not fit a key';
         if(arr&&it.length===3){
           if(typeof it[2]!=='string')return 'Button options must be a string, e.g. "light sm"';
-          for(const tok of it[2].split(/\s+/)){
-            if(!tok)continue;
-            // Refused rather than ignored: a silently dropped typo looks like
-            // the renderer is broken. The hex test here is the same one
-            // btnHtml applies, and is what keeps arbitrary CSS out of the
-            // inline style attribute it builds.
-            if(tok.indexOf('lit:')===0){
-              // lit:<source>[:#hex] — lights the key while that source reads on.
-              const bits=tok.split(':');
-              if(bits.length>3)return 'lit: takes a source and an optional #hex colour — "'+tok+'"';
-              if(!/^[a-z0-9_]{1,16}$/.test(bits[1]||''))
-                return 'lit: needs a source name of 1-16 characters, a-z, 0-9 or _ — "'+tok+'"';
-              if(bits[2]!==undefined&&!RMT_HEX.test(bits[2]))
-                return 'lit: colour must be a #hex value — "'+tok+'"';
-              continue;
-            }
-            // icon:<name> — whether an icon by that name exists is not checked: it
-            // may be imported after the style, and a missing one shows the label.
-            if(tok.indexOf('icon:')===0){
-              if(!RMT_ICON_NAME.test(tok.slice(5)))
-                return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
-              continue;
-            }
-            if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-              return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name> or '+RMT_OPTS.join(', ');
-          }
+          const bad=optsBad(it[2]);
+          if(bad)return bad;
         }
         const a=arr?it[0]:it;
         // hasOwnProperty rather than a truthiness test: RMT_BTNS is an object
@@ -690,6 +781,8 @@ export const RMT_CSS = `
 .rmt-btn.yellow{background:#fdd835}
 .rmt-btn.blue{background:#1e88e5}
 .rmt-app-row{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.rmt-grid{display:grid;gap:8px}
+.rmt-grid .rmt-btn{border-radius:var(--rb-btn-radius,10px)}
 .rmt-btn.app{width:auto;height:38px;border-radius:19px;padding:0 14px;font-size:11px}
 .rmt-ring{position:relative;width:168px;height:168px;margin:10px auto;border-radius:50%;
   background:var(--rb-ring-bg,var(--rb-btn-bg,var(--bg)));border:1px solid var(--rb-btn-border,var(--border))}
@@ -741,12 +834,15 @@ export const RMT_CSS = `
 .rmt-btn.xl svg{width:26px;height:26px}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
+.rmt-btn.fill{flex:1 1 0;width:auto;min-width:0;padding:0 8px;overflow:hidden;text-align:center;line-height:1.2}
+.rmt-grid .rmt-btn{width:auto;min-width:0;padding:0 6px;overflow:hidden;text-align:center;line-height:1.2}
 .rmt-btn.squircle{border-radius:42%}
 @supports (corner-shape:superellipse(1.4)){.rmt-btn.squircle{border-radius:50%;corner-shape:superellipse(1.4)}}
 .rmt-btn svg.rmt-ico{width:auto;max-width:78%;height:20px}
 .rmt-btn.sm svg.rmt-ico{height:16px}
 .rmt-btn.xl svg.rmt-ico{height:26px}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
+.rmt-btn.fill svg.rmt-ico{max-width:80%}
 .rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
   color:var(--rb-lit-fg,#fff);border-color:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)))}
 .rmt-btn.light{background:var(--rb-light-bg,#e9e9ee);color:var(--rb-light-fg,#16161a);border-color:var(--rb-light-bg,#e9e9ee)}
@@ -756,4 +852,4 @@ export const RMT_CSS = `
 .rmt-head .macro-edit-btn{margin-left:0}
 `;
 
-export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl };
+export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_KEY_H, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl };

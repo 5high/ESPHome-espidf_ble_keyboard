@@ -506,7 +506,7 @@ espidf_ble_keyboard:
 | `"voice"` | Voice Command (`0x00CF`) — the microphone key. |
 | `"captions"` | Closed Caption (`0x0061`) — subtitles on/off. |
 | `"num0"` … `"num9"` | The keypad, as plain keyboard digits — direct channel entry on a TV, typing a number on a PC. |
-| `"spare1"` … `"spare16"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
+| `"spare1"` … `"spare32"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
 | `"left_click"` | Mouse left click. |
 | `"right_click"` | Mouse right click. |
 | `"middle_click"` | Mouse middle click. |
@@ -531,6 +531,7 @@ espidf_ble_keyboard:
 | `"switch_host:N"` | Switch to host slot N (0–9). Reconnects to stored host or advertises for new pairing. |
 | `"switch_host:next"` / `"switch_host:prev"` | Step to the next or previous host slot, wrapping around at the ends. Cycles through every configured slot, so an unpaired one is reached too (and advertises for pairing). Does nothing when only one slot is configured. |
 | `"switch_host:back"` | Return to the host slot that was active before the last switch, however that switch was made. Pressed again, it goes back again. |
+| `"host_action:N:<name>"` | Run host slot N's Host Action for `<name>` without switching to it. If slot N has no action for that name, it runs as an ordinary press on the active host. |
 | `"wait:connected"` / `"wait:connected:N"` | Pause a macro until the active host is connected and ready for keys, for at most N ms (default 10000, max 60000). On timeout the macro carries on. |
 | `"forget_host:N"` | Remove BLE bond for host slot N (0–9) and clear the slot. |
 | `"lcd:<text>"` | Put text on an [LCD panel](#lcd-panels)'s `@msg` line. Everything after the colon is the text. |
@@ -899,7 +900,7 @@ Keys sent before a host is ready are lost, so put `wait:connected` after every s
 
 Not every slot has to be a Bluetooth host. Untick **Advertise over Bluetooth** in the [Host Actions](#host-actions-per-host-overrides) card and the slot keeps everything that makes a slot useful — its own remote style, per-host overrides, hidden/hold/repeat lists, a place in the host switcher — but the radio stays silent on it. Nothing advertises, nothing can find it, nothing can connect.
 
-What you get is a remote page with no host behind it: a universal-remote page whose buttons drive Home Assistant instead. Override them with `ha_action:` and they reach an IR blaster, a media player, a scene — anything HA can call.
+What you get is a remote page with no host behind it: a universal-remote page whose buttons drive Home Assistant instead. Override them with `ha_action:` and they reach an IR blaster, a media player, a scene — anything HA can call. Or leave the keyboard where it is and [show the slot's page on one tab](#remote-style-per-host) — a tablet whose keys run this slot's Host Actions whichever host is active.
 
 > **HID actions on such a slot go nowhere.** There is no host to send them to, so a button you have not overridden — Volume Up, the D-pad, a `string:` step — does nothing at all. Every button that should work on the page needs an override that leaves via Home Assistant.
 
@@ -1000,7 +1001,7 @@ The replacement can be any action string, including a multi-step chain: `record:
 - **Every button on both remotes is remappable.** All of them — D-pad, Power, Channel, Rewind/FF, the colour keys and app launchers — fire named actions for exactly this reason. The one exception is the number pad, which types digits rather than sending a fixed HID code.
 - Only **named** actions can be overridden (`record`, `up`, `channel_up`, `play_pause`, …) — the ones in the [Action Types](#action-types) table with no `:` parameter. Parametric forms like `combo:` and `consumer:` are dispatched before the override lookup, so they always mean exactly what they say. That's deliberate: `consumer:0x00B5` must never silently become something else.
 - Resolution order is **web-UI override → YAML `actions:` → built-in behaviour**.
-- Max 32 overrides per host slot, and 8000 characters of overrides across all hosts together — they are kept in memory, and the shared limit stops a few full hosts from running the keyboard out of it. Names are max 31 characters and may not contain `=`, `|`, or whitespace; replacements are max 255 characters.
+- Max 48 overrides per host slot, and 8000 characters of overrides across all hosts together — they are kept in memory, and the shared limit stops a few full hosts from running the keyboard out of it. Names are max 31 characters and may not contain `=`, `|`, or whitespace; replacements are max 255 characters.
 - An override body is executed with overrides disabled, so `record: "record"` safely runs the built-in Record rather than looping.
 - Overrides apply everywhere the named action is used — remote buttons, macros, YAML `button` actions, and the `run_action` HA service — not just the remote.
 
@@ -1099,6 +1100,8 @@ The style is stored on the device against the host slot, not in the browser, so 
 
 **Keeping one tab on one style.** The **This tab** row in **Remote Style** keeps just the tab you are in on one style, whatever host is active — a wall tablet showing the same remote all day while a PC tab beside it follows the host. It saves nothing on the device: it adds `?style=` and the style's id to the tab's address, so a reload keeps it, and bookmarking the address (or adding it to a tablet's home screen) makes it stick. You can type the address yourself too, e.g. `http://<device>/ble_keyboard?style=style6#remote` — the id is `default`, `style1`…`style6` or one of your own, and a popped-out remote takes it along. The active host's hidden, repeat and hold settings still apply, and the host bar still switches hosts. It is a view, not a restriction: anyone at that tab can step it back to **Follow the host**.
 
+**Showing a host's page.** The same row lists your hosts too. Pick one and the tab shows that host's *page*: its style, its Remote Buttons, Hold to Repeat and Press and Hold settings, and its [Host Actions](#host-actions-per-host-overrides) on every key — while the keyboard stays on whichever host is active. A key that host has no action for goes to the active host as usual, so a volume rocker beside the programmed keys still turns the TV up. This is what a [slot that never advertises](#a-slot-that-never-advertises) is for on a tablet: give it a style and program its keys under Host Actions, then open `http://<device>/ble_keyboard?host=<slot>` there (slots count from 0, as in `switch_host:`). Other tabs are unaffected, and a host switch made anywhere leaves the tablet's keys doing what you set.
+
 The [Media Remote Card](#media-remote-card-for-home-assistant) draws from the same style definitions, so a layout looks the same in both places — see [Remote styles on the card](#remote-styles-on-the-card) for how a style travels there.
 
 #### Making your own
@@ -1133,6 +1136,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `["rocker", ["Vol","volume_up","volume_down"], …]` | **One-piece rocker keys** — a tall pill with two halves and the label between them, as a remote carries volume and channel. A two-entry group, `["","mute"]`, is a single key at the same height, which is how mute sits between two rockers. |
 | `["media", …]` | A row of the smaller transport-sized buttons. |
 | `["apps", …]` | A row of wide pill buttons. |
+| `["grid", {"cols":2,"h":56,"opts":"sq"}, …]` | **Equal rectangles in columns**, the layout said once so each key is just `["spare1","Copy"]` — a page of 32 named keys fits a stored style easily. The settings are optional: `cols` 1–8 (2 if left out), `h` 24–160 pixels, and `opts`, the [button options](#making-your-own) every key takes. A key's own options add to those; `"|"` leaves a cell empty. |
 | `["lcd", ["Room","temp"], …]` | **A small screen** showing live values — see [LCD panels](#lcd-panels). Each line is a label and the value to show; up to four per panel. |
 | `["-"]` | A horizontal divider. |
 
@@ -1150,6 +1154,8 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `wide` | an auto-width pill |
 | `sq` | square-ish corners |
 | `squircle` | an app tile — a rounded square whose corners flow into its sides, as TV launchers draw apps. Pairs with a size: `"lg squircle"` |
+| `fill` | share the row's width equally with the other `fill` keys in it, so a grid of keys lines up in columns whatever the labels say. The width comes from the style's `maxw` |
+| `h:<px>` | the key's height in pixels, 24–160. With `fill` it makes rectangles: `["row", ["spare1","TV on","fill h:80 sq"], ["spare2","TV off","fill h:80 sq"]]` |
 | `lit:<source>` | Light the key while that [source](#configuration-variables) reads `on` — e.g. a power key that goes green while the TV is on. Takes the style's `lit_bg`/`lit_fg`; `lit:<source>:#43a047` colours this one button instead. |
 | `icon:<name>` | Put an icon on the key — a logo you imported, or one of the remote's own by its id (`icon:home`). See [Logos on buttons](#logos-on-buttons). |
 
@@ -1163,7 +1169,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, the seven transport keys, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `spare1`–`spare16`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, the seven transport keys, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, and for a `lit:` button `lit_bg`, `lit_fg`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -1379,6 +1385,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"switch_host:N"` | Switch to host slot N (0–9). If the slot has a stored host, uses directed advertising to reconnect. If empty, starts normal advertising for new pairing. |
 | `"switch_host:next"` / `"switch_host:prev"` | Step one slot forward or back, wrapping at the ends — the same cycling the host switcher arrows on the cards do, but on the device, so a single remote key or macro can rotate through hosts. Empty slots are included in the rotation. |
 | `"switch_host:back"` | Return to the slot active before the last switch. See [Visiting another host and coming back](#multi-host-switching). |
+| `"host_action:N:<name>"` | Run slot N's [Host Action](#host-actions-per-host-overrides) for `<name>` whichever host is active — `host_action:6:spare1`. A name slot N has no action for runs as an ordinary press. What a tab [showing a host's page](#remote-style-per-host) sends for every key. |
 | `"wait:connected"` | Hold a macro until the active host is ready for keys, up to 10 s (`wait:connected:N` for N ms). |
 | `"forget_host:N"` | Remove the bond for host slot N (0–9). Clears the stored address and removes the BLE bond from the ESP32. If the forgotten host is currently connected, it is disconnected. |
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
