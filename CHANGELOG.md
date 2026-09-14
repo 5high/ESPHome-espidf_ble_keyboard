@@ -81,6 +81,12 @@ web control page shows the matching version badge.
   the width a style asked for and the whole remote came out wider. A style with its own width now
   measures identically in both places.
 
+- **A remote on top of another window keeps up with the device.** A picture-in-picture remote is
+  drawn from the page that opened it, and that page stopped polling whenever its tab was in the
+  background — which is exactly when a floating remote is being used. Lit keys, panel values and the
+  host bar sat frozen until the tab was looked at again. A pop-out in a window of its own was never
+  affected.
+
 - **A crowded panel no longer loses the values you declared.** A Home Assistant state holds 255
   characters, and what did not fit was whatever came last — usually a source, since the keyboard's own
   `@` values go in first. Sources now keep their place, and `@host`, `@slot` and `@mac` are first to

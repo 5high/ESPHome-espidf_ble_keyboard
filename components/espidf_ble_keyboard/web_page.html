@@ -884,10 +884,18 @@ const POPOUT=document.documentElement.classList.contains('popout');
 // asking altogether and catches up the moment it is looked at again, and the
 // popped-out window, being the second view of the same device, asks less often
 // than the page it came from.
+// The exception is a picture-in-picture remote: it is drawn from THIS document,
+// so this page being out of sight is exactly when that window is in use — you
+// are working in another tab with the remote floating on top of it. Gating on
+// document.hidden alone froze everything it shows (lit keys, panel values, the
+// host bar) until the tab came back, which reads as a remote that updates
+// minutes late. A window.open pop-out is its own document and polls for itself.
 function pollEvery(fn,ms){
   fn();
-  setInterval(()=>{if(!document.hidden)fn()},POPOUT?Math.round(ms*1.6):ms);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)fn()});
+  const live=()=>!document.hidden||
+    !!(window.documentPictureInPicture&&documentPictureInPicture.window);
+  setInterval(()=>{if(live())fn()},POPOUT?Math.round(ms*1.6):ms);
+  document.addEventListener('visibilitychange',()=>{if(live())fn()});
 }
 
 // Every POST on this page goes through here, and every one of them sends its
