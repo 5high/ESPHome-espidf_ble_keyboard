@@ -503,6 +503,8 @@
       <tr><td><code>"send_custom_text"</code></td><td class="desc">Send linked text entity content. Use <code>send_custom_text:N</code> for multiple entities. Requires <code>custom_text_id</code> in config.</td></tr>
       <tr><td><code>"switch_host:0"</code></td><td class="desc">Switch to host slot 0–9. Reconnects to stored host or advertises for new pairing.</td></tr>
       <tr><td><code>"switch_host:next"</code></td><td class="desc">Step one slot forward (or <code>"switch_host:prev"</code> for back), wrapping at the ends. One button rotates through the hosts.</td></tr>
+      <tr><td><code>"switch_host:back"</code></td><td class="desc">Return to the slot active before the last switch, however it was made — what brings a macro home after it visits another host.</td></tr>
+      <tr><td><code>"wait:connected"</code></td><td class="desc">Hold a macro until the active host is connected and ready for keys, rather than guessing a delay. Up to 10 s, or <code>"wait:connected:N"</code> ms (max 60000); carries on if the host never connects.</td></tr>
       <tr><td><code>"forget_host:0"</code></td><td class="desc">Remove BLE bond for host slot 0–9 and clear the stored address.</td></tr>
       <tr><td><code>"string:hello"</code></td><td class="desc">Explicit text typing — useful in multi-step macros to distinguish text from action names.</td></tr>
       <tr><td><code>"delay:200"</code></td><td class="desc">Pause for N milliseconds (max 10000). Used between steps in multi-step macros.</td></tr>
