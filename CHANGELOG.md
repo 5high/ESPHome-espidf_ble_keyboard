@@ -81,6 +81,12 @@ web control page shows the matching version badge.
   the width a style asked for and the whole remote came out wider. A style with its own width now
   measures identically in both places.
 
+- **A crowded panel no longer loses the values you declared.** A Home Assistant state holds 255
+  characters, and what did not fit was whatever came last — usually a source, since the keyboard's own
+  `@` values go in first. Sources now keep their place, and `@host`, `@slot` and `@mac` are first to
+  go because the card derives those itself. The log names anything else left out, once rather than
+  every second, and stays quiet where nothing is actually lost.
+
 - **Backing up with custom styles no longer churns the heap.** The size estimate the backup reserves
   from left the styles out entirely, so a device holding several of them grew the document by
   repeated reallocation instead — on the one heap that has the Bluetooth stack in it.

@@ -728,16 +728,15 @@ class EspidfBleKeyboard : public Component
   /// behind a key. Includes the @-prefixed built-ins even with no sources
   /// declared. Built fresh per call; it is asked for at most every 3 s.
   std::vector<std::pair<std::string, std::string>> lcd_values() const;
-  /// The same map as compact JSON, clamped to what a HA state can hold.
-  std::string lcd_json() const;
   /// The unclamped map as a JSON object, rebuilt on the main loop. /status
   /// serves this rather than building it per request: the web task has 4352
   /// bytes of stack and about 860 spare, and walking every source there meant a
   /// call chain of string-building frames on the thinnest stack in the system.
   const std::string &lcd_status_json() const { return lcd_status_json_; }
-  /// Optional text sensor carrying lcd_json() to the Lovelace card — the same
-  /// reason the hidden, hold and repeat lists travel as sensors: a dashboard on
-  /// https cannot fetch this device's API at all.
+  /// Optional text sensor carrying the panel values to the Lovelace card, cut
+  /// to what a Home Assistant state holds — the same reason the hidden, hold and
+  /// repeat lists travel as sensors: a dashboard on https cannot fetch this
+  /// device's API at all.
   void set_lcd_sensor(text_sensor::TextSensor *sensor) {
     lcd_sensor_ = sensor;
     publish_lcd_();
@@ -982,6 +981,10 @@ class EspidfBleKeyboard : public Component
   // is whatever an `lcd:` action put there.
   std::string last_action_, last_spare_, lcd_msg_;
   std::string last_lcd_json_;
+  // Which keys the sensor string had no room for last time — the ones worth
+  // reporting, not @host/@slot/@mac — so the warning is one line per change
+  // rather than one per rebuild.
+  std::string last_lcd_drop_;
   std::string lcd_status_json_{"{}"};
   std::string lcd_sensor_json_{"{}"};
   UBaseType_t lcd_stack_low_{0};

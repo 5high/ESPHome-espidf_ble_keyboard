@@ -662,7 +662,7 @@ text_sensor:
     name: "LCD Values"
 ```
 
-It carries the keyboard's own `@` values and anything listed in `sources:`, republished whenever one of them changes and at most once a second. Everything has to fit the 255 characters a Home Assistant state holds; past that whole entries are dropped and the log says which way to fix it.
+It carries the keyboard's own `@` values and anything listed in `sources:`, republished whenever one of them changes and at most once a second. Everything has to fit the 255 characters a Home Assistant state holds. Past that, whole entries are dropped rather than half of one: your `sources:` keep their place, and `@host`, `@slot` and `@mac` are first to go because the card works those out from its own host list — declaring any sources at all pushes those three out, and nothing is lost by it. The log names anything else it had to leave out. The device's own page is never cut: it reads the full set from `/status`.
 
 > **These are diagnostic entities.** They carry machine-readable state for the cards rather than anything to read yourself, so they default to `entity_category: diagnostic` — Home Assistant files them under **Diagnostic** on the device page and leaves them out of auto-generated dashboards, instead of listing a long comma-separated repeat config across the integration screen. Set `entity_category:` on the sensor to promote one back to the main list. Add only the sensors your cards actually use; each is optional.
 

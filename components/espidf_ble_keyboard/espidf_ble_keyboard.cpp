@@ -1900,31 +1900,23 @@ static void lcd_json_escape(const std::string &in, std::string &out) {
     }
 }
 
-std::string EspidfBleKeyboard::lcd_json() const {
-    // 255 is what Home Assistant keeps of a state string. Entries are added
-    // whole or not at all, so the result is always parseable JSON — a value
-    // sliced in half would take the panel down rather than one line of it.
-    static const size_t HA_STATE_MAX = 255;
-    std::string json = "{";
-    json.reserve(200);
-    bool dropped = false;
-    for (const auto &kv : lcd_values()) {
-        std::string entry;
-        entry.reserve(kv.first.size() + kv.second.size() + 8);
-        if (json.size() > 1) entry += ",";
-        entry += "\"";
-        lcd_json_escape(kv.first, entry);
-        entry += "\":\"";
-        lcd_json_escape(kv.second, entry);
-        entry += "\"";
-        if (json.size() + entry.size() + 1 > HA_STATE_MAX) { dropped = true; continue; }
-        json += entry;
-    }
-    json += "}";
-    if (dropped)
-        ESP_LOGW(TAG, "LCD values exceed the 255 characters a Home Assistant state holds — "
-                      "some were left out. Declare fewer sources, or shorten their keys.");
-    return json;
+// Which values keep their place when the whole map will not fit the 255
+// characters a Home Assistant state holds. Whatever came last used to be the one
+// to go, which meant a source the user declared losing out to a built-in they
+// never put on a panel. Order of loss, last to go first:
+//
+//   0  a declared source — the reason `sources:` was written at all
+//   1  @state @last @station @msg — changing state nothing else reports
+//   2  @battery @rssi @layout — device facts, rarely on a panel
+//   3  @host @slot @mac — the card already derives these from its /hosts poll,
+//      so losing them costs nothing while it can reach the device
+//
+// The device's own page is unaffected either way: /status serves the full map.
+static uint8_t lcd_sensor_rank(const std::string &key) {
+    if (key.empty() || key[0] != '@') return 0;
+    if (key == "@state" || key == "@last" || key == "@station" || key == "@msg") return 1;
+    if (key == "@battery" || key == "@rssi" || key == "@layout") return 2;
+    return 3;
 }
 
 // Built here, on the main loop, for whoever asks. See lcd_status_json().
@@ -1933,11 +1925,14 @@ std::string EspidfBleKeyboard::lcd_json() const {
 // walks a second, each with its own chain of frames.
 void EspidfBleKeyboard::rebuild_lcd_status_() {
     static const size_t HA_STATE_MAX = 255;
-    std::string full = "{", clamped = "{";
+    const auto values = lcd_values();
+    // Formatted once and read twice — the two strings differ only in which
+    // entries they take and in what order, not in how one is written.
+    std::vector<std::string> entries;
+    entries.reserve(values.size());
+    std::string full = "{";
     full.reserve(240);
-    clamped.reserve(HA_STATE_MAX + 2);
-    bool dropped = false;
-    for (const auto &kv : lcd_values()) {
+    for (const auto &kv : values) {
         std::string entry;
         entry.reserve(kv.first.size() + kv.second.size() + 8);
         entry += "\"";
@@ -1947,17 +1942,49 @@ void EspidfBleKeyboard::rebuild_lcd_status_() {
         entry += "\"";
         if (full.size() > 1) full += ",";
         full += entry;
-        // Whole entries or nothing, so what the sensor carries always parses.
-        const size_t sep = clamped.size() > 1 ? 1 : 0;
-        if (clamped.size() + sep + entry.size() + 1 > HA_STATE_MAX) { dropped = true; continue; }
-        if (sep) clamped += ",";
-        clamped += entry;
+        entries.push_back(std::move(entry));
     }
     full += "}";
+
+    // Whole entries or nothing, so what the sensor carries always parses; and by
+    // rank, so what is lost is what matters least. A rank that does not fit does
+    // not stop a later, shorter one from getting in.
+    // `lost` is what nothing else can tell the card; `derived` is @host, @slot
+    // and @mac, which it reads off its own host list — losing those is the
+    // design working, not a problem to report.
+    std::string clamped = "{", lost, derived;
+    clamped.reserve(HA_STATE_MAX + 2);
+    for (uint8_t rank = 0; rank <= 3; rank++) {
+        for (size_t i = 0; i < entries.size(); i++) {
+            if (lcd_sensor_rank(values[i].first) != rank) continue;
+            const size_t sep = clamped.size() > 1 ? 1 : 0;
+            if (clamped.size() + sep + entries[i].size() + 1 > HA_STATE_MAX) {
+                std::string &bucket = rank == 3 ? derived : lost;
+                if (!bucket.empty()) bucket += ", ";
+                bucket += values[i].first;
+                continue;
+            }
+            if (sep) clamped += ",";
+            clamped += entries[i];
+        }
+    }
     clamped += "}";
-    if (dropped)
-        ESP_LOGW(TAG, "LCD values exceed the 255 characters a Home Assistant state holds — "
-                      "some were left out. Declare fewer sources, or shorten their keys.");
+
+    // Named, and only when the set changes: this runs up to once a second, and a
+    // warning repeating at that rate is what a user actually notices. Silent
+    // without the sensor — nothing is being sent to Home Assistant to clamp —
+    // and silent for the derived three, which cost the card nothing. Any set of
+    // sources at all pushes those out, so warning about them would mean warning
+    // nearly everybody about nothing.
+    if (lost != last_lcd_drop_) {
+        last_lcd_drop_ = lost;
+        if (!lost.empty() && lcd_sensor_ != nullptr)
+            ESP_LOGW(TAG, "No room in the Home Assistant state (255 chars) for: %s. Shorten those "
+                          "source keys, or give the card its own entity for them.", lost.c_str());
+    }
+    if (!derived.empty())
+        ESP_LOGV(TAG, "Left out of the Home Assistant state, and read from /hosts instead: %s",
+                 derived.c_str());
     lcd_status_json_.swap(full);
     lcd_sensor_json_.swap(clamped);
 }
