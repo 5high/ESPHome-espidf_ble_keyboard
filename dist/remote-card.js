@@ -770,6 +770,8 @@ class BleRemoteCard extends HTMLElement {
           this._activeSlot = data.active;
         }
         this._hostSlots = data.slots || [];
+        // Absent on firmware older than this card — _styleFromHosts falls back.
+        this._hostsStyleSlot = data.style_slot;
         this._hostDataAvailable = true;
         this._updateHostDisplay();
         // /hosts carries the per-host style id. It is the fallback route for
@@ -875,10 +877,13 @@ class BleRemoteCard extends HTMLElement {
     let id = cfg.remote_style;
     if (id === 'auto') {
       const ent = this._hass && this._hass.states[cfg.remote_style_entity];
-      const fromSensor = ent && typeof ent.state === 'string' &&
-        ent.state !== 'unknown' && ent.state !== 'unavailable' ? ent.state.trim() : '';
-      // The style the device reports for the active host, else what /hosts said.
-      id = fromSensor || this._styleFromHosts() || 'default';
+      const live = !!(ent && typeof ent.state === 'string' &&
+        ent.state !== 'unknown' && ent.state !== 'unavailable');
+      // A live sensor is the device's own answer and is taken as it comes —
+      // empty means the full remote. /hosts is asked only when there is no
+      // sensor: it names the style of the host keys are going to, which while a
+      // macro is only visiting another host is not the one being shown.
+      id = (live ? ent.state.trim() : this._styleFromHosts()) || 'default';
     }
     // A pasted style counts under 'auto' too: once it is saved to the device it
     // can be assigned to a host, and this is the only copy of its definition the
@@ -916,7 +921,14 @@ class BleRemoteCard extends HTMLElement {
   _styleFromHosts() {
     const slots = this._hostSlots;
     if (!Array.isArray(slots)) return '';
-    const slot = slots.find(s => s.slot === this._activeSlot);
+    // style_slot is the slot the device says the remote is drawn for, which
+    // trails the active one while a macro visits another host. Only trusted
+    // when _activeSlot came from that same poll — mixed with the active-host
+    // sensor, which moves at once, a 30s-old number would hold every real
+    // switch back until the next poll.
+    const want = !this._hasActiveHostEntity && typeof this._hostsStyleSlot === 'number'
+      ? this._hostsStyleSlot : this._activeSlot;
+    const slot = slots.find(s => s.slot === want);
     return (slot && slot.tpl) || '';
   }
 

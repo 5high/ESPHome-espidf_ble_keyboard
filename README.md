@@ -891,6 +891,8 @@ switch_host:3 | wait:connected | play_pause | switch_host:back
 
 Keys sent before a host is ready are lost, so put `wait:connected` after every switch that is followed by keys. If the host never connects, the wait gives up after 10 seconds (`wait:connected:20000` for longer) and the rest of the macro still runs, so the `switch_host:back` at the end brings the keyboard home either way. A slot with Bluetooth turned off never connects, so the wait returns straight away there.
 
+**The remote keeps its style throughout.** A host switch made inside an action — a macro, a per-host override, a remote key — re-skins the remote only once that action has finished, so one that comes back leaves the [style](#remote-style-per-host) and the hidden, hold and repeat lists exactly as they were, and one that stays on the new host re-skins when it ends. The host bar still marks the host keys are going to while it runs. Switching by hand, from the host bar or Home Assistant's `switch_host` service, re-skins straight away.
+
 > Run such macros from the web page, a remote key or Home Assistant's `run_action`, which all use the keyboard's own action task. The YAML `espidf_ble_keyboard.run_action` automation action runs on ESPHome's main loop, which stalls for as long as the wait lasts.
 
 ### A Slot That Never Advertises
@@ -2036,7 +2038,7 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/status` | GET | — | Returns `{"connected":bool,"paired":bool,"device_name":"..."}` |
 | `/api/ble_keyboard/buttons` | GET | — | Returns JSON array of programmed buttons |
 | `/api/ble_keyboard/press` | POST | `action` (string) | Trigger a programmed button action |
-| `/api/ble_keyboard/hosts` | GET | — | Returns `{"active":N,"slots":[{"slot":N,"occupied":bool,"addr":"XX:XX:...","bonded":bool,"tpl":"style1"},...]}`. `tpl` is that host's [remote style](#remote-style-per-host) and is absent when it uses the default. `bonded` is false when the slot has no pairing key |
+| `/api/ble_keyboard/hosts` | GET | — | Returns `{"active":N,"style_slot":N,"slots":[{"slot":N,"occupied":bool,"addr":"XX:XX:...","bonded":bool,"tpl":"style1"},...]}`. `tpl` is that host's [remote style](#remote-style-per-host) and is absent when it uses the default. `bonded` is false when the slot has no pairing key. `style_slot` is the slot the remote is drawn for — `active`, except while an action that switched host is still running |
 | `/api/ble_keyboard/irk` | GET | `slot` (int, default active) | That host's Identity Resolving Key: `{"slot":N,"irk":"<32 hex chars>"}`, or `"irk":null` when the slot is empty or the host sent no key. **Refuses cross-site requests** — see [Identity key](#identity-key-irk) |
 | `/api/ble_keyboard/switch_host` | POST | `slot` (int) | Switch to host slot 0–9 |
 | `/api/ble_keyboard/forget_host` | POST | `slot` (int) | Remove bond for host slot 0–9 |
@@ -2046,11 +2048,11 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/overrides` | GET | `slot` (int, default active) | Per-host action overrides: `{"slot":N,"active":M,"items":[{"name":"record","action":"combo:0x0C:0x15","src":"nvs"\|"yaml"}]}` |
 | `/api/ble_keyboard/override_set` | POST | `slot`, `name`, `action` | Set a per-host action override (max 8 per slot); persists to NVS |
 | `/api/ble_keyboard/override_clear` | POST | `slot`, `name` | Delete a saved override, falling back to YAML / built-in |
-| `/api/ble_keyboard/hidden` | GET | `slot` (int, default active) | Buttons removed from the remote for that host: `{"slot":N,"hidden":["record"]}` |
+| `/api/ble_keyboard/hidden` | GET | `slot` (int, default `style_slot`) | Buttons removed from the remote for that host: `{"slot":N,"hidden":["record"]}` |
 | `/api/ble_keyboard/hidden_set` | POST | `slot`, `names` (comma-separated) | Replace a host's hidden-button set; empty `names` clears it (max 96) |
-| `/api/ble_keyboard/repeat` | GET | `slot` (int, default active) | That host's hold-to-repeat config: `{"slot":N,"set":bool,"delay":400,"rate":180,"buttons":["volume_up"]}`. `set:false` means the host is on the page defaults |
+| `/api/ble_keyboard/repeat` | GET | `slot` (int, default `style_slot`) | That host's hold-to-repeat config: `{"slot":N,"set":bool,"delay":400,"rate":180,"buttons":["volume_up"]}`. `set:false` means the host is on the page defaults |
 | `/api/ble_keyboard/repeat_set` | POST | `slot`, `delay`, `rate`, `names` (comma-separated), or `reset=1` | Replace a host's repeat config; empty `names` means nothing repeats, `reset=1` returns it to the defaults. Timings are clamped (delay 100–2000, rate 50–2000) |
-| `/api/ble_keyboard/hold` | GET | `slot` (int, default active) | That host's press-and-hold set, plus its repeat set so a UI can grey out conflicts: `{"slot":N,"buttons":["ok"],"repeat":["volume_up"]}` |
+| `/api/ble_keyboard/hold` | GET | `slot` (int, default `style_slot`) | That host's press-and-hold set, plus its repeat set so a UI can grey out conflicts: `{"slot":N,"buttons":["ok"],"repeat":["volume_up"]}` |
 | `/api/ble_keyboard/hold_set` | POST | `slot`, `names` (comma-separated) | Replace a host's press-and-hold set; empty `names` clears it (max 96). Rejected with `400` if a name is already in that host's repeat set |
 | `/api/ble_keyboard/remote_style_set` | POST | `slot`, `id` | Set that host's [remote style](#remote-style-per-host); empty `id` returns it to the full remote. The id is stored, never interpreted, so a style only the page knows about still round-trips |
 | `/api/ble_keyboard/remote_templates` | GET | — | The custom styles held on the device: `{"max":6,"len":1500,"items":[{"index":0,"tpl":"{…}"}]}`. Each `tpl` is the style's JSON as a string |

@@ -541,6 +541,12 @@ class BleKbWebHandler : public AsyncWebHandler {
       std::string json = "{\"active\":";
       json.reserve(512);
       json += std::to_string(kb_->active_host_slot());
+      // Which slot's style the remote is drawn in. The active one, except while
+      // an action that switched host is still running — a macro that visits
+      // another host and comes back must not re-skin the remote twice on its
+      // way through. The host bar still follows "active": that is where keys go.
+      json += ",\"style_slot\":";
+      json += std::to_string(kb_->style_slot());
       json += ",\"slots\":[";
       for (uint8_t i = 0; i < kb_->host_slots(); i++) {
         if (i > 0) json += ",";
@@ -714,7 +720,9 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "hidden") {
-      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : kb_->active_host_slot();
+      // No slot given means "whatever the remote is drawing", which is the
+      // active host unless an action that switched host is still running.
+      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : kb_->style_slot();
       if (slot < 0 || slot >= kb_->host_slots()) {
         send_response(400, "text/plain", "Invalid slot");
         return;
@@ -732,7 +740,7 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "repeat") {
-      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : kb_->active_host_slot();
+      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : kb_->style_slot();
       if (slot < 0 || slot >= kb_->host_slots()) {
         send_response(400, "text/plain", "Invalid slot");
         return;
@@ -756,7 +764,7 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "hold") {
-      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : kb_->active_host_slot();
+      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : kb_->style_slot();
       if (slot < 0 || slot >= kb_->host_slots()) {
         send_response(400, "text/plain", "Invalid slot");
         return;

@@ -712,6 +712,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <option value="delay:500">Delay 500ms</option>
 <option value="delay:1000">Delay 1000ms</option>
 <option value="repeat:5:">Repeat 5&times; (edit count)</option>
+<option value="switch_host:">Switch to Host (edit slot)</option>
 <option value="switch_host:next">Next Host</option>
 <option value="switch_host:prev">Previous Host</option>
 <option value="switch_host:back">Return to Last Host</option>
@@ -1628,7 +1629,12 @@ function loadCustomTpls(){
     RMT_CUSTOM=out;RMT_CUSTOM_LOADED=true;
   }).catch(()=>{});
 }
-// Re-reads the styles and redraws the active host's, forcing the render even if
+// The slot the remote is drawn for, out of a /hosts response: the active one,
+// except while an action that switched host is still running on the device — a
+// macro that visits another host and comes back leaves the remote alone. The
+// host bar keeps using d.active, which is where keys are actually going.
+function styleSlot(d){return typeof d.style_slot==='number'?d.style_slot:d.active}
+// Re-reads the styles and redraws the shown host's, forcing the render even if
 // the id is unchanged — used after an import, which edits a style in place.
 // Pass false on load, where the drawn style came from the remembered one below
 // and a forced redraw would repaint it for no reason.
@@ -1636,7 +1642,7 @@ function refreshActiveTemplate(force){
   return loadCustomTpls()
     .then(()=>fetch('/api/ble_keyboard/hosts').then(r=>r.json()))
     .then(d=>{
-      const a=(d.slots||[]).find(s=>s.slot===d.active);
+      const a=(d.slots||[]).find(s=>s.slot===styleSlot(d));
       if(window.applyTemplate)window.applyTemplate((a&&a.tpl)||'default',force!==false);
     }).catch(()=>{});
 }
@@ -2042,7 +2048,7 @@ function svgToIcon(text){
       // remote here on the next poll.
       let drew=false;
       if(window.applyTemplate){
-        const act=(d.slots||[]).find(s=>s.slot===d.active);
+        const act=(d.slots||[]).find(s=>s.slot===styleSlot(d));
         drew=window.applyTemplate((act&&act.tpl)||'default')===true;
       }
       // Only when the style stayed put: drawing a new one has already applied the
@@ -2060,7 +2066,10 @@ function svgToIcon(text){
       try{localStorage.setItem('blekb_rmt_hosts',txt.length+':'+Date.now())}catch(e){}
       // Host Actions edits one slot at a time; tell it the device moved so its
       // picker can follow. Defined by that card's own block, which runs later.
-      if(window.onHostSwitched)window.onHostSwitched(d.active);
+      // The slot the remote is drawn for, not the live one: a macro visiting
+      // another host would otherwise drag the picker there and back, and end
+      // any style preview open at the time.
+      if(window.onHostSwitched)window.onHostSwitched(styleSlot(d));
       if(!d.slots||d.slots.length<=1){bar.style.display='none';return}
       bar.style.display='';
       bar.innerHTML='';
@@ -2415,8 +2424,10 @@ function appendStep(el,val){
 
   function loadSlots(){
     return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
-      if(slot===null)slot=d.active;
-      activeSlot=d.active;
+      // The slot the remote is drawn for — what this card follows, and what the
+      // style stepper compares against before redrawing the remote live.
+      if(slot===null)slot=styleSlot(d);
+      activeSlot=styleSlot(d);
       slotSel.innerHTML='';
       d.slots.forEach(s=>{
         const o=document.createElement('option');
@@ -3345,7 +3356,7 @@ function appendStep(el,val){
     return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
       slotTpl={};
       (d.slots||[]).forEach(s=>{slotTpl[s.slot]=s.tpl||''});
-      activeSlot=d.active;
+      activeSlot=styleSlot(d);
     }).then(loadCustomTpls).then(()=>{fillTplSel();renderCustomList()})
       .catch(()=>tplNote('Could not read the styles.',true));
   }

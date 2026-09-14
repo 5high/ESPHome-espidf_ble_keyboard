@@ -555,9 +555,19 @@ class EspidfBleKeyboard : public Component
   void mark_link_secure() { link_secure_.store(true); }
 
   // Multi-host switching
-  void switch_host(uint8_t slot);
+  /// `from_action` marks a switch made by an action string, whose style change
+  /// waits for the whole action to finish — see switch_host() and style_slot().
+  void switch_host(uint8_t slot, bool from_action = false);
   void forget_host(uint8_t slot);
   uint8_t active_host_slot() const { return active_slot_; }
+  /// The slot whose style, hidden, hold and repeat lists the remote is drawn
+  /// from. The active one, except while an action that switched host is still
+  /// running: a macro that visits another host and comes back must not re-skin
+  /// the remote twice on its way through.
+  uint8_t style_slot() const {
+    const int8_t held = style_hold_.load();
+    return held >= 0 ? (uint8_t) held : active_slot_;
+  }
   uint8_t host_slots() const { return host_slots_; }
 
   struct HostSlotConfig {
@@ -938,8 +948,8 @@ class EspidfBleKeyboard : public Component
   std::vector<std::string> hidden_[MAX_HOST_SLOTS];
   void load_hidden_();
   void save_hidden_(uint8_t slot);
-  void publish_hidden_();  // push the active slot's list to the text sensor
-  void publish_remote_style_();  // push the active slot's style id to the text sensor
+  void publish_hidden_();  // push the shown slot's list to the text sensor
+  void publish_remote_style_();  // push the shown slot's style id to the text sensor
 
   // One bit per slot, set = that slot advertises. A bitmask in a single NVS key
   // rather than ten keys: it is one boolean per slot and one write. An absent
@@ -1003,6 +1013,12 @@ class EspidfBleKeyboard : public Component
   std::atomic<int8_t> link_slot_{-1};
   std::atomic<bool> link_secure_{false};
   bool wait_host_ready_(uint32_t timeout_ms);
+  // The slot the remote stays drawn for while an action that switched host is
+  // still running; -1 when it simply follows the active slot. Written by the
+  // task running the action, read by the web task serving /hosts.
+  std::atomic<int8_t> style_hold_{-1};
+  void release_style_hold_();
+  void publish_remote_lists_();
   static const uint8_t ACTION_QUEUE_DEPTH = 8;
   QueueHandle_t action_queue_{nullptr};
   TaskHandle_t action_task_{nullptr};

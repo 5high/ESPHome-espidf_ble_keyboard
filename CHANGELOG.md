@@ -56,7 +56,9 @@ web control page shows the matching version badge.
 
 - **A macro can visit another host and come back.** A new step returns to whichever host was active
   before the last switch, and another holds the macro until the new host is ready for keys instead of
-  guessing a delay. If the host never connects the macro carries on, so the return still happens.
+  guessing a delay. If the host never connects the macro carries on, so the return still happens. The
+  remote is left alone while it runs: a host switch made inside an action re-skins the remote once
+  that action has finished, so a visit that comes home never changes the style at all.
 
 ### Fixed
 - **A long or deeply nested action no longer reboots the device.** Action strings ran on whichever

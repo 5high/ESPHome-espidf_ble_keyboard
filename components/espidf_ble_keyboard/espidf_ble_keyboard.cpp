@@ -1543,14 +1543,14 @@ bool EspidfBleKeyboard::set_hidden(uint8_t slot, const std::vector<std::string> 
     }
     hidden_[slot] = names;
     save_hidden_(slot);
-    if (slot == active_slot_) publish_hidden_();
+    if (slot == style_slot()) publish_hidden_();
     ESP_LOGI(TAG, "Hidden buttons for host %u: %u", (unsigned) slot, (unsigned) names.size());
     return true;
 }
 
 void EspidfBleKeyboard::publish_hidden_() {
     if (hidden_sensor_ == nullptr) return;
-    std::string csv = hidden_csv(active_slot_);
+    std::string csv = hidden_csv(style_slot());
     // Home Assistant rejects state strings over 255 chars. Truncate on a name
     // boundary — a half name would be silently meaningless to the card.
     if (csv.size() > 255) {
@@ -1560,7 +1560,7 @@ void EspidfBleKeyboard::publish_hidden_() {
         for (char c : csv) if (c == ',') kept++;
         if (!csv.empty()) kept++;
         ESP_LOGW(TAG, "Hidden list for host %u exceeds the 255-char sensor limit — sent %u name(s)",
-                 (unsigned) active_slot_, kept);
+                 (unsigned) style_slot(), kept);
     }
     hidden_sensor_->publish_state(csv);
 }
@@ -1713,7 +1713,7 @@ bool EspidfBleKeyboard::set_remote_style(uint8_t slot, const std::string &id) {
     if (!id.empty() && !valid_style_id(id)) return false;
     remote_style_[slot] = id;
     save_remote_style_(slot);
-    if (slot == active_slot_) publish_remote_style_();
+    if (slot == style_slot()) publish_remote_style_();
     ESP_LOGI(TAG, "Remote style for host %u: %s", (unsigned) slot,
              id.empty() ? "(default)" : id.c_str());
     return true;
@@ -1724,7 +1724,7 @@ bool EspidfBleKeyboard::set_remote_style(uint8_t slot, const std::string &id) {
 // inside the 255 that truncates the button lists.
 void EspidfBleKeyboard::publish_remote_style_() {
     if (remote_style_sensor_ == nullptr) return;
-    remote_style_sensor_->publish_state(remote_style_[active_slot_]);
+    remote_style_sensor_->publish_state(remote_style_[style_slot()]);
 }
 
 // ── LCD panel values ─────────────────────────────────────────────────────────
@@ -2316,12 +2316,12 @@ static std::string clamp_csv_for_sensor(const char *what, unsigned slot, std::st
 void EspidfBleKeyboard::publish_hold_() {
     if (hold_sensor_ == nullptr) return;
     hold_sensor_->publish_state(
-        clamp_csv_for_sensor("Hold list", active_slot_, hold_csv(active_slot_)));
+        clamp_csv_for_sensor("Hold list", style_slot(), hold_csv(style_slot())));
 }
 
 void EspidfBleKeyboard::publish_repeat_() {
     if (repeat_sensor_ == nullptr) return;
-    const RepeatCfg &r = repeat_[active_slot_];
+    const RepeatCfg &r = repeat_[style_slot()];
     // Empty = never configured, which is the card's cue to keep its own
     // defaults — distinct from a configured-but-empty list ("<delay>,<rate>"
     // with no names), which means nothing repeats on this host.
@@ -2331,7 +2331,7 @@ void EspidfBleKeyboard::publish_repeat_() {
     }
     std::string csv = std::to_string(r.delay) + "," + std::to_string(r.rate);
     for (const auto &n : r.names) csv += "," + n;
-    repeat_sensor_->publish_state(clamp_csv_for_sensor("Repeat list", active_slot_, csv));
+    repeat_sensor_->publish_state(clamp_csv_for_sensor("Repeat list", style_slot(), csv));
 }
 
 bool EspidfBleKeyboard::set_hold(uint8_t slot, const std::vector<std::string> &names) {
@@ -2342,7 +2342,7 @@ bool EspidfBleKeyboard::set_hold(uint8_t slot, const std::vector<std::string> &n
     if (!hold_repeat_conflict(slot, names, true).empty()) return false;
     hold_[slot] = names;
     save_hold_(slot);
-    if (slot == active_slot_) publish_hold_();
+    if (slot == style_slot()) publish_hold_();
     ESP_LOGI(TAG, "Hold-to-send for host %u: %u button(s)",
              (unsigned) slot, (unsigned) names.size());
     return true;
@@ -2441,7 +2441,7 @@ bool EspidfBleKeyboard::set_repeat(uint8_t slot, uint16_t delay, uint16_t rate,
     repeat_[slot].rate = rate;
     repeat_[slot].names = names;
     save_repeat_(slot);
-    if (slot == active_slot_) publish_repeat_();
+    if (slot == style_slot()) publish_repeat_();
     ESP_LOGI(TAG, "Repeat for host %u: %u button(s), %ums then every %ums",
              (unsigned) slot, (unsigned) names.size(), (unsigned) delay, (unsigned) rate);
     return true;
@@ -2451,7 +2451,7 @@ void EspidfBleKeyboard::clear_repeat(uint8_t slot) {
     if (slot >= MAX_HOST_SLOTS) return;
     repeat_[slot] = RepeatCfg{};
     save_repeat_(slot);  // .set is false now, so this erases the key
-    if (slot == active_slot_) publish_repeat_();
+    if (slot == style_slot()) publish_repeat_();
     ESP_LOGI(TAG, "Repeat for host %u reset to defaults", (unsigned) slot);
 }
 
@@ -2664,7 +2664,25 @@ void EspidfBleKeyboard::assign_host_slot_(uint8_t slot, const esp_bd_addr_t addr
              addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
 }
 
-void EspidfBleKeyboard::switch_host(uint8_t slot) {
+// Everything a host slot lends the remote: which buttons it hides, which it
+// holds, which it repeats, and the style it is drawn in. All four read
+// style_slot(), so they move together or not at all.
+void EspidfBleKeyboard::publish_remote_lists_() {
+    publish_hidden_();
+    publish_hold_();
+    publish_repeat_();
+    publish_remote_style_();
+}
+
+// The end of an action string that switched host: the remote catches up with
+// wherever the action left the keyboard. A visit that came home has nothing to
+// publish, which is the whole point of holding it.
+void EspidfBleKeyboard::release_style_hold_() {
+    const int8_t held = style_hold_.exchange(-1);
+    if (held >= 0 && (uint8_t) held != active_slot_) publish_remote_lists_();
+}
+
+void EspidfBleKeyboard::switch_host(uint8_t slot, bool from_action) {
     if (slot >= host_slots_) {
         ESP_LOGW(TAG, "Invalid host slot %u (max %u)", slot, host_slots_ - 1);
         return;
@@ -2673,6 +2691,17 @@ void EspidfBleKeyboard::switch_host(uint8_t slot) {
     // Let go of anything held before the link to the old host drops, or it is
     // left holding the key until it notices the disconnect.
     release_held();
+
+    // A switch made inside an action string leaves the remote drawn for the slot
+    // it was showing until that whole action has run (release_style_hold_), so a
+    // macro that visits another host and comes back never re-skins it on the way
+    // through. Any other switch — the web page's host bar, Home Assistant's
+    // service — re-skins now, and clears a hold as it goes, which is also what
+    // recovers one whose action never unwound.
+    if (!from_action)
+        style_hold_.store(-1);
+    else if (style_hold_.load() < 0)
+        style_hold_.store((int8_t) active_slot_);
 
     // Remembered whichever way the switch was asked for — a verb, a button, the
     // web page or Home Assistant — so switch_host:back always means "where it
@@ -2683,11 +2712,9 @@ void EspidfBleKeyboard::switch_host(uint8_t slot) {
     if (active_host_sensor_ != nullptr)
         active_host_sensor_->publish_state(slot);
     // The new host may hide, hold and repeat a different set of buttons, and
-    // may draw its remote in a different style.
-    publish_hidden_();
-    publish_hold_();
-    publish_repeat_();
-    publish_remote_style_();
+    // may draw its remote in a different style — unless the remote is being
+    // held on the slot it started this action on.
+    if (style_hold_.load() < 0) publish_remote_lists_();
     publish_lcd_();   // @host, @slot and @mac all just changed
 
     // Re-apply security params for the new slot's passkey config
@@ -4215,8 +4242,14 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         uint8_t &depth;
         DepthGuard(EspidfBleKeyboard *k, uint8_t &d) : kb(k), depth(d) { depth++; }
         // Report once the whole chain has unwound, not per level: logging from
-        // inside the chain costs the very stack being measured.
-        ~DepthGuard() { depth--; if (depth == 0) kb->report_action_stack_(); }
+        // inside the chain costs the very stack being measured. The remote's
+        // style catches up here for the same reason it is held in the first
+        // place — this is the one place that knows the chain is over, whichever
+        // task ran it and however deeply the switch was nested.
+        ~DepthGuard() {
+            depth--;
+            if (depth == 0) { kb->report_action_stack_(); kb->release_style_hold_(); }
+        }
     } depth_guard(this, action_depth_);
 
     // How deep this chain went, and how little stack was left at the bottom.
@@ -4426,7 +4459,7 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
             // Where the keyboard was before the last switch. Pressed again it goes
             // back again, so two hosts can be toggled.
             if (previous_slot_ >= 0 && previous_slot_ < host_slots_ && previous_slot_ != (int8_t) active_slot_)
-                switch_host((uint8_t) previous_slot_);
+                switch_host((uint8_t) previous_slot_, true);
             else
                 ESP_LOGW(TAG, "switch_host:back has no earlier host to return to");
             return;
@@ -4434,13 +4467,13 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         if (arg == "next" || arg == "prev" || arg == "previous") {
             if (host_slots_ > 1) {
                 int delta = (arg == "next") ? 1 : -1;
-                switch_host((uint8_t) ((active_slot_ + host_slots_ + delta) % host_slots_));
+                switch_host((uint8_t) ((active_slot_ + host_slots_ + delta) % host_slots_), true);
             }
             return;
         }
         int slot = 0;
         if (sscanf(action.c_str(), "switch_host:%i", &slot) == 1)
-            switch_host((uint8_t) slot);
+            switch_host((uint8_t) slot, true);
         return;
     }
     if (action.find("forget_host:") == 0) {
