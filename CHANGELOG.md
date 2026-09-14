@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
-## Unreleased
+## v1.10.0 — 2026-09-14
 
 ### Added
 - **The remote can show a small screen.** A style may place an `lcd` section carrying a few
