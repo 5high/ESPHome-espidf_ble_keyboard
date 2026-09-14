@@ -4,6 +4,14 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
+## Unreleased
+
+### Added
+- **A tab can keep the remote on one style.** Chosen on the page or given in the address, it holds
+  whatever host is active, so a wall tablet shows the same remote all day while another tab — even
+  on the same computer — goes on following the host. Nothing is stored on the device; a bookmark or
+  home-screen shortcut keeps it.
+
 ## v1.10.0 — 2026-09-14
 
 ### Added

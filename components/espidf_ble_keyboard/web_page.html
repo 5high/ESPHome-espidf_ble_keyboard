@@ -158,6 +158,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .tpl-step{display:flex;align-items:center;gap:4px}
 .macro-form .tpl-step button{width:30px;height:30px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:17px;font-weight:700}
 .macro-form .tpl-step button:active{background:var(--active);color:#fff;opacity:1}
+.tpl-lbl{min-width:68px;font-size:12px;color:var(--muted)}
 .tpl-name{min-width:132px;text-align:center;font-size:12px;color:var(--fg);padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* The style box is the one field on this page that holds code, so it is given
    code's affordances: a monospace stack, so a section lines up under the one
@@ -520,7 +521,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <!-- Carries the release tag, and `-dev` while main is ahead of the last one. Drop
      the suffix when tagging; append a letter (v1.7.0-dev-b) to tell two dev builds
      apart when chasing a "my edit didn't reach the device" problem. -->
-<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.10.0</span>
+<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.11.0-dev</span>
 </div>
 <div class="toolbar-right">
 <div class="section-toggles" id="toggle-bar">
@@ -827,8 +828,9 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="hid-panel" id="tpl-panel">
 <button class="hid-toggle" id="tpl-toggle">Remote Style &#9662;</button>
 <div class="hid-body" id="tpl-body">
-<div style="font-size:12px;color:var(--muted);margin:6px 0">Choose the remote layout this host gets &mdash; switch to the host and the remote re-skins to match it. The hidden, repeat and hold settings above still apply on top of whatever style is showing, and every action stays available to macros, buttons and Home Assistant either way.</div>
-<div class="macro-form" style="margin-top:0"><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><span class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in">Full remote</span><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste that into the Home Assistant remote card and they all join its style list">Export all</button></div>
+<div style="font-size:12px;color:var(--muted);margin:6px 0">Choose the remote layout this host gets &mdash; switch to the host and the remote re-skins to match it. The hidden, repeat and hold settings above still apply on top of whatever style is showing, and every action stays available to macros, buttons and Home Assistant either way. <strong>This tab</strong> keeps just this tab on one style whatever host is active &mdash; it adds <code>?style=</code> and the style's id to the address, so bookmark it or add it to a tablet's home screen to keep it there, while other tabs go on following the host.</div>
+<div class="macro-form" style="margin-top:0"><span class="tpl-lbl">This host</span><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><span class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in">Full remote</span><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste that into the Home Assistant remote card and they all join its style list">Export all</button></div>
+<div class="macro-form" style="margin-top:6px"><span class="tpl-lbl">This tab</span><div class="tpl-step"><button id="tpl-lock-prev" title="Previous style for this tab">&minus;</button><span class="tpl-name" id="tpl-lock-name" title="The style this tab keeps whatever host is active. Nothing is saved on the keyboard.">Follow the host</span><button id="tpl-lock-next" title="Next style for this tab">+</button></div></div>
 <div id="tpl-custom"></div>
 <div class="tpl-help"><strong>Roll your own:</strong> Export a style, change its <code>id</code> and <code>name</code>, rearrange its <code>sections</code>, then Import. The remote card redraws as you type &mdash; nothing is saved until you press Import.
 <dl>
@@ -1642,6 +1644,24 @@ function loadCustomTpls(){
 // macro that visits another host and comes back leaves the remote alone. The
 // host bar keeps using d.active, which is where keys are actually going.
 function styleSlot(d){return typeof d.style_slot==='number'?d.style_slot:d.active}
+// A tab can stay on one style whatever host is active: ?style=<id> in its
+// address, typed or set from Remote Style's This tab row. Per tab on purpose —
+// one tab can hold a style while another beside it follows the host — which is
+// why it lives in the address and not in localStorage, which every tab shares.
+// auto, or no id at all, follows the host.
+const lockId=v=>(v&&v!=='auto'&&/^[a-z0-9_]{1,15}$/.test(v))?v:null;
+let RMT_LOCK=lockId(new URLSearchParams(location.search).get('style'));
+function styleLock(){return RMT_LOCK}
+// A function declaration so it is a property of window: the pop-out calls it on
+// the pop-up window it opened, which has an address of its own.
+function setStyleLock(id){
+  RMT_LOCK=lockId(id);
+  try{
+    const u=new URL(location.href);
+    if(RMT_LOCK)u.searchParams.set('style',RMT_LOCK);else u.searchParams.delete('style');
+    history.replaceState(history.state,'',u);
+  }catch(e){}
+}
 // Re-reads the styles and redraws the shown host's, forcing the render even if
 // the id is unchanged — used after an import, which edits a style in place.
 // Pass false on load, where the drawn style came from the remembered one below
@@ -2042,7 +2062,7 @@ function svgToIcon(text){
 // ── Host Switcher ──
 (function(){
   const bar=document.getElementById('host-bar');
-  let lastHostsRaw=null;
+  let lastHostsRaw=null,lastMissing='';
   function loadHosts(){
     fetch('/api/ble_keyboard/hosts').then(r=>r.text()).then(txt=>{
       if(txt===lastHostsRaw)return;
@@ -2054,11 +2074,18 @@ function svgToIcon(text){
       // The style rides along on this same response, so a host switch made
       // anywhere — another tab, a YAML button, Home Assistant — re-skins the
       // remote here on the next poll.
+      // A host can name a style this page has never seen: one imported in some
+      // other tab or browser after this page read the list. Read the list again
+      // and draw from that, rather than the full remote in its place. Once per
+      // set of unknown ids, so a host left on a deleted style doesn't refetch on
+      // every change.
+      const act=(d.slots||[]).find(s=>s.slot===styleSlot(d));
+      const missing=RMT_CUSTOM_LOADED?(d.slots||[]).map(s=>s.tpl).filter(id=>id&&!tplById(id)).join(','):'';
+      const refetch=missing&&missing!==lastMissing;
+      lastMissing=missing;
       let drew=false;
-      if(window.applyTemplate){
-        const act=(d.slots||[]).find(s=>s.slot===styleSlot(d));
-        drew=window.applyTemplate((act&&act.tpl)||'default')===true;
-      }
+      if(refetch)refreshActiveTemplate().then(()=>{if(window.onHostsChanged)window.onHostsChanged(d,true)});
+      else if(window.applyTemplate)drew=window.applyTemplate((act&&act.tpl)||'default')===true;
       // Only when the style stayed put: drawing a new one has already applied the
       // hidden set, forced, and asking again is a second identical fetch — and a
       // second redraw of the same thing a moment later.
@@ -2078,6 +2105,9 @@ function svgToIcon(text){
       // another host would otherwise drag the picker there and back, and end
       // any style preview open at the time.
       if(window.onHostSwitched)window.onHostSwitched(styleSlot(d));
+      // And that a host's style may have been changed from somewhere else, so its
+      // row doesn't go on naming the old one — which + and − would step from.
+      if(window.onHostsChanged)window.onHostsChanged(d);
       if(!d.slots||d.slots.length<=1){bar.style.display='none';return}
       bar.style.display='';
       bar.innerHTML='';
@@ -2145,6 +2175,9 @@ function svgToIcon(text){
     });
   }
   pollEvery(loadHosts,5000);
+  // For a change this page just made to the hosts: reading them at once is what
+  // writes the storage key below, so every other tab hears of it now too.
+  window.reloadHosts=loadHosts;
   // The other window says the hosts moved: read them now rather than waiting for
   // the next poll. lastHostsRaw makes this free when nothing actually changed.
   window.addEventListener('storage',e=>{if(e.key==='blekb_rmt_hosts')loadHosts()});
@@ -2836,7 +2869,56 @@ function appendStep(el,val){
     // the remote itself falls back to.
     if(tplIdx<0)tplIdx=0;
     showTpl();
+    fillLockSel();
   }
+
+  // Called by the host bar with every new /hosts. A host's style changed from
+  // another tab, browser or a restore would otherwise leave this row naming the
+  // old one, and + would step on from there and save the wrong style. `fresh`
+  // says the style list was just re-read, so the custom list is redrawn too.
+  window.onHostsChanged=function(d,fresh){
+    const next={};
+    (d.slots||[]).forEach(s=>{next[s.slot]=s.tpl||''});
+    const same=JSON.stringify(next)===JSON.stringify(slotTpl);
+    slotTpl=next;
+    if(!tplPanel||!tplPanel.classList.contains('open')||(same&&!fresh))return;
+    fillTplSel();
+    if(fresh)renderCustomList();
+  };
+
+  // ── This tab's style ──
+  // The same list with Follow the host in front of it. Nothing goes to the
+  // device: the choice is written into this tab's address (setStyleLock), which
+  // is what keeps it to this one tab and brings it back on a reload.
+  const lockPrev=document.getElementById('tpl-lock-prev');
+  const lockNext=document.getElementById('tpl-lock-next');
+  const lockName=document.getElementById('tpl-lock-name');
+  let lockOpts=[],lockIdx=0;
+  function fillLockSel(){
+    lockOpts=[{id:'',name:'Follow the host'}].concat(allTemplates());
+    lockIdx=lockOpts.findIndex(t=>t.id===(styleLock()||''));
+    if(!lockName)return;
+    // An address naming a style this page doesn't have says so by its id. The
+    // remote draws the full one meanwhile, same as a host pointing at it would.
+    if(lockIdx<0){lockIdx=0;lockName.textContent=styleLock()+' (not found)';return}
+    const t=lockOpts[lockIdx];
+    lockName.textContent=t.name+(t.custom?' (custom)':'');
+  }
+  function stepLock(d){
+    if(!lockOpts.length)return;
+    tplEndPreview();
+    lockIdx=(lockIdx+d+lockOpts.length)%lockOpts.length;
+    const id=lockOpts[lockIdx].id;
+    setStyleLock(id);
+    fillLockSel();
+    // The lock stands in for whatever is asked, so this draws it; and when it
+    // was just lifted, the host's own style comes straight back.
+    if(window.applyTemplate)window.applyTemplate(slotTpl[activeSlot]||'default');
+    if(window.onStyleLock)window.onStyleLock(id);
+    tplNote('');
+  }
+  if(lockPrev)lockPrev.addEventListener('click',()=>stepLock(-1));
+  if(lockNext)lockNext.addEventListener('click',()=>stepLock(1));
 
   // Steps to the next or previous style and saves it in one press. Wraps, so
   // + always leads somewhere and the end of the list is one press from the
@@ -2856,11 +2938,18 @@ function appendStep(el,val){
       .then(r=>{
         if(!r.ok)return r.text().then(t=>{tplNote(t,true)});
         slotTpl[slot]=id==='default'?'':id;
+        // Read the hosts back now, which also tells every other tab of this
+        // browser — their remote and this row follow straight away, not on a poll.
+        if(window.reloadHosts)window.reloadHosts();
         // Stepping through the active host's styles redraws the remote as you
         // go, which is the whole point — so there is nothing to announce. Say
         // something only when the change lands somewhere you can't see.
-        if(slot===activeSlot&&window.applyTemplate){window.applyTemplate(id);tplNote('')}
-        else tplNote('Saved — switch to that host to see it.');
+        if(slot!==activeSlot)tplNote('Saved — switch to that host to see it.');
+        else if(styleLock()){
+          const k=tplById(styleLock());
+          tplNote('Saved — this tab stays on '+(k?k.name:styleLock())+'.');
+        }
+        else if(window.applyTemplate){window.applyTemplate(id);tplNote('')}
       });
   }
   if(tplPrev)tplPrev.addEventListener('click',()=>stepTpl(-1));
@@ -4911,6 +5000,11 @@ buildKeyboard();
   // underneath, which is what comes back when the preview ends.
   let rmtPreview=null;
   window.applyTemplate=function(id,force){
+    // A tab kept on one style draws that whatever the caller asked for. Every
+    // route to the remote's style comes through here — the host poll, a host's
+    // style being stepped, an import — so this is the only check it needs.
+    const lk=styleLock();
+    if(lk)id=lk;
     let t=tplById(id);
     if(!t){
       // An id this page does not know is nearly always a user-authored style
@@ -4935,7 +5029,9 @@ buildKeyboard();
     // Only what the device says this host uses reaches here, so this is the one
     // place worth remembering for the next load. The editor's preview goes
     // through drawTemplate directly and is deliberately never remembered.
-    rememberTemplate(t);
+    // Nor is a kept style: the memory is shared by every tab, and a tab that
+    // follows the host would come up in it on its next reload.
+    if(!lk)rememberTemplate(t);
     // Says it drew, so the caller knows the hidden set has already been applied
     // (forced, inside) and need not ask for it a second time.
     return true;
@@ -4957,7 +5053,12 @@ buildKeyboard();
   // Come up in the style this browser last drew, before anything is fetched.
   // The host bar can't do this for us: it caches its first /hosts response
   // before this function exists.
-  const seed=rememberedTemplate();
+  let seed=rememberedTemplate();
+  // A tab kept on one style comes up in that one. The memory only helps if it
+  // happens to be the same style; otherwise a built-in is already in hand, and a
+  // custom one waits for the device like a first visit does.
+  const lock=styleLock();
+  if(lock&&(!seed||seed.id!==lock))seed=RMT_BUILTIN.find(b=>b.id===lock)||null;
   if(seed){
     // Straight to drawTemplate, and the tracking set by hand, so the answer
     // below — which is nearly always this same style — finds nothing to redo.
@@ -5213,6 +5314,14 @@ buildKeyboard();
   const onTopLbl=document.getElementById('rmt-ontop-lbl');
   if(!popBtn)return;
   let ph=null,popRef=null,pipWin=null,poll=null,redock=null,pipRO=null;
+  // This tab's style changed while the remote sits in a pop-up window. That window
+  // has its own address and its own copy of the lock, so it is told directly —
+  // same origin, and both are function declarations on its window. A remote in
+  // picture-in-picture is still this document's and needs nothing.
+  window.onStyleLock=function(id){
+    if(!popRef||popRef.closed)return;
+    try{popRef.setStyleLock(id);popRef.refreshActiveTemplate()}catch(e){}
+  };
   // Cleared the first time this address proves it cannot show one — after that
   // Pop out goes straight to window.open, in the click itself, which is also what
   // keeps the pop-up blocker quiet: an open delayed behind an await reads as
@@ -5581,13 +5690,17 @@ buildKeyboard();
                   :'Open in a window of its own.');
     let feat='popup=yes,width='+g.w+',height='+g.h;
     if(g.x!=null&&g.y!=null)feat+=',left='+g.x+',top='+g.y;
-    popRef=window.open('/ble_keyboard#remote','blekb-remote',feat);
+    // A style this tab is kept on goes with the remote. Rebuilt from the checked
+    // id rather than copied from location.search, because the blocked-pop-up link
+    // below goes through innerHTML.
+    const popUrl='/ble_keyboard'+(styleLock()?'?style='+styleLock():'')+'#remote';
+    popRef=window.open(popUrl,'blekb-remote',feat);
     if(!popRef){
       // Blocked. An anchor click is not blocked, so offer one rather than leave a
       // button that appears to do nothing; Pin back still returns the card.
       ph.querySelector('.rmt-out-note').innerHTML=
         (why?'Always-on-top was refused ('+esc2(why)+'), and the ':'The ')+
-        'browser blocked the pop-up. <a href="/ble_keyboard#remote" target="_blank" '+
+        'browser blocked the pop-up. <a href="'+popUrl+'" target="_blank" '+
         'style="color:var(--active)">Open it in a tab</a>, or allow pop-ups for this page.';
       return;
     }

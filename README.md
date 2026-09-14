@@ -1097,6 +1097,8 @@ The built-in styles are numbered rather than named after particular devices: the
 
 The style is stored on the device against the host slot, not in the browser, so it follows the host rather than the phone that set it — and every browser watching the page re-skins within a few seconds of a host switch, whoever made it. It is **presentation only**: the actions a style leaves out still run from macros, YAML buttons and Home Assistant, and the **Remote Buttons**, **Hold to Repeat** and **Press and Hold** panels always list every action regardless of which style is showing, so they can be set for a host before you ever look at its remote. Styles are included in [Backup and restore](#backup-and-restore).
 
+**Keeping one tab on one style.** The **This tab** row in **Remote Style** keeps just the tab you are in on one style, whatever host is active — a wall tablet showing the same remote all day while a PC tab beside it follows the host. It saves nothing on the device: it adds `?style=` and the style's id to the tab's address, so a reload keeps it, and bookmarking the address (or adding it to a tablet's home screen) makes it stick. You can type the address yourself too, e.g. `http://<device>/ble_keyboard?style=style6#remote` — the id is `default`, `style1`…`style6` or one of your own, and a popped-out remote takes it along. The active host's hidden, repeat and hold settings still apply, and the host bar still switches hosts. It is a view, not a restriction: anyone at that tab can step it back to **Follow the host**.
+
 The [Media Remote Card](#media-remote-card-for-home-assistant) draws from the same style definitions, so a layout looks the same in both places — see [Remote styles on the card](#remote-styles-on-the-card) for how a style travels there.
 
 #### Making your own
@@ -1962,7 +1964,7 @@ In Home Assistant, the sensor value will be a URL like `http://192.168.1.100/ble
 
 **Pop out** in the Remote heading moves the remote into a window of its own, sized to the remote and showing nothing else. Close the window, or press **Pin back** on the placeholder it leaves, to put the remote back. The window follows the active host and resizes when a host's style is a different size; its position is remembered.
 
-The same remote-only view is at `http://<device>/ble_keyboard#remote` — bookmark it or add it to a phone's home screen.
+The same remote-only view is at `http://<device>/ble_keyboard#remote` — bookmark it or add it to a phone's home screen. Put `?style=<id>` before the `#remote` to [keep that view on one style](#remote-style-per-host).
 
 **Keeping it on top.** There are two ways:
 
