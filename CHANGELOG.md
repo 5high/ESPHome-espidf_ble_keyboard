@@ -21,6 +21,11 @@ web control page shows the matching version badge.
 - **32 spare keys, and 48 Host Actions per host.** Double the spares, so a tablet page can hold a
   full grid of programmed keys, and room on one host to program every one of them.
 
+### Fixed
+- **Refreshing the web page soon after the device boots no longer reboots it.** The page's first
+  requests could run the device out of memory. Responses are now sent without copying them first,
+  and the button list is sized before it is built instead of growing as it goes.
+
 ## v1.10.0 — 2026-09-14
 
 ### Added

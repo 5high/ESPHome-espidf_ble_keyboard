@@ -300,15 +300,20 @@ class BleKbWebHandler : public AsyncWebHandler {
       // the caller already holds, which on the 10-15 KB /backup document was
       // tens of kilobytes on a heap that also carries the BLE stack. Measured
       // on device: free heap dips to ~23 KB, so this is worth the const ref.
-      // One copy still remains, inside AsyncWebServerResponseContent, whose
-      // constructor takes its parameter by value; removing that needs internals
-      // this file deliberately keeps out of.
       //
-      // Note the body is now sent as sized data rather than up to the first NUL.
+      // And no copy at all past that: the std::string overload of beginResponse
+      // still copied the body into AsyncWebServerResponseContent, which is
+      // where a browser refresh aborted on 2026-09-15 — out of memory while
+      // copying a 4 KB /icon body. The pointer-and-size overload (the one the
+      // page itself is served with) only holds a pointer, and send() writes it
+      // out synchronously, so `content` outlives every use of it.
+      //
+      // Note the body is sent as sized data rather than up to the first NUL.
       // Only json_escape's unescaped control bytes could put one there, and that
       // body is malformed JSON either way.
       auto send_response = [request](int code, const char* type, const std::string &content) {
-        AsyncWebServerResponse* response = request->beginResponse(code, type, content);
+        AsyncWebServerResponse* response = request->beginResponse(
+            code, type, reinterpret_cast<const uint8_t *>(content.data()), content.size());
         response->addHeader("Connection", "close");
         request->send(response);
       };
@@ -441,11 +446,19 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "buttons") {
+      // Sized up front. Growing by doubling holds the old and new buffer at once
+      // on every step, and the last step of a dozen macros wanted a ~4 KB block
+      // next to a ~2 KB one — that realloc is where a page refresh ran out of
+      // heap. Escaping can only lengthen a field, so this is a floor, not exact.
+      const auto &btns = kb_->get_buttons();
+      size_t want = 2;
+      for (const auto &b : btns) want += b.name.size() + b.action.size() + 48;
+      for (const auto &b : kb_->get_external_buttons()) want += b.name.size() + b.action.size() + 48;
+      for (const auto &m : kb_->get_macros()) want += m.name.size() + m.action.size() + 60;
       std::string json = "[";
-      json.reserve(512);
+      json.reserve(want + want / 8);
       bool first = true;
       // YAML-defined buttons (read-only)
-      const auto &btns = kb_->get_buttons();
       for (size_t i = 0; i < btns.size(); i++) {
         if (!first) json += ",";
         first = false;
