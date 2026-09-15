@@ -1982,9 +1982,12 @@ void EspidfBleKeyboard::rebuild_lcd_status_() {
             ESP_LOGW(TAG, "No room in the Home Assistant state (255 chars) for: %s. Shorten those "
                           "source keys, or give the card its own entity for them.", lost.c_str());
     }
-    if (!derived.empty())
+    // Braced because ESP_LOGV compiles to nothing below VERBOSE, which leaves an
+    // empty if-body and a -Wempty-body warning in every normal build.
+    if (!derived.empty()) {
         ESP_LOGV(TAG, "Left out of the Home Assistant state, and read from /hosts instead: %s",
                  derived.c_str());
+    }
     lcd_status_json_.swap(full);
     lcd_sensor_json_.swap(clamped);
 }
