@@ -1016,8 +1016,10 @@ let recSteps=null,recLastMs=0,recFlag='',recBase='';
 const REC_GAP=300;
 // Every recorded press is separated by this, whatever the real timing was.
 // Recording your own hesitation produces ragged values nobody wants to read;
-// one predictable number is easier to keep or edit afterwards.
-const REC_DELAY=500;
+// one predictable number is easier to keep or edit afterwards. Home gets longer:
+// a TV opening its home screen needs about a second before the next press lands.
+const REC_DELAY=200;
+const REC_DELAY_HOME=1000;
 const REC_MAX=255;   // the action limit macro_add/macro_update enforce
 const SCROLL='mouse_scroll:';
 
@@ -1096,7 +1098,7 @@ function recordStep(endpoint,params){
     recLastMs=now;return;              // held button auto-firing: keep one press
   }else{
     // Fixed spacing between presses, never before the first one.
-    if(next.length)next.push('delay:'+REC_DELAY);
+    if(next.length)next.push('delay:'+(prev==='home'?REC_DELAY_HOME:REC_DELAY));
     next.push(step);
   }
   if(next.join(' | ').length>recBudget()){
@@ -1794,6 +1796,10 @@ try{
   if(c&&typeof c==='object'&&!Array.isArray(c))ICON_CACHE=c;
 }catch(e){}
 const ICON_FRESH={},ICON_WAIT={};
+// Icon reads go to the device one at a time. Each body is a few KB on a heap the
+// Bluetooth stack shares, and a page load asking for every logo at once is what
+// ran the device out of memory and rebooted it.
+let ICON_Q=Promise.resolve();
 function saveIconCache(){try{localStorage.setItem(ICON_KEY,JSON.stringify(ICON_CACHE))}catch(e){}}
 // A popped-out remote is another document with its own copy; this keeps the two
 // agreeing when an icon is imported or deleted in the main page.
@@ -1807,11 +1813,16 @@ window.addEventListener('storage',e=>{
 function fetchIcon(n){
   if(ICON_FRESH[n])return Promise.resolve(ICON_CACHE[n]||null);
   if(ICON_WAIT[n])return ICON_WAIT[n];
-  const p=fetch('/api/ble_keyboard/icon?'+new URLSearchParams({name:n})).then(r=>{
+  // 409 is the device saying it has too little memory free to read this one
+  // right now; it answers that instead of rebooting. Asked again after a pause,
+  // a few times, while the cached copy stays on the key.
+  const get=tries=>fetch('/api/ble_keyboard/icon?'+new URLSearchParams({name:n})).then(r=>{
     if(r.status===404)return null;
+    if(r.status===409&&tries<4)return new Promise(ok=>setTimeout(ok,700*(tries+1))).then(()=>get(tries+1));
     if(!r.ok)throw new Error('HTTP '+r.status);
     return r.text();
-  }).then(txt=>{
+  });
+  const p=(ICON_Q=ICON_Q.then(()=>get(0),()=>get(0))).then(txt=>{
     let rec=null;
     if(txt!==null){try{rec=JSON.parse(txt)}catch(e){}if(rec&&iconBad(rec))rec=null}
     setIcon(n,rec);

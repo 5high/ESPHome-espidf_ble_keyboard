@@ -866,6 +866,21 @@ class BleKbWebHandler : public AsyncWebHandler {
       // every reader validates what it parses before drawing any of it.
       // Readable cross-origin like /hosts, because the cards draw from it.
       std::string name = request->hasArg("name") ? request->arg("name").c_str() : "";
+      // Refused rather than attempted when the heap has no block big enough for
+      // the body. A failed allocation aborts — this build has no exceptions — and
+      // a page reload asking for every logo while the browser's other requests
+      // hold buffers did exactly that. The page asks again after a pause.
+      size_t need = 0;
+      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_ICONS; i++) {
+        if (!name.empty() && kb_->get_icon_name(i) == name) need = kb_->get_icon_size(i);
+      }
+      const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+      if (need > 0 && block < need + 1024) {
+        ESP_LOGW(TAG, "Icon '%s' (%u B) deferred: largest free block %u B, heap %u B free", name.c_str(),
+                 (unsigned) need, (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
+        send_response(409, "text/plain", "Low on memory, try again shortly");
+        return;
+      }
       std::string body;
       if (!kb_->read_icon(name, body)) {
         send_response(404, "text/plain", "No icon by that name");

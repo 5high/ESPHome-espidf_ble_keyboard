@@ -24,10 +24,14 @@ web control page shows the matching version badge.
   for logos that read small at the size their key gives them. On the web page and the Home Assistant
   card alike.
 
+### Changed
+- **Recorded macros wait a second after Home and a fifth of a second after anything else**, instead
+  of half a second everywhere, so a recorded trip through a TV's menus plays back at a natural pace.
+
 ### Fixed
-- **Refreshing the web page soon after the device boots no longer reboots it.** The page's first
-  requests could run the device out of memory. Responses are now sent without copying them first,
-  and the button list is sized before it is built instead of growing as it goes.
+- **Refreshing the web page no longer reboots the device.** A page load could run it out of memory,
+  most often while reading logos. Responses are sent without copying them first, logos are read one
+  at a time, and one the device has no room for is put off and asked for again rather than crashing.
 
 ## v1.10.0 — 2026-09-14
 

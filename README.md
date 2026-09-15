@@ -2510,12 +2510,12 @@ A few things it does on your behalf, so the result is usable rather than literal
 |---|---|
 | Consecutive typing merges into one `string:` step, however slowly you type | The keyboard sends one character per keypress, so typing `hello` would otherwise be five steps with delays wedged between the letters. Text keeps accumulating until you press something that isn't text |
 | A held button records once | Held buttons auto-repeat; you want the press, not each repeat |
-| Every press is separated by `delay:500` | Recording your own hesitation gives ragged values; one predictable number is easier to keep or edit |
+| Every press is separated by `delay:200`, or `delay:1000` after Home | Recording your own hesitation gives ragged values; one predictable number is easier to keep or edit. Home gets longer because a TV takes about a second to open its home screen |
 | Consecutive scrolling accumulates into one step | Scrolling is one continuous gesture, not separate presses. Ten clicks of a 3-notch scroll record as `mouse_scroll:-30`, not ten steps eating 160 of the 255 characters. Reversing direction starts a new step rather than cancelling out |
 | Cursor movement is not recorded | Dragging the mouse pad streams position continuously and would fill the whole macro |
 
 So performing a monitor power-off — press HID Power, then press OK — records as
-`consumer:0x30 | delay:500 | ok`. Edit any delay afterwards if a step needs longer; this monitor
+`consumer:0x30 | delay:200 | ok`. Edit any delay afterwards if a step needs longer; this monitor
 wants `delay:1000` to give its confirmation dialog time to appear.
 
 Notes and limits:
