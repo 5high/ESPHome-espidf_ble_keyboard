@@ -4856,11 +4856,6 @@ const std::vector<EspidfBleKeyboard::ButtonInfo> &EspidfBleKeyboard::get_externa
         // .str() on both: these are StringRefs into ESPHome's own storage, and
         // c_str() on one isn't guaranteed null-terminated. str() copies using
         // the length, which is what we want anyway since we keep the strings.
-        // Note: warning about destructive buttons left on the page is done at
-        // codegen instead (see _web_final_validate). Only the YAML knows a
-        // button's platform; here there is just a name and an object id, both
-        // user-chosen, so a `platform: restart` named after the device reads no
-        // differently from a volume key.
         external_buttons_.push_back({b->get_name().str(),
                                      "press_button:" + b->get_object_id_to(oid_buf).str()});
     }
