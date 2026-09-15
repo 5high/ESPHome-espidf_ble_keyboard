@@ -25,8 +25,8 @@ web control page shows the matching version badge.
   card alike.
 
 ### Changed
-- **Recorded macros wait a second after Home and a fifth of a second after anything else**, instead
-  of half a second everywhere, so a recorded trip through a TV's menus plays back at a natural pace.
+- **Recorded macros wait a second after Home and 200ms after anything else**, instead
+  of half a second everywhere. This can be edited after the recording.
 
 ### Fixed
 - **Refreshing the web page no longer reboots the device.** A page load could run it out of memory,
