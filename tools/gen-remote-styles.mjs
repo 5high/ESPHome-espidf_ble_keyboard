@@ -59,6 +59,7 @@ const PARTS = [
   ['const RMT_KINDS=', () => oneLine('const RMT_KINDS=')],
   ['const RMT_OPTS=', () => oneLine('const RMT_OPTS=')],
   ['const RMT_KEY_H=', () => oneLine('const RMT_KEY_H=')],
+  ['const RMT_ICON_H=', () => oneLine('const RMT_ICON_H=')],
   ['const RMT_LCD_OPTS=', () => oneLine('const RMT_LCD_OPTS=')],
   ['const RMT_LCD_COLOURS=', () => oneLine('const RMT_LCD_COLOURS=')],
   ['const RMT_LCD_LABELLED=', () => oneLine('const RMT_LCD_LABELLED=')],
@@ -174,6 +175,15 @@ return [sectionHtml(['row',['spare1','A','fill h:80 sq']]),
 if (!/class="rmt-btn fill sq"/.test(hProbe[0]) || !hProbe[0].includes('style="height:80px"') ||
     hProbe[1].includes('height:')) {
   throw new Error(`h:/fill render incorrectly:\n${hProbe.join('\n')}`);
+}
+// ih:<px> writes a number into the style too, under the same rule.
+const ihProbe = new Function(`${js}
+return [sectionHtml(['row',['spare1','A','icon:home ih:36 #336699']]),
+        sectionHtml(['row',['spare2','B','ih:7'],['spare3','C','ih:999'],['spare4','D','ih:3x']])];`)();
+if (!/class="rmt-btn rmt-ih"/.test(ihProbe[0]) ||
+    !ihProbe[0].includes('style="background:#336699;border-color:#336699;--rb-ih:36px"') ||
+    ihProbe[1].includes('rb-ih') || ihProbe[1].includes('rmt-ih')) {
+  throw new Error(`ih: renders incorrectly:\n${ihProbe.join('\n')}`);
 }
 // A grid: the column count reaches an inline style, the shared options reach
 // every key, a key's own come after them, and "|" is an empty cell.

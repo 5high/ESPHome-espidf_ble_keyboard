@@ -230,6 +230,8 @@ const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle','fill'];
 
 const RMT_KEY_H=[24,160];
 
+const RMT_ICON_H=[8,160];
+
 const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 
 const RMT_LCD_COLOURS=['fg','bg','label','border'];
@@ -343,7 +345,7 @@ function btnHtml(item){
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='',ic='',hgt=0;
+    let cls='',css='',lit='',ic='',hgt=0,ih=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -353,6 +355,12 @@ function btnHtml(item){
         if(/^h:\d{2,3}$/.test(tok)){
           const n=Number(tok.slice(2));
           if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])hgt=n;
+          continue;
+        }
+        // ih:<px> — the same care, for the icon's height.
+        if(/^ih:\d{1,3}$/.test(tok)){
+          const n=Number(tok.slice(3));
+          if(n>=RMT_ICON_H[0]&&n<=RMT_ICON_H[1])ih=n;
           continue;
         }
         // The only value that reaches an inline style attribute, so it is
@@ -376,6 +384,9 @@ function btnHtml(item){
     }
     // Last, so a colour token written after it cannot replace it.
     if(hgt)css+=(css?';':'')+'height:'+hgt+'px';
+    // A custom property the .rmt-ih rules read, so every key size and shape
+    // takes the one height without a rule per size here.
+    if(ih){cls+=' rmt-ih';css+=(css?';':'')+'--rb-ih:'+ih+'px'}
     // icon:<name> puts a picture on the face: one of ours first, then one imported
     // onto the device. The label stays as the tooltip, and is the face again when
     // the icon cannot be found — a key whose logo is missing still says what it is.
@@ -556,8 +567,15 @@ function validateTpl(t){
             return 'h: sets a height of '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels, e.g. h:80 — "'+tok+'"';
           continue;
         }
+        // ih:<px> — the icon's height, a whole number within RMT_ICON_H.
+        if(tok.indexOf('ih:')===0){
+          const n=/^ih:\d{1,3}$/.test(tok)?Number(tok.slice(3)):NaN;
+          if(!(n>=RMT_ICON_H[0]&&n<=RMT_ICON_H[1]))
+            return 'ih: sets an icon height of '+RMT_ICON_H[0]+'-'+RMT_ICON_H[1]+' pixels, e.g. ih:36 — "'+tok+'"';
+          continue;
+        }
         if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px> or '+RMT_OPTS.join(', ');
+          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px>, ih:<px> or '+RMT_OPTS.join(', ');
       }
       return '';
     };
@@ -843,6 +861,9 @@ export const RMT_CSS = `
 .rmt-btn.xl svg.rmt-ico{height:26px}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.fill svg.rmt-ico{max-width:80%}
+.rmt-btn.rmt-ih svg{width:var(--rb-ih);height:var(--rb-ih);max-height:100%}
+.rmt-btn.rmt-ih svg.rmt-ico{width:auto;height:var(--rb-ih)}
+.rmt-btn.rmt-ih.wide svg.rmt-ico,.rmt-btn.rmt-ih.app svg.rmt-ico{max-width:none}
 .rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
   color:var(--rb-lit-fg,#fff);border-color:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)))}
 .rmt-btn.light{background:var(--rb-light-bg,#e9e9ee);color:var(--rb-light-fg,#16161a);border-color:var(--rb-light-bg,#e9e9ee)}

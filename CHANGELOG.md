@@ -20,6 +20,9 @@ web control page shows the matching version badge.
   the web page and the Home Assistant card alike.
 - **32 spare keys, and 48 Host Actions per host.** Double the spares, so a tablet page can hold a
   full grid of programmed keys, and room on one host to program every one of them.
+- **Logos can be drawn larger without a larger key.** A new button option sets the icon's height,
+  for logos that read small at the size their key gives them. On the web page and the Home Assistant
+  card alike.
 
 ### Fixed
 - **Refreshing the web page soon after the device boots no longer reboots it.** The page's first

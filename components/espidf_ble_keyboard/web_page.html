@@ -451,6 +451,12 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.xl svg.rmt-ico{height:26px}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.fill svg.rmt-ico{max-width:80%}
+/* ih:<px> — the icon's height set on the key, after every size rule above so it
+   wins over all of them. Capped at the key's height; a wordmark still shrinks to
+   the width a fixed-size key has, while a wide or app key grows to fit it. */
+.rmt-btn.rmt-ih svg{width:var(--rb-ih);height:var(--rb-ih);max-height:100%}
+.rmt-btn.rmt-ih svg.rmt-ico{width:auto;height:var(--rb-ih)}
+.rmt-btn.rmt-ih.wide svg.rmt-ico,.rmt-btn.rmt-ih.app svg.rmt-ico{max-width:none}
 /* A key showing that the thing it controls is on. Falls back to the style's OK
    colour, so a style that sets nothing still lights up visibly. */
 .rmt-btn.lit{background:var(--rb-lit-bg,var(--rb-ok-bg,var(--active)));
@@ -865,7 +871,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
-A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code> &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
+A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
 <div class="macro-form"><textarea id="tpl-json" placeholder="Paste a style JSON here to import&hellip;" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="tpl-import">Import</button></div>
 <div id="tpl-msg" style="font-size:11px;color:var(--muted)"></div>
 </div>
@@ -1452,6 +1458,10 @@ const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle','fill'];
 // passed import cannot draw a key taller than this: past 160 a single key
 // outgrows any remote, and under 24 its label no longer fits.
 const RMT_KEY_H=[24,160];
+// ih:<px> sets the height of the icon on a key, apart from the key's own size:
+// some logos are drawn with room around them and read small at the size keys
+// give icons. Never taller than the key it sits on, whatever this allows.
+const RMT_ICON_H=[8,160];
 // The same two things for an lcd line: what a line may carry, and the values
 // this firmware can resolve on its own. A built-in is spelled with a leading @
 // so the two namespaces cannot collide — a key naming a `sources:` entry
@@ -3231,8 +3241,15 @@ function appendStep(el,val){
             return 'h: sets a height of '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels, e.g. h:80 — "'+tok+'"';
           continue;
         }
+        // ih:<px> — the icon's height, a whole number within RMT_ICON_H.
+        if(tok.indexOf('ih:')===0){
+          const n=/^ih:\d{1,3}$/.test(tok)?Number(tok.slice(3)):NaN;
+          if(!(n>=RMT_ICON_H[0]&&n<=RMT_ICON_H[1]))
+            return 'ih: sets an icon height of '+RMT_ICON_H[0]+'-'+RMT_ICON_H[1]+' pixels, e.g. ih:36 — "'+tok+'"';
+          continue;
+        }
         if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px> or '+RMT_OPTS.join(', ');
+          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px>, ih:<px> or '+RMT_OPTS.join(', ');
       }
       return '';
     };
@@ -4922,7 +4939,7 @@ buildKeyboard();
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='',ic='',hgt=0;
+    let cls='',css='',lit='',ic='',hgt=0,ih=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -4932,6 +4949,12 @@ buildKeyboard();
         if(/^h:\d{2,3}$/.test(tok)){
           const n=Number(tok.slice(2));
           if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])hgt=n;
+          continue;
+        }
+        // ih:<px> — the same care, for the icon's height.
+        if(/^ih:\d{1,3}$/.test(tok)){
+          const n=Number(tok.slice(3));
+          if(n>=RMT_ICON_H[0]&&n<=RMT_ICON_H[1])ih=n;
           continue;
         }
         // The only value that reaches an inline style attribute, so it is
@@ -4955,6 +4978,9 @@ buildKeyboard();
     }
     // Last, so a colour token written after it cannot replace it.
     if(hgt)css+=(css?';':'')+'height:'+hgt+'px';
+    // A custom property the .rmt-ih rules read, so every key size and shape
+    // takes the one height without a rule per size here.
+    if(ih){cls+=' rmt-ih';css+=(css?';':'')+'--rb-ih:'+ih+'px'}
     // icon:<name> puts a picture on the face: one of ours first, then one imported
     // onto the device. The label stays as the tooltip, and is the face again when
     // the icon cannot be found — a key whose logo is missing still says what it is.

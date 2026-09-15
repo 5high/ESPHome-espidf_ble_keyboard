@@ -1156,6 +1156,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `squircle` | an app tile — a rounded square whose corners flow into its sides, as TV launchers draw apps. Pairs with a size: `"lg squircle"` |
 | `fill` | share the row's width equally with the other `fill` keys in it, so a grid of keys lines up in columns whatever the labels say. The width comes from the style's `maxw` |
 | `h:<px>` | the key's height in pixels, 24–160. With `fill` it makes rectangles: `["row", ["spare1","TV on","fill h:80 sq"], ["spare2","TV off","fill h:80 sq"]]` |
+| `ih:<px>` | the height of the key's icon in pixels, 8–160, instead of the size the key gives it. Never taller than the key; a wide key grows to fit a long logo |
 | `lit:<source>` | Light the key while that [source](#configuration-variables) reads `on` — e.g. a power key that goes green while the TV is on. Takes the style's `lit_bg`/`lit_fg`; `lit:<source>:#43a047` colours this one button instead. |
 | `icon:<name>` | Put an icon on the key — a logo you imported, or one of the remote's own by its id (`icon:home`). See [Logos on buttons](#logos-on-buttons). |
 
@@ -1197,7 +1198,7 @@ A key can show a logo instead of a word. Open **Button Icons** in the Host Actio
 ["apps", ["spare1", "Netflix", "icon:netflix lg sq"], ["spare2", "Spotify", "icon:spotify"]]
 ```
 
-`lg sq` gives the logo a bigger, squarer key; `wide` suits a long wordmark. The label stays as the tooltip, and is what the key shows if the icon is ever missing — so a style never draws a blank key.
+`lg sq` gives the logo a bigger, squarer key; `wide` suits a long wordmark. A logo that still reads small takes `ih:<px>` to draw it larger without changing the key — `icon:ten xl ih:52`. The label stays as the tooltip, and is what the key shows if the icon is ever missing — so a style never draws a blank key.
 
 **Style 6** is this written out: pick it, then **Export** to see every key's `icon:` token. Import logos named `netflix`, `youtube`, `prime`, `disney`, `spotify`, `plex` or `kodi` and they appear on its keys.
 
