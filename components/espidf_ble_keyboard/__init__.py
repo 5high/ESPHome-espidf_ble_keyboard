@@ -394,7 +394,8 @@ def _web_final_validate(config):
             "web_control is on and 'web_server:' has no 'auth:' block — the control page "
             "and its endpoints are open to anything that can reach the device. Adding "
             "'auth:' to 'web_server:' puts them behind a username and password."
-        )    return config
+        )
+    return config
 
 
 def _final_validate(config):
