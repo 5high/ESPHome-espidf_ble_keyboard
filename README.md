@@ -74,6 +74,10 @@ api:
 ota:
   - platform: esphome
     password: ${ota_password}
+    # ESPHome 2026.9.0 or newer: delete `password:` and uncomment `encryption:` to encrypt
+    # uploads with the api key above (also ~3.5 KB less flash). Install once on 2026.9 with the
+    # password still set first — firmware older than 2026.9 can't receive an encrypted upload.
+    # encryption:
 
 wifi:
   ssid: ${wifi_ssid}

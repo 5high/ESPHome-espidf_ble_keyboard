@@ -1691,8 +1691,15 @@ function tplById(id){
 }
 // The device stores each template as the compact JSON the page sent, and never
 // looks inside; anything unparseable is skipped rather than breaking the list.
+// A 409 is the device short of memory for the list right now; asked again after
+// a pause, as fetchIcon does.
 function loadCustomTpls(){
-  return fetch('/api/ble_keyboard/remote_templates').then(r=>r.json()).then(d=>{
+  const get=tries=>fetch('/api/ble_keyboard/remote_templates').then(r=>{
+    if(r.status===409&&tries<4)return new Promise(ok=>setTimeout(ok,700*(tries+1))).then(()=>get(tries+1));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  });
+  return get(0).then(d=>{
     RMT_CUSTOM_MAX=d.max||RMT_CUSTOM_MAX;RMT_CUSTOM_LEN=d.len||RMT_CUSTOM_LEN;
     const out=[];
     (d.items||[]).forEach(it=>{
@@ -3851,6 +3858,7 @@ function appendStep(el,val){
   if(bkSave)bkSave.addEventListener('click',()=>{
     status('Reading settings...');
     fetch('/api/ble_keyboard/backup').then(r=>{
+      if(r.status===409)return r.text().then(t=>{throw new Error(t)});
       if(!r.ok)throw new Error('HTTP '+r.status);
       return r.json();
     }).then(d=>{

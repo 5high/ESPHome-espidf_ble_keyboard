@@ -28,10 +28,9 @@ static const char *const TAG = "ble_kb_web";
 // Python carries. Edit the .html, not a string literal in here.
 
 
-// JSON-escape a string (handles \n, \r, \t, \, ")
-static std::string json_escape(const std::string &s) {
-  std::string out;
-  out.reserve(s.size() + 4);
+// JSON-escape a string (handles \n, \r, \t, \, ") onto the end of `out`, so a
+// large value goes straight into the response instead of through a temporary.
+static void json_escape_append(std::string &out, const std::string &s) {
   for (char c : s) {
     switch (c) {
       case '"':  out += "\\\""; break;
@@ -60,7 +59,34 @@ static std::string json_escape(const std::string &s) {
         break;
     }
   }
+}
+
+static std::string json_escape(const std::string &s) {
+  std::string out;
+  out.reserve(s.size() + 4);
+  json_escape_append(out, s);
   return out;
+}
+
+// The exact length json_escape_append() adds for `s`, so a response can be
+// reserved once at its real size rather than at a guess.
+static size_t json_escaped_size(const std::string &s) {
+  size_t n = 0;
+  for (char c : s) {
+    switch (c) {
+      case '"':
+      case '\\':
+      case '\n':
+      case '\r':
+      case '\t':
+        n += 2;
+        break;
+      default:
+        n += static_cast<unsigned char>(c) < 0x20 ? 6 : 1;
+        break;
+    }
+  }
+  return n;
 }
 
 // Clamp to what a HID relative report can carry, instead of letting the cast
@@ -809,13 +835,25 @@ class BleKbWebHandler : public AsyncWebHandler {
       // stored as rather than inlined: the device never parsed it, so embedding
       // it raw would let one malformed style break the whole response.
       // Reserve first: growing by += reallocs its way up, doubling and leaving
-      // holes behind in a heap that also carries the BLE stack. Sized from what
-      // is actually stored, not from the caps — over-reserving would raise the
-      // very peak this is here to lower. Doubling each template covers the
-      // escaping, since only " and \ expand and both go to two characters.
+      // holes behind in a heap that also carries the BLE stack. Sized exactly
+      // from what is stored, escaping included — this used to double each style
+      // as a guess, and six full ones asked for about 18 KB in one block.
+      //
+      // Refused rather than attempted when no block is that big, the same as
+      // /icon: a failed allocation aborts, and a few refreshes in a row aborted
+      // right here on 2026-09-16. The page asks again after a pause.
       size_t est = 64;
-      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++)
-        est += kb_->get_custom_template(i).size() * 2 + 24;
+      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
+        const std::string &t = kb_->get_custom_template(i);
+        if (!t.empty()) est += json_escaped_size(t) + 24;
+      }
+      const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+      if (block < est + 1024) {
+        ESP_LOGW(TAG, "Styles (%u B) deferred: largest free block %u B, heap %u B free", (unsigned) est,
+                 (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
+        send_response(409, "text/plain", "Low on memory, try again shortly");
+        return;
+      }
       std::string json = "{\"max\":";
       json.reserve(est);
       json += std::to_string(EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES);
@@ -828,7 +866,11 @@ class BleKbWebHandler : public AsyncWebHandler {
         if (t.empty()) continue;
         if (!first) json += ",";
         first = false;
-        json += "{\"index\":" + std::to_string(i) + ",\"tpl\":\"" + json_escape(t) + "\"}";
+        json += "{\"index\":";
+        json += std::to_string(i);
+        json += ",\"tpl\":\"";
+        json_escape_append(json, t);
+        json += "\"}";
       }
       json += "]}";
       send_response(200, "application/json", json);
@@ -925,15 +967,25 @@ class BleKbWebHandler : public AsyncWebHandler {
         est += 96;  // that slot's keys, calibration, style id and host entry
       }
       // The custom styles, which nothing above covers and which are by far the
-      // largest thing in here: six of them is 9 KB stored and close to twice
-      // that once escaped, because every key, token and colour in a style is
-      // quoted. Doubled for the same reason /remote_templates doubles — only
-      // " and \ expand, and both go to two characters. Without this the reserve
+      // largest thing in here: six of them is 9 KB stored and more once
+      // escaped, because every key, token and colour in a style is quoted.
+      // Counted exactly, as /remote_templates does. Without this the reserve
       // came out a couple of KB for a document of twenty, and the += chain
       // reallocated its way up through exactly the heap this estimate exists
       // to protect.
-      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++)
-        est += kb_->get_custom_template(i).size() * 2 + 24;
+      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
+        const std::string &t = kb_->get_custom_template(i);
+        if (!t.empty()) est += json_escaped_size(t) + 24;
+      }
+      // And refused, like /remote_templates, when the heap has no block that
+      // size: the page reports it and the user can try again.
+      const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+      if (block < est + 1024) {
+        ESP_LOGW(TAG, "Backup (%u B) refused: largest free block %u B, heap %u B free", (unsigned) est,
+                 (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
+        send_response(409, "text/plain", "Low on memory, try again shortly");
+        return;
+      }
       std::string json = "{\"schema\":1,\"device\":\"";
       json.reserve(est);
       json += json_escape(kb_->device_name());
@@ -1027,7 +1079,11 @@ class BleKbWebHandler : public AsyncWebHandler {
         if (t.empty()) continue;
         if (!first_tpl) json += ",";
         first_tpl = false;
-        json += "{\"index\":" + std::to_string(i) + ",\"tpl\":\"" + json_escape(t) + "\"}";
+        json += "{\"index\":";
+        json += std::to_string(i);
+        json += ",\"tpl\":\"";
+        json_escape_append(json, t);
+        json += "\"}";
       }
       json += "],\"goto_scale\":{";
       bool first_scale = true;
