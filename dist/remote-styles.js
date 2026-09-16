@@ -226,11 +226,13 @@ const RMT_BUILTIN=[
 
 const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','grid','lcd','-'];
 
-const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle','fill'];
+const RMT_OPTS=['light','sm','md','lg','xl','wide','sq','squircle','fill'];
 
 const RMT_KEY_H=[24,160];
 
 const RMT_ICON_H=[8,160];
+
+const RMT_RING=[120,320],RMT_RING_C=[40,200],RMT_RING_ROOM=40;
 
 const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 
@@ -433,9 +435,17 @@ function sectionHtml(s){
     }else if(k==='ring'){
       // Same five actions as a dpad, drawn as the nav ring instead. Wrappers do
       // the positioning so each button keeps its own press transform.
-      const d=s.length>1?s.slice(1):['up','left','ok','right','down'];
+      // An optional {"size","center"} first. Whole numbers inside their bounds
+      // only, tested here as well as at import: they reach an inline style.
+      const cfg=(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
+      const keys=s.slice(cfg?2:1);
+      const d=keys.length?keys:['up','left','ok','right','down'];
+      const sz=cfg?cfg.size|0:0,cz=cfg?cfg.center|0:0;
+      let st='';
+      if(sz>=RMT_RING[0]&&sz<=RMT_RING[1])st='width:'+sz+'px;height:'+sz+'px';
+      if(cz>=RMT_RING_C[0]&&cz<=RMT_RING_C[1])st+=(st?';':'')+'--rb-ring-c:'+cz+'px';
       const at=(p,i)=>'<span class="'+p+'">'+btnHtml(d[i])+'</span>';
-      inner='<div class="rmt-ring">'+at('n',0)+at('w',1)+at('c',2)+at('e',3)+at('s',4)+'</div>';
+      inner='<div class="rmt-ring"'+(st?' style="'+st+'"':'')+'>'+at('n',0)+at('w',1)+at('c',2)+at('e',3)+at('s',4)+'</div>';
     }else if(k==='rocker'){
       inner='<div class="rmt-rocker">'+s.slice(1).map(g=>{
         // Three entries = a two-way rocker with its label between the halves.
@@ -625,9 +635,30 @@ function validateTpl(t){
           items=items.concat(g.slice(1));
         }
       }else if(s[0]==='dpad'||s[0]==='ring'){
-        if(s.length>1&&s.length!==6)
+        let keys=s.slice(1);
+        // A ring may open with {"size","center"}, the way a grid opens with its
+        // layout. A dpad keeps its fixed cluster.
+        if(s[0]==='ring'&&keys.length&&keys[0]&&typeof keys[0]==='object'&&!Array.isArray(keys[0])){
+          const cfg=keys[0];
+          keys=keys.slice(1);
+          for(const k in cfg){
+            if(k!=='size'&&k!=='center')return 'A ring takes size and center — "'+k+'" is neither';
+            const n=cfg[k];
+            if(typeof n!=='number'||!isFinite(n)||n!==Math.floor(n))
+              return 'ring "'+k+'" must be a whole number of pixels, e.g. {"size":200,"center":96}';
+          }
+          if(cfg.size!==undefined&&(cfg.size<RMT_RING[0]||cfg.size>RMT_RING[1]))
+            return 'ring "size" is '+RMT_RING[0]+'-'+RMT_RING[1]+' pixels — "'+cfg.size+'" is outside that';
+          if(cfg.center!==undefined&&(cfg.center<RMT_RING_C[0]||cfg.center>RMT_RING_C[1]))
+            return 'ring "center" is '+RMT_RING_C[0]+'-'+RMT_RING_C[1]+' pixels — "'+cfg.center+'" is outside that';
+          const size=cfg.size!==undefined?cfg.size:168,center=cfg.center!==undefined?cfg.center:84;
+          if(center>size-2*RMT_RING_ROOM)
+            return 'ring "center" '+center+' leaves the arrows no room in a '+size+'px ring — at most '+
+                   (size-2*RMT_RING_ROOM)+', or a larger "size"';
+        }
+        if(keys.length&&keys.length!==5)
           return 'A '+s[0]+' section lists exactly 5 actions (up, left, centre, right, down) or none';
-        items=s.slice(1);
+        items=keys;
       }else if(s[0]==='lcd'){
         // Lines are ["Label","key"], label first — the way a strip or rocker
         // group carries its label. Nothing in here is a button, so `items` is
@@ -804,15 +835,15 @@ export const RMT_CSS = `
 .rmt-btn.app{width:auto;height:38px;border-radius:19px;padding:0 14px;font-size:11px}
 .rmt-ring{position:relative;width:168px;height:168px;margin:10px auto;border-radius:50%;
   background:var(--rb-ring-bg,var(--rb-btn-bg,var(--bg)));border:1px solid var(--rb-btn-border,var(--border))}
-.rmt-ring>span{position:absolute}
-.rmt-ring>span.n{top:6px;left:50%;margin-left:-24px}
-.rmt-ring>span.s{bottom:6px;left:50%;margin-left:-24px}
-.rmt-ring>span.w{left:6px;top:50%;margin-top:-24px}
-.rmt-ring>span.e{right:6px;top:50%;margin-top:-24px}
-.rmt-ring>span.c{left:50%;top:50%;margin:-42px 0 0 -42px}
+.rmt-ring>span{position:absolute;display:flex}
+.rmt-ring>span.n{top:6px;left:50%;transform:translateX(-50%)}
+.rmt-ring>span.s{bottom:6px;left:50%;transform:translateX(-50%)}
+.rmt-ring>span.w{left:6px;top:50%;transform:translateY(-50%)}
+.rmt-ring>span.e{right:6px;top:50%;transform:translateY(-50%)}
+.rmt-ring>span.c{left:50%;top:50%;transform:translate(-50%,-50%)}
 .rmt-ring .rmt-btn{background:none;border-color:transparent;color:var(--rb-ring-fg,var(--rb-btn-fg,var(--fg)))}
 .rmt-ring .rmt-btn:active,.rmt-ring .rmt-btn.p{background:rgba(255,255,255,.18);border-color:transparent}
-.rmt-ring .center{width:84px;height:84px}
+.rmt-ring .center{width:var(--rb-ring-c,84px);height:var(--rb-ring-c,84px)}
 .rmt-rocker{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:14px}
 .rmt-rocker-col{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   padding:4px 0;width:50px;border-radius:25px;background:var(--rb-btn-bg,var(--bg));
@@ -847,6 +878,8 @@ export const RMT_CSS = `
 .rmt-lcd-val.xl{font-size:24px}
 .rmt-btn.sm{width:36px;height:36px;font-size:11px}
 .rmt-btn.sm svg{width:16px;height:16px}
+.rmt-btn.md{width:42px;height:42px;font-size:12px}
+.rmt-btn.md svg{width:18px;height:18px}
 .rmt-btn.lg{width:56px;height:56px}
 .rmt-btn.xl{width:64px;height:64px;font-size:13px}
 .rmt-btn.xl svg{width:26px;height:26px}
@@ -858,6 +891,7 @@ export const RMT_CSS = `
 @supports (corner-shape:superellipse(1.4)){.rmt-btn.squircle{border-radius:50%;corner-shape:superellipse(1.4)}}
 .rmt-btn svg.rmt-ico{width:auto;max-width:78%;height:20px}
 .rmt-btn.sm svg.rmt-ico{height:16px}
+.rmt-btn.md svg.rmt-ico{height:18px}
 .rmt-btn.xl svg.rmt-ico{height:26px}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.fill svg.rmt-ico{max-width:80%}

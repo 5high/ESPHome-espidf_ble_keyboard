@@ -1131,7 +1131,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 |---|---|
 | `["row", …]` | A centred row of round buttons. `"\|"` inserts a stretching gap, which is what pushes Power to the far left. |
 | `["dpad"]` | A square D-pad cluster. List five actions — `["dpad","up","left","ok","right","down"]` — to substitute your own. |
-| `["ring"]` | The same five keys as a **circular navigation ring** with a centre button, which is what most modern remotes have. Takes the same optional five actions. |
+| `["ring"]` | The same five keys as a **circular navigation ring** with a centre button, which is what most modern remotes have. Takes the same optional five actions. An optional settings object first sizes it: `["ring", {"size": 200, "center": 96}]` — the ring's diameter, 120–320 px (168 by default), and the centre button's, 40–200 px (84), leaving 40 px each side for the arrows. Arrows and centre take button options such as `sm` or `md` and stay centred |
 | `["strip", ["Vol","volume_up","volume_down"], …]` | Labelled vertical columns side by side. The first entry of each group is its label; `""` for none. |
 | `["rocker", ["Vol","volume_up","volume_down"], …]` | **One-piece rocker keys** — a tall pill with two halves and the label between them, as a remote carries volume and channel. A two-entry group, `["","mute"]`, is a single key at the same height, which is how mute sits between two rockers. |
 | `["media", …]` | A row of the smaller transport-sized buttons. |
@@ -1150,7 +1150,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 |---|---|
 | `#rrggbb` | the button's own colour |
 | `light` | an inverted key — light face, dark glyph, as remotes use for Home and app buttons |
-| `sm` / `lg` / `xl` | 36 / 56 / 64 px instead of the usual 48 |
+| `sm` / `md` / `lg` / `xl` | 36 / 42 / 56 / 64 px instead of the usual 48 |
 | `wide` | an auto-width pill |
 | `sq` | square-ish corners |
 | `squircle` | an app tile — a rounded square whose corners flow into its sides, as TV launchers draw apps. Pairs with a size: `"lg squircle"` |

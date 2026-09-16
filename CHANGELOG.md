@@ -23,6 +23,11 @@ web control page shows the matching version badge.
 - **Logos can be drawn larger without a larger key.** A new button option sets the icon's height,
   for logos that read small at the size their key gives them. On the web page and the Home Assistant
   card alike.
+- **A key size between small and normal.** For rows that need to fit a little more without dropping
+  to the smallest keys.
+- **The nav ring can be sized.** A style sets the ring's diameter and its centre button's, and its
+  arrows and centre take the same size options as any key, staying centred whatever their size. On
+  the web page and the Home Assistant card alike.
 
 ### Changed
 - **Recorded macros wait a second after Home and 200ms after anything else**, instead

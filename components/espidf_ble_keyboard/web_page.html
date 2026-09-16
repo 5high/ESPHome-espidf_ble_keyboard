@@ -343,19 +343,22 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
    element would cancel it. */
 .rmt-ring{position:relative;width:168px;height:168px;margin:10px auto;border-radius:50%;
   background:var(--rb-ring-bg,var(--rb-btn-bg,var(--bg)));border:1px solid var(--rb-btn-border,var(--border))}
-.rmt-ring>span{position:absolute}
-.rmt-ring>span.n{top:6px;left:50%;margin-left:-24px}
-.rmt-ring>span.s{bottom:6px;left:50%;margin-left:-24px}
-.rmt-ring>span.w{left:6px;top:50%;margin-top:-24px}
-.rmt-ring>span.e{right:6px;top:50%;margin-top:-24px}
-.rmt-ring>span.c{left:50%;top:50%;margin:-42px 0 0 -42px}
+/* Centred by translating the wrapper, not by a margin of half a fixed key size,
+   so an arrow or a centre of any size sits true — the wrapper is not the button,
+   so the press transform is untouched. flex, so no line box pads the wrapper. */
+.rmt-ring>span{position:absolute;display:flex}
+.rmt-ring>span.n{top:6px;left:50%;transform:translateX(-50%)}
+.rmt-ring>span.s{bottom:6px;left:50%;transform:translateX(-50%)}
+.rmt-ring>span.w{left:6px;top:50%;transform:translateY(-50%)}
+.rmt-ring>span.e{right:6px;top:50%;transform:translateY(-50%)}
+.rmt-ring>span.c{left:50%;top:50%;transform:translate(-50%,-50%)}
 /* Arrows read as part of the ring, so they carry no chrome of their own — but
    they do need their own colour: the ring is often the opposite tone to the
    other keys (a white ring on a black body, a black one on alloy), and
    inheriting btn_fg leaves the arrows invisible. */
 .rmt-ring .rmt-btn{background:none;border-color:transparent;color:var(--rb-ring-fg,var(--rb-btn-fg,var(--fg)))}
 .rmt-ring .rmt-btn:active,.rmt-ring .rmt-btn.p{background:rgba(255,255,255,.18);border-color:transparent}
-.rmt-ring .center{width:84px;height:84px}
+.rmt-ring .center{width:var(--rb-ring-c,84px);height:var(--rb-ring-c,84px)}
 /* ── One-piece rocker ────────────────────────────────────────────
    A volume or channel key as a single tall pill with two halves and its label
    between them, which is how a remote carries them. A group of one button
@@ -420,6 +423,8 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
    them; only a validated #rrggbb ever reaches an inline style attribute. */
 .rmt-btn.sm{width:36px;height:36px;font-size:11px}
 .rmt-btn.sm svg{width:16px;height:16px}
+.rmt-btn.md{width:42px;height:42px;font-size:12px}
+.rmt-btn.md svg{width:18px;height:18px}
 .rmt-btn.lg{width:56px;height:56px}
 .rmt-btn.xl{width:64px;height:64px;font-size:13px}
 .rmt-btn.xl svg{width:26px;height:26px}
@@ -448,6 +453,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
    size rules above, which set a fixed width this has to undo. */
 .rmt-btn svg.rmt-ico{width:auto;max-width:78%;height:20px}
 .rmt-btn.sm svg.rmt-ico{height:16px}
+.rmt-btn.md svg.rmt-ico{height:18px}
 .rmt-btn.xl svg.rmt-ico{height:26px}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.fill svg.rmt-ico{max-width:80%}
@@ -861,7 +867,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dl>
 <dt><code>["row",…]</code></dt><dd>A row of round buttons. <code>"|"</code> spaces it out.</dd>
 <dt><code>["dpad"]</code></dt><dd>The arrow cluster.</dd>
-<dt><code>["ring"]</code></dt><dd>The same five keys as a round nav ring.</dd>
+<dt><code>["ring"]</code></dt><dd>The same five keys as a round nav ring. <code>["ring",{"size":200,"center":96}]</code> sizes the ring and its centre button.</dd>
 <dt><code>["strip",…]</code></dt><dd>Labelled columns side by side: <code>["strip",["Vol","volume_up","volume_down"],…]</code></dd>
 <dt><code>["rocker",…]</code></dt><dd>The same groups as one-piece rocker keys. <code>["","mute"]</code> is a single key of the same height.</dd>
 <dt><code>["media",…]</code></dt><dd>A row of small transport buttons.</dd>
@@ -871,7 +877,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
-A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
+A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm md lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
 <div class="macro-form"><textarea id="tpl-json" placeholder="Paste a style JSON here to import&hellip;" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="tpl-import">Import</button></div>
 <div id="tpl-msg" style="font-size:11px;color:var(--muted)"></div>
 </div>
@@ -1454,7 +1460,7 @@ function themeValueBad(k,v){
 // Appearance tokens a button may carry. Top level, not inside either IIFE: the
 // renderer applies them and the importer validates them, and they must agree —
 // keeping them in one place is what stops the two drifting apart.
-const RMT_OPTS=['light','sm','lg','xl','wide','sq','squircle','fill'];
+const RMT_OPTS=['light','sm','md','lg','xl','wide','sq','squircle','fill'];
 // h:<px> sets a key's height, the one number a button option carries. The
 // bounds are what the renderer and the importer both test, so a style that
 // passed import cannot draw a key taller than this: past 160 a single key
@@ -1464,6 +1470,10 @@ const RMT_KEY_H=[24,160];
 // some logos are drawn with room around them and read small at the size keys
 // give icons. Never taller than the key it sits on, whatever this allows.
 const RMT_ICON_H=[8,160];
+// A ring's optional {"size","center"}: the circle's diameter and its centre
+// button's, in pixels. The centre also has to leave the arrows room, which is
+// checked against the size at import (RMT_RING_ROOM each side between the two).
+const RMT_RING=[120,320],RMT_RING_C=[40,200],RMT_RING_ROOM=40;
 // The same two things for an lcd line: what a line may carry, and the values
 // this firmware can resolve on its own. A built-in is spelled with a leading @
 // so the two namespaces cannot collide — a key naming a `sources:` entry
@@ -3310,9 +3320,30 @@ function appendStep(el,val){
           items=items.concat(g.slice(1));
         }
       }else if(s[0]==='dpad'||s[0]==='ring'){
-        if(s.length>1&&s.length!==6)
+        let keys=s.slice(1);
+        // A ring may open with {"size","center"}, the way a grid opens with its
+        // layout. A dpad keeps its fixed cluster.
+        if(s[0]==='ring'&&keys.length&&keys[0]&&typeof keys[0]==='object'&&!Array.isArray(keys[0])){
+          const cfg=keys[0];
+          keys=keys.slice(1);
+          for(const k in cfg){
+            if(k!=='size'&&k!=='center')return 'A ring takes size and center — "'+k+'" is neither';
+            const n=cfg[k];
+            if(typeof n!=='number'||!isFinite(n)||n!==Math.floor(n))
+              return 'ring "'+k+'" must be a whole number of pixels, e.g. {"size":200,"center":96}';
+          }
+          if(cfg.size!==undefined&&(cfg.size<RMT_RING[0]||cfg.size>RMT_RING[1]))
+            return 'ring "size" is '+RMT_RING[0]+'-'+RMT_RING[1]+' pixels — "'+cfg.size+'" is outside that';
+          if(cfg.center!==undefined&&(cfg.center<RMT_RING_C[0]||cfg.center>RMT_RING_C[1]))
+            return 'ring "center" is '+RMT_RING_C[0]+'-'+RMT_RING_C[1]+' pixels — "'+cfg.center+'" is outside that';
+          const size=cfg.size!==undefined?cfg.size:168,center=cfg.center!==undefined?cfg.center:84;
+          if(center>size-2*RMT_RING_ROOM)
+            return 'ring "center" '+center+' leaves the arrows no room in a '+size+'px ring — at most '+
+                   (size-2*RMT_RING_ROOM)+', or a larger "size"';
+        }
+        if(keys.length&&keys.length!==5)
           return 'A '+s[0]+' section lists exactly 5 actions (up, left, centre, right, down) or none';
-        items=s.slice(1);
+        items=keys;
       }else if(s[0]==='lcd'){
         // Lines are ["Label","key"], label first — the way a strip or rocker
         // group carries its label. Nothing in here is a button, so `items` is
@@ -5041,9 +5072,17 @@ buildKeyboard();
     }else if(k==='ring'){
       // Same five actions as a dpad, drawn as the nav ring instead. Wrappers do
       // the positioning so each button keeps its own press transform.
-      const d=s.length>1?s.slice(1):['up','left','ok','right','down'];
+      // An optional {"size","center"} first. Whole numbers inside their bounds
+      // only, tested here as well as at import: they reach an inline style.
+      const cfg=(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
+      const keys=s.slice(cfg?2:1);
+      const d=keys.length?keys:['up','left','ok','right','down'];
+      const sz=cfg?cfg.size|0:0,cz=cfg?cfg.center|0:0;
+      let st='';
+      if(sz>=RMT_RING[0]&&sz<=RMT_RING[1])st='width:'+sz+'px;height:'+sz+'px';
+      if(cz>=RMT_RING_C[0]&&cz<=RMT_RING_C[1])st+=(st?';':'')+'--rb-ring-c:'+cz+'px';
       const at=(p,i)=>'<span class="'+p+'">'+btnHtml(d[i])+'</span>';
-      inner='<div class="rmt-ring">'+at('n',0)+at('w',1)+at('c',2)+at('e',3)+at('s',4)+'</div>';
+      inner='<div class="rmt-ring"'+(st?' style="'+st+'"':'')+'>'+at('n',0)+at('w',1)+at('c',2)+at('e',3)+at('s',4)+'</div>';
     }else if(k==='rocker'){
       inner='<div class="rmt-rocker">'+s.slice(1).map(g=>{
         // Three entries = a two-way rocker with its label between the halves.
