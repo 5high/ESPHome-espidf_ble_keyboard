@@ -958,6 +958,18 @@ function apiPost(endpoint,params,opts){
                              opts));
 }
 
+// GET a JSON endpoint. A 409 is the device short of memory to build the reply
+// right now — it answers that instead of rebooting — so it is asked again after
+// a pause, a few times. Any other failure rejects with the device's own text.
+function apiGetJSON(pathAndQuery,tries){
+  tries=tries||0;
+  return fetch('/api/ble_keyboard/'+pathAndQuery).then(r=>{
+    if(r.status===409&&tries<4)return new Promise(ok=>setTimeout(ok,700*(tries+1))).then(()=>apiGetJSON(pathAndQuery,tries+1));
+    if(!r.ok)return r.text().then(t=>{throw new Error(t||('HTTP '+r.status))});
+    return r.json();
+  });
+}
+
 // What one character costs in a body apiPost sends, for the two places that
 // have to split a long value into requests that fit. URLSearchParams leaves
 // only A-Z a-z 0-9 * - . _ as they are, writes a space as '+', and percent-
@@ -1691,15 +1703,8 @@ function tplById(id){
 }
 // The device stores each template as the compact JSON the page sent, and never
 // looks inside; anything unparseable is skipped rather than breaking the list.
-// A 409 is the device short of memory for the list right now; asked again after
-// a pause, as fetchIcon does.
 function loadCustomTpls(){
-  const get=tries=>fetch('/api/ble_keyboard/remote_templates').then(r=>{
-    if(r.status===409&&tries<4)return new Promise(ok=>setTimeout(ok,700*(tries+1))).then(()=>get(tries+1));
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  });
-  return get(0).then(d=>{
+  return apiGetJSON('remote_templates').then(d=>{
     RMT_CUSTOM_MAX=d.max||RMT_CUSTOM_MAX;RMT_CUSTOM_LEN=d.len||RMT_CUSTOM_LEN;
     const out=[];
     (d.items||[]).forEach(it=>{
@@ -2411,7 +2416,7 @@ function appendStep(el,val){
   });
 
   function loadButtons(){
-    fetch('/api/ble_keyboard/buttons').then(r=>r.json()).then(btns=>{
+    apiGetJSON('buttons').then(btns=>{
       // Macros are the editable entries. Refresh the shared name list first so
       // a rename or delete immediately re-flags any override referencing it.
       knownMacroNames=btns.filter(b=>b.editable).map(b=>b.name);
@@ -2640,7 +2645,7 @@ function appendStep(el,val){
   reflagOverrides=applyMacroFlags;
 
   function load(){
-    fetch('/api/ble_keyboard/overrides?'+new URLSearchParams({slot:slot})).then(r=>r.json()).then(d=>{
+    apiGetJSON('overrides?'+new URLSearchParams({slot:slot})).then(d=>{
       list.innerHTML='';
       if(!d.items.length){list.innerHTML='<span class="prog-empty">No overrides — this host uses the built-in actions</span>';return}
       d.items.forEach(it=>{
@@ -3857,11 +3862,7 @@ function appendStep(el,val){
 
   if(bkSave)bkSave.addEventListener('click',()=>{
     status('Reading settings...');
-    fetch('/api/ble_keyboard/backup').then(r=>{
-      if(r.status===409)return r.text().then(t=>{throw new Error(t)});
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      return r.json();
-    }).then(d=>{
+    apiGetJSON('backup').then(d=>{
       // Icon bodies are gathered here rather than by the device: its backup is
       // built in one string on the heap the Bluetooth stack shares, and sixteen
       // logos would put tens of KB on it. Each comes over on a request of its own,
@@ -3954,8 +3955,8 @@ function appendStep(el,val){
     fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(h=>{
       slots=(h.slots||[]).map(s=>s.slot).filter(s=>typeof s==='number');
       if(!slots.length)throw new Error('the device reported no host slots');
-      return fetch('/api/ble_keyboard/buttons');
-    }).then(r=>r.json()).then(btns=>{
+      return apiGetJSON('buttons');
+    }).then(btns=>{
       // Delete highest index first so earlier indices don't shift under us.
       const idx=btns.filter(b=>b.editable).map(b=>b.index).sort((a,b)=>b-a);
       let chain=Promise.resolve();
@@ -3974,8 +3975,8 @@ function appendStep(el,val){
       // Clear every saved override on every slot, then apply the file's.
       let chain=Promise.resolve();
       slots.forEach(sl=>{
-        chain=chain.then(()=>fetch('/api/ble_keyboard/overrides?'+new URLSearchParams({slot:sl}))
-          .then(r=>r.json()).then(cur=>{
+        chain=chain.then(()=>apiGetJSON('overrides?'+new URLSearchParams({slot:sl}))
+          .then(cur=>{
             let c=Promise.resolve();
             cur.items.filter(it=>it.src==='nvs').forEach(it=>{
               c=c.then(()=>post('override_clear',{slot:sl,name:it.name}));

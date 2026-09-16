@@ -35,9 +35,9 @@ web control page shows the matching version badge.
 
 ### Fixed
 - **Refreshing the web page no longer reboots the device.** A page load could run it out of memory,
-  most often while reading logos or custom styles. Responses are sent without copying them first,
-  logos are read one at a time, and anything the device has no room for is put off and asked for
-  again rather than crashing.
+  most often while reading logos, styles or the button list. Responses are sent without copying them
+  first, logos are read one at a time, and anything the device has no room for is put off and asked
+  for again rather than crashing.
 
 ## v1.10.0 — 2026-09-14
 

@@ -344,6 +344,22 @@ class BleKbWebHandler : public AsyncWebHandler {
         request->send(response);
       };
 
+      // Every reply built as a multi-KB string asks this first. A failed
+      // allocation aborts — this build has no exceptions — and a page refresh
+      // lands several of these back to back on a heap that troughs near 23 KB;
+      // /icon, /remote_templates and /buttons each rebooted the device that way.
+      // When no block fits, the request is answered 409 instead, and the page
+      // asks again after a pause.
+      auto heap_short = [&send_response](size_t need, const char *what, const char *name) {
+        const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        if (block >= need + 1024)
+          return false;
+        ESP_LOGW(TAG, "%s%s%s (%u B) deferred: largest free block %u B, heap %u B free", what, *name ? " " : "",
+                 name, (unsigned) need, (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
+        send_response(409, "text/plain", "Low on memory, try again shortly");
+        return true;
+      };
+
     // Serve the page — use Progmem response to avoid heap-copying the large HTML
     if (url == "/ble_keyboard") {
       // The bytes are gzip, compressed at codegen from web_page.html and handed
@@ -475,45 +491,49 @@ class BleKbWebHandler : public AsyncWebHandler {
       // Sized up front. Growing by doubling holds the old and new buffer at once
       // on every step, and the last step of a dozen macros wanted a ~4 KB block
       // next to a ~2 KB one — that realloc is where a page refresh ran out of
-      // heap. Escaping can only lengthen a field, so this is a floor, not exact.
+      // heap. Counted exactly, escaping included, and checked against the heap:
+      // a reserve with no block to land in aborted here on 2026-09-16.
       const auto &btns = kb_->get_buttons();
+      const auto &exts = kb_->get_external_buttons();
+      const auto &macros = kb_->get_macros();
       size_t want = 2;
-      for (const auto &b : btns) want += b.name.size() + b.action.size() + 48;
-      for (const auto &b : kb_->get_external_buttons()) want += b.name.size() + b.action.size() + 48;
-      for (const auto &m : kb_->get_macros()) want += m.name.size() + m.action.size() + 60;
+      for (const auto &b : btns) want += json_escaped_size(b.name) + json_escaped_size(b.action) + 48;
+      for (const auto &b : exts) want += json_escaped_size(b.name) + json_escaped_size(b.action) + 48;
+      for (const auto &m : macros) want += json_escaped_size(m.name) + json_escaped_size(m.action) + 60;
+      if (heap_short(want, "Buttons", ""))
+        return;
       std::string json = "[";
-      json.reserve(want + want / 8);
+      json.reserve(want);
       bool first = true;
       // YAML-defined buttons (read-only)
       for (size_t i = 0; i < btns.size(); i++) {
         if (!first) json += ",";
         first = false;
         json += "{\"name\":\"";
-        json += json_escape(btns[i].name);
+        json_escape_append(json, btns[i].name);
         json += "\",\"action\":\"";
-        json += json_escape(btns[i].action);
+        json_escape_append(json, btns[i].action);
         json += "\",\"editable\":false}";
       }
       // Buttons from other ESPHome platforms (wake_on_lan, template, …).
       // Read-only like the YAML ones — the page can press them but not edit.
-      for (const auto &ext : kb_->get_external_buttons()) {
+      for (const auto &ext : exts) {
         if (!first) json += ",";
         first = false;
         json += "{\"name\":\"";
-        json += json_escape(ext.name);
+        json_escape_append(json, ext.name);
         json += "\",\"action\":\"";
-        json += json_escape(ext.action);
+        json_escape_append(json, ext.action);
         json += "\",\"editable\":false}";
       }
       // User-defined macros (editable)
-      const auto &macros = kb_->get_macros();
       for (size_t i = 0; i < macros.size(); i++) {
         if (!first) json += ",";
         first = false;
         json += "{\"name\":\"";
-        json += json_escape(macros[i].name);
+        json_escape_append(json, macros[i].name);
         json += "\",\"action\":\"";
-        json += json_escape(macros[i].action);
+        json_escape_append(json, macros[i].action);
         json += "\",\"editable\":true,\"index\":";
         json += std::to_string(i);
         json += "}";
@@ -724,12 +744,14 @@ class BleKbWebHandler : public AsyncWebHandler {
       // so the list shows exactly what would run.
       const auto &nvs = kb_->get_nvs_overrides((uint8_t) slot);
       const auto &yaml = kb_->get_yaml_overrides((uint8_t) slot);
-      // Reserved from what is stored, as /backup does: a slot of 32 long
+      // Reserved from what is stored, as /backup does: a slot of 48 long
       // ha_action: strings would otherwise realloc its way up on the shared heap.
-      // Doubling covers the escaping, since only " and \ expand.
+      // Counted exactly, escaping included, and refused when it doesn't fit.
       size_t est = 64;
-      for (const auto &o : nvs) est += (o.name.size() + o.action.size()) * 2 + 40;
-      for (const auto &o : yaml) est += (o.name.size() + o.action.size()) * 2 + 40;
+      for (const auto &o : nvs) est += json_escaped_size(o.name) + json_escaped_size(o.action) + 40;
+      for (const auto &o : yaml) est += json_escaped_size(o.name) + json_escaped_size(o.action) + 40;
+      if (heap_short(est, "Host Actions", ""))
+        return;
       std::string json = "{\"slot\":";
       json.reserve(est);
       json += std::to_string(slot);
@@ -740,8 +762,11 @@ class BleKbWebHandler : public AsyncWebHandler {
       for (const auto &o : nvs) {
         if (!first) json += ",";
         first = false;
-        json += "{\"name\":\"" + json_escape(o.name) + "\",\"action\":\"" + json_escape(o.action) +
-                "\",\"src\":\"nvs\"}";
+        json += "{\"name\":\"";
+        json_escape_append(json, o.name);
+        json += "\",\"action\":\"";
+        json_escape_append(json, o.action);
+        json += "\",\"src\":\"nvs\"}";
       }
       for (const auto &o : yaml) {
         bool shadowed = false;
@@ -750,8 +775,11 @@ class BleKbWebHandler : public AsyncWebHandler {
         if (shadowed) continue;
         if (!first) json += ",";
         first = false;
-        json += "{\"name\":\"" + json_escape(o.name) + "\",\"action\":\"" + json_escape(o.action) +
-                "\",\"src\":\"yaml\"}";
+        json += "{\"name\":\"";
+        json_escape_append(json, o.name);
+        json += "\",\"action\":\"";
+        json_escape_append(json, o.action);
+        json += "\",\"src\":\"yaml\"}";
       }
       json += "]}";
       send_response(200, "application/json", json);
@@ -839,21 +867,15 @@ class BleKbWebHandler : public AsyncWebHandler {
       // from what is stored, escaping included — this used to double each style
       // as a guess, and six full ones asked for about 18 KB in one block.
       //
-      // Refused rather than attempted when no block is that big, the same as
-      // /icon: a failed allocation aborts, and a few refreshes in a row aborted
-      // right here on 2026-09-16. The page asks again after a pause.
+      // Refused rather than attempted when no block is that big — a few
+      // refreshes in a row aborted right here on 2026-09-16.
       size_t est = 64;
       for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
         const std::string &t = kb_->get_custom_template(i);
         if (!t.empty()) est += json_escaped_size(t) + 24;
       }
-      const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-      if (block < est + 1024) {
-        ESP_LOGW(TAG, "Styles (%u B) deferred: largest free block %u B, heap %u B free", (unsigned) est,
-                 (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
-        send_response(409, "text/plain", "Low on memory, try again shortly");
+      if (heap_short(est, "Styles", ""))
         return;
-      }
       std::string json = "{\"max\":";
       json.reserve(est);
       json += std::to_string(EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES);
@@ -909,20 +931,14 @@ class BleKbWebHandler : public AsyncWebHandler {
       // Readable cross-origin like /hosts, because the cards draw from it.
       std::string name = request->hasArg("name") ? request->arg("name").c_str() : "";
       // Refused rather than attempted when the heap has no block big enough for
-      // the body. A failed allocation aborts — this build has no exceptions — and
-      // a page reload asking for every logo while the browser's other requests
-      // hold buffers did exactly that. The page asks again after a pause.
+      // the body: a page reload asking for every logo while the browser's other
+      // requests hold buffers aborted here on 2026-09-15.
       size_t need = 0;
       for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_ICONS; i++) {
         if (!name.empty() && kb_->get_icon_name(i) == name) need = kb_->get_icon_size(i);
       }
-      const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-      if (need > 0 && block < need + 1024) {
-        ESP_LOGW(TAG, "Icon '%s' (%u B) deferred: largest free block %u B, heap %u B free", name.c_str(),
-                 (unsigned) need, (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
-        send_response(409, "text/plain", "Low on memory, try again shortly");
+      if (need > 0 && heap_short(need, "Icon", name.c_str()))
         return;
-      }
       std::string body;
       if (!kb_->read_icon(name, body)) {
         send_response(404, "text/plain", "No icon by that name");
@@ -977,15 +993,8 @@ class BleKbWebHandler : public AsyncWebHandler {
         const std::string &t = kb_->get_custom_template(i);
         if (!t.empty()) est += json_escaped_size(t) + 24;
       }
-      // And refused, like /remote_templates, when the heap has no block that
-      // size: the page reports it and the user can try again.
-      const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-      if (block < est + 1024) {
-        ESP_LOGW(TAG, "Backup (%u B) refused: largest free block %u B, heap %u B free", (unsigned) est,
-                 (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
-        send_response(409, "text/plain", "Low on memory, try again shortly");
+      if (heap_short(est, "Backup", ""))
         return;
-      }
       std::string json = "{\"schema\":1,\"device\":\"";
       json.reserve(est);
       json += json_escape(kb_->device_name());
