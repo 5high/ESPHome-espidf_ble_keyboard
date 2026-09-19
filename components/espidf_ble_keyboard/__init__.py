@@ -689,6 +689,19 @@ async def to_code(config):
         # same bytes as a Linux one, and mtime=0 so the same page always gzips to
         # the same array — otherwise every build would look changed.
         html = page.read_bytes().replace(b"\r\n", b"\n")
+        # Comments and indentation out before gzip — about half the page, and
+        # ~60 KB of flash. See page_minify.py for what is and isn't touched. It
+        # never fails a build: anything it can't account for ships the page as
+        # written.
+        try:
+            from .page_minify import minify_page
+
+            html = minify_page(html.decode("utf-8")).encode("utf-8")
+        except Exception as err:  # noqa: BLE001 — any failure means "don't minify"
+            _LOGGER.warning(
+                "The control page could not be minified (%s); it is stored as written, "
+                "which costs about 60 KB more flash.", err
+            )
         gz = gzip.compress(html, 9, mtime=0)
         arr = cg.progmem_array(
             config[CONF_WEB_PAGE_DATA_ID], [HexInt(b) for b in gz]

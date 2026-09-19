@@ -14,6 +14,10 @@ web control page shows the matching version badge.
   bar of their own; tap one and the remote switches that keyboard to it and drives it, in that host's
   style. For hosts one keyboard's Bluetooth can't reach. Macros reach it with `peer:<name>:<action>`.
 
+### Changed
+- **The firmware is about 60 KB smaller.** The control page is stored without its comments and
+  indentation.
+
 ## v1.11.0 — 2026-09-19
 
 ### Added
