@@ -33,6 +33,10 @@
 #include "web_control.h"
 #endif
 
+#ifdef USE_BLE_KB_PEERS
+struct esp_http_client;  // esp_http_client.h, which only peers.cpp includes
+#endif
+
 namespace esphome {
 namespace espidf_ble_keyboard {
 
@@ -1134,20 +1138,33 @@ class EspidfBleKeyboard : public Component
     std::string state;          // its last /state reply; empty when nobody is looking
     uint32_t fetched_ms{0};     // when `state` arrived
     uint32_t next_due_ms{0};    // next /state read
-    uint32_t down_until_ms{0};  // after a failure, presses are dropped until this
-    bool ok{false};             // whether the last request to it worked
+    uint32_t down_until_ms{0};  // after it can't be reached, presses are dropped until this
+    bool ok{false};             // whether it is answering; what greys its bar
+    uint8_t read_fails{0};      // /state reads failed in a row
+    // [0] reads /state, [1] sends presses. Kept between requests so each is a
+    // single one: the login is negotiated once, not per request. Two, because
+    // the client ties a digest login to one method. Freed after PEER_IDLE_MS.
+    esp_http_client *clients[2]{nullptr, nullptr};
+    uint32_t used_ms[2]{0, 0};
   };
   std::vector<Peer> peers_;
   SemaphoreHandle_t peer_mutex_{nullptr};
   std::atomic<uint32_t> peer_interest_ms_{0};
   bool peer_cache_live_{false};
-  static const uint32_t PEER_TIMEOUT_MS = 1500;
+  static const uint32_t PEER_TIMEOUT_MS = 1500;       // a press
+  static const uint32_t PEER_READ_TIMEOUT_MS = 3000;  // a /state read, which can wait behind its own page
   static const uint32_t PEER_POLL_MS = 4000;
   static const uint32_t PEER_RETRY_MS = 15000;
   static const uint32_t PEER_INTEREST_MS = 15000;
+  static const uint32_t PEER_IDLE_MS = 15000;
+  static const uint32_t PEER_SLOW_MS = 700;
   static const size_t PEER_MAX_REPLY = 6144;
-  bool peer_request_(Peer &p, bool post, const char *path, const std::string &body, std::string *out);
+  static const size_t PEER_MAX_CHAIN = 240;
+  // BUSY is its 409: short of memory for the reply just now, not gone.
+  enum PeerResult : uint8_t { PEER_OK, PEER_BUSY, PEER_NO_REPLY, PEER_UNREACHABLE };
+  PeerResult peer_request_(Peer &p, bool post, const char *path, const std::string &body, std::string *out);
   void run_peer_action_(const std::string &action);
+  bool coalesce_peer_presses_(std::string &job);
   void refresh_peers_();
 #endif
 

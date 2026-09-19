@@ -4285,6 +4285,13 @@ void EspidfBleKeyboard::action_task_entry_(void *arg) {
 #endif
     while (true) {
         if (xQueueReceive(self->action_queue_, &job, wait) == pdTRUE && job != nullptr) {
+#ifdef USE_BLE_KB_PEERS
+            // A merged run of one key goes straight to the peer: execute_action
+            // would split its '|' here and press the key on this keyboard's host.
+            if (!self->peers_.empty() && self->coalesce_peer_presses_(*job))
+                self->run_peer_action_(*job);
+            else
+#endif
             self->execute_action(*job);
             delete job;
             job = nullptr;
