@@ -237,6 +237,7 @@ action:
 | `switch_host:next` / `switch_host:prev` | Step one slot forward or back, wrapping at the ends. Cycles through every configured slot, empty ones included. No-op when only one slot is configured. |
 | `switch_host:back` | Return to the slot that was active before the last switch, however that switch was made. Pressed again, it goes back again. |
 | `prev_host` / `next_host` / `last_host` | The same three as remote keys a style can place, remappable per host. |
+| `peer:<name>:<action>` | Run an action on a linked keyboard listed under `peers:` — `peer:bedroom:switch_host:1`. |
 | `wait:connected` / `wait:connected:N` | Hold a macro until the active host is connected and ready for keys, for at most N ms (default 10000, max 60000). On timeout the macro carries on. |
 | `forget_host:N` | Remove BLE bond for host slot N (0–9) and clear the stored address. Disconnects the host if currently active. |
 

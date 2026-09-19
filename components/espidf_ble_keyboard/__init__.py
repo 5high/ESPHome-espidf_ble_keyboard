@@ -8,7 +8,7 @@ import esphome.config_validation as cv
 import esphome.final_validate as fv
 from esphome.components import binary_sensor, button, sensor, text, text_sensor
 from esphome.const import CONF_ID
-from esphome.core import EsphomeError, HexInt
+from esphome.core import CORE, EsphomeError, HexInt
 from esphome import automation
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +69,11 @@ CONF_KEYBOARD_LAYOUT = "keyboard_layout"
 CONF_LAYOUT = "layout"
 CONF_ACTIONS = "actions"
 CONF_BATTERY_LEVEL = "battery_level"
+CONF_PEERS = "peers"
+CONF_URL = "url"
+CONF_USERNAME = "username"
+CONF_PASSWORD = "password"
+MAX_PEERS = 4
 # Keep in sync with EspidfBleKeyboard::MAX_OVERRIDES
 MAX_OVERRIDES_PER_HOST = 48
 PASSKEY_MODE_LEGACY = "legacy"
@@ -208,10 +213,18 @@ def _web_control_schema(config):
         try:
             from esphome.components import socket
             socket.consume_sockets(6, "espidf_ble_keyboard web_control")(config)
+            # Requests to linked keyboards go out one at a time, from one task.
+            if config.get(CONF_PEERS):
+                socket.consume_sockets(1, "espidf_ble_keyboard peers")(config)
         except (ImportError, AttributeError):
             # ESPHome without the socket-accounting API. Nothing to declare to,
             # and the build is no worse off than it was before.
             pass
+    elif config.get(CONF_PEERS):
+        raise cv.Invalid(
+            f"'{CONF_PEERS}' needs '{CONF_WEB_CONTROL}: true' — linked keyboards are "
+            "driven from this keyboard's web page"
+        )
     return config
 
 
@@ -337,6 +350,46 @@ def _validate_source(value):
     return value
 
 
+# ── Linked keyboards ─────────────────────────────────────────────────────────
+def _peer_name(value):
+    """The name `peer:<name>:<action>` uses, and what the page labels it."""
+    value = cv.string_strict(value)
+    if re.fullmatch(r"[a-z0-9_]{1,15}", value) is None:
+        raise cv.Invalid(
+            f"'{value}' cannot be a peer name — use 1-15 characters of a-z, 0-9 or _"
+        )
+    return value
+
+
+def _peer_url(value):
+    """http://host[:port] and nothing more. The device appends the API path
+    itself, and it has no TLS client configured for this."""
+    value = cv.string_strict(value).strip().rstrip("/")
+    if re.fullmatch(r"http://([A-Za-z0-9.\-]+|\[[0-9A-Fa-f:]+\])(:\d{1,5})?", value) is None:
+        raise cv.Invalid(
+            f"'{value}' is not a peer address — give http://<address>[:port] with no path, "
+            "e.g. http://192.168.1.36 (https is not supported)"
+        )
+    return value
+
+
+PEER_SCHEMA = cv.Schema({
+    cv.Required(CONF_NAME): _peer_name,
+    cv.Required(CONF_URL): _peer_url,
+    # The other keyboard's web_server auth, when it has some.
+    cv.Optional(CONF_USERNAME, default=""): cv.string,
+    cv.Optional(CONF_PASSWORD, default=""): cv.string,
+})
+
+
+def _unique_peer_names(value):
+    names = [p[CONF_NAME] for p in value]
+    for name in names:
+        if names.count(name) > 1:
+            raise cv.Invalid(f"Two peers are called '{name}' — each needs its own name")
+    return value
+
+
 def _validate_max_key_hold(value):
     """0 disables the auto-release; anything else must be long enough to be a
     deliberate hold rather than a value that fights the press itself."""
@@ -436,6 +489,13 @@ CONFIG_SCHEMA = cv.All(
         # while the click that triggered it belongs to whoever built the frame.
         # Turn it on only to embed the page in a dashboard you run yourself.
         cv.Optional(CONF_WEB_ALLOW_FRAMING, default=False): cv.boolean,
+        # Other keyboards this one's page can drive, over Wi-Fi. Anyone who can
+        # use this page can drive them too: their logins are stored here.
+        cv.Optional(CONF_PEERS): cv.All(
+            cv.ensure_list(PEER_SCHEMA),
+            cv.Length(min=1, max=MAX_PEERS, msg=f"Between 1 and {MAX_PEERS} peers"),
+            _unique_peer_names,
+        ),
         # Names the progmem array that carries the gzipped control page. Only
         # emitted when web_control is on; harmless when it isn't.
         cv.GenerateID(CONF_WEB_PAGE_DATA_ID): cv.declare_id(cg.uint8),
@@ -586,6 +646,26 @@ async def to_code(config):
         # request path a plain string equality.
         for allowed in config[CONF_WEB_ALLOWED_HOSTS]:
             cg.add(var.add_web_allowed_host(allowed.lower()))
+
+        if config.get(CONF_PEERS):
+            cg.add_define("USE_BLE_KB_PEERS")
+            for peer in config[CONF_PEERS]:
+                cg.add(var.add_peer(peer[CONF_NAME], peer[CONF_URL],
+                                    peer[CONF_USERNAME], peer[CONF_PASSWORD]))
+            from esphome.components.esp32 import (
+                add_idf_sdkconfig_option,
+                include_builtin_idf_component,
+            )
+            # ESPHome leaves the HTTP client out of builds unless asked, and
+            # ESP-IDF compiles its login support out unless told otherwise.
+            include_builtin_idf_component("esp_http_client")
+            add_idf_sdkconfig_option("CONFIG_ESP_HTTP_CLIENT_ENABLE_BASIC_AUTH", True)
+            add_idf_sdkconfig_option("CONFIG_ESP_HTTP_CLIENT_ENABLE_DIGEST_AUTH", True)
+            # Peers are plain http, and the client's TLS side is most of what it
+            # costs in flash. Left alone when http_request is in the config,
+            # which may well need https.
+            if "http_request" not in CORE.config:
+                add_idf_sdkconfig_option("CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS", False)
 
         # Compress the control page into the firmware. Stored raw it was 243 KB
         # of flash — the single largest thing in the image, 15% of it — and the

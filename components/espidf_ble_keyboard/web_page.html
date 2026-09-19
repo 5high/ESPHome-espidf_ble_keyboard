@@ -249,6 +249,13 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
    that keeps it inside the 110px track when the platform font is wider than the one this
    was measured against. Roboto on a phone is not the desktop's sans-serif. */
 .host-btn .slot-addr{font-size:10px;display:block}
+/* Linked keyboards: one bar per keyboard, the one the remote drives outlined, and a
+   keyboard that has stopped answering greyed. The heading spans the whole grid. */
+.host-bar.targeted{border-color:var(--active);box-shadow:inset 0 0 0 1px var(--active)}
+.host-bar.down .host-btn{opacity:.45}
+.peer-head{grid-column:1/-1;font-size:11px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+.peer-head b{color:var(--fg);font-weight:600}
+.kb-drives{font-size:11px;font-weight:400;color:var(--muted);margin-left:8px}
 /* Deliberately NOT the host bar's 5-column grid: these are content-width labels, and
    forcing them into equal columns stretches short ones like Finder into slabs.
    flex-grow passes the toolbar's spare width down to the buttons instead. */
@@ -572,13 +579,14 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 </div>
 
 <div class="host-bar" id="host-bar" style="display:none"></div>
+<div id="peer-bars"></div>
 <div class="card" id="keyboard">
-<div class="kb-header"><span class="kb-title">Keyboard</span><div class="kb-paste"><textarea id="kb-paste-text" rows="1" maxlength="5000" placeholder="Paste text to type&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea><button class="kb-paste-btn" id="kb-paste-clip" title="Read clipboard &amp; type it" style="display:none">&#128203;</button><label class="kb-paste-auto" title="Type pasted text immediately"><input type="checkbox" id="kb-paste-autock">auto</label><button class="kb-paste-btn" id="kb-paste-send">Send</button></div><select id="layoutSel" class="layout-sel"></select></div>
+<div class="kb-header"><span class="kb-title">Keyboard<span class="kb-drives" hidden></span></span><div class="kb-paste"><textarea id="kb-paste-text" rows="1" maxlength="5000" placeholder="Paste text to type&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea><button class="kb-paste-btn" id="kb-paste-clip" title="Read clipboard &amp; type it" style="display:none">&#128203;</button><label class="kb-paste-auto" title="Type pasted text immediately"><input type="checkbox" id="kb-paste-autock">auto</label><button class="kb-paste-btn" id="kb-paste-send">Send</button></div><select id="layoutSel" class="layout-sel"></select></div>
 <div id="kb-rows"></div>
 </div>
 
 <div class="card" id="mouse-card">
-<h2><svg viewBox="0 0 24 24"><path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/></svg>Mouse</h2>
+<h2><svg viewBox="0 0 24 24"><path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/></svg>Mouse<span class="kb-drives" hidden></span></h2>
 <div class="touchpad" id="touchpad"><span class="touchpad-hint">Drag to move</span></div>
 <div class="mbtn-row">
 <button class="mbtn" id="ml">Left</button>
@@ -1272,30 +1280,41 @@ setZoom(parseInt(localStorage.getItem('blekb_zoom'))||100);
 const sdot=document.getElementById('sdot');
 const stxt=document.getElementById('stxt');
 const dname=document.getElementById('dname');
+// The badge, the name beside it and the panels — for this keyboard, or for the
+// linked one the remote drives, whose /status comes inside its cached /state.
+function showStatus(d){
+  const c=d.connected,p=d.paired;
+  // A slot marked as never advertising is not disconnected — there is nothing
+  // for it to connect to. Saying "Disconnected" there reads as a fault.
+  const noBle=d.broadcast===false;
+  sdot.className='status-dot'+(noBle?'':p?' paired':c?' connected':'');
+  stxt.className='status-text'+((!noBle&&(c||p))?' on':'');
+  stxt.textContent=noBle?'No BLE':p?'Paired':c?'Connected':'Disconnected';
+  if(d.device_name){dname.textContent='('+d.device_name+')';document.title=d.device_name+(POPOUT?' — Remote':' — BLE Control')}
+  // Whatever the style on screen asked for. Sent on every tick rather than
+  // only when it changes: the map is a handful of short strings, and the
+  // comparison to avoid re-painting them would cost more than the paint.
+  if(window.applyLcd)window.applyLcd(d.lcd||null);
+}
+function showOffline(text){
+  sdot.className='status-dot';
+  stxt.className='status-text';
+  stxt.textContent=text;
+}
+let LOCAL_NAME='';
 function pollStatus(){
   fetch('/api/ble_keyboard/status').then(r=>r.json()).then(d=>{
-    const c=d.connected,p=d.paired;
-    // A slot marked as never advertising is not disconnected — there is nothing
-    // for it to connect to. Saying "Disconnected" there reads as a fault.
-    const noBle=d.broadcast===false;
-    sdot.className='status-dot'+(noBle?'':p?' paired':c?' connected':'');
-    stxt.className='status-text'+((!noBle&&(c||p))?' on':'');
-    stxt.textContent=noBle?'No BLE':p?'Paired':c?'Connected':'Disconnected';
-    if(d.device_name){dname.textContent='('+d.device_name+')';document.title=d.device_name+(POPOUT?' — Remote':' — BLE Control')}
+    LOCAL_NAME=d.device_name||'';
     // Hide the ha_action preset when the YAML opt-in is off, so nobody
     // composes an action that would only log a warning. By class and on every
     // poll: the Host Actions dropdown mirrors the macro list's innerHTML, so
     // copies appear later than any single load-time pass would catch.
     document.querySelectorAll('option.ha-preset').forEach(o=>{o.disabled=!d.ha_action;o.style.display=d.ha_action?'':'none'});
-    // Whatever the style on screen asked for. Sent on every tick rather than
-    // only when it changes: the map is a handful of short strings, and the
-    // comparison to avoid re-painting them would cost more than the paint.
-    if(window.applyLcd)window.applyLcd(d.lcd||null);
-  }).catch(()=>{
-    sdot.className='status-dot';
-    stxt.className='status-text';
-    stxt.textContent='Offline';
-  });
+    // Only a keyboard with peers: in its YAML says so, and only that one is asked.
+    if(d.peers>0&&window.startPeers)window.startPeers();
+    else if(peerLock()!==null&&window.dropPeerLock)window.dropPeerLock();
+    if(peerLock()===null)showStatus(d);
+  }).catch(()=>{if(peerLock()===null)showOffline('Offline')});
 }
 pollEvery(pollStatus,3000);
 
@@ -1753,20 +1772,44 @@ function styleSlot(d){return typeof d.style_slot==='number'?d.style_slot:d.activ
 // never both; a host wins if an address somehow carries the two.
 const lockId=v=>(v&&v!=='auto'&&/^[a-z0-9_]{1,15}$/.test(v))?v:null;
 const lockHost=v=>(typeof v==='string'&&/^\d$/.test(v))?Number(v):(typeof v==='number'&&v>=0&&v<=9?v:null);
-let RMT_HOST=lockHost(new URLSearchParams(location.search).get('host'));
-let RMT_LOCK=RMT_HOST===null?lockId(new URLSearchParams(location.search).get('style')):null;
+// ?peer=<name> makes the remote a linked keyboard's: its host's style and lists,
+// and every key sent there as peer:<name>:<key> for this keyboard to pass on.
+// Named as the YAML's peers: names it. Excludes the other two, and wins over them.
+const lockPeer=v=>(typeof v==='string'&&/^[a-z0-9_]{1,15}$/.test(v))?v:null;
+let RMT_PEER=lockPeer(new URLSearchParams(location.search).get('peer'));
+let RMT_HOST=RMT_PEER===null?lockHost(new URLSearchParams(location.search).get('host')):null;
+let RMT_LOCK=RMT_HOST===null&&RMT_PEER===null?lockId(new URLSearchParams(location.search).get('style')):null;
 function styleLock(){return RMT_LOCK}
 function hostLock(){return RMT_HOST}
+function peerLock(){return RMT_PEER}
+// The linked keyboards as /peers last described them, by name. Each holds its
+// own /state under `state`, or null before its first answer.
+let PEERS={};
+function peerState(){const p=RMT_PEER!==null&&PEERS[RMT_PEER];return (p&&p.state)||null}
+// A host just tapped on a linked keyboard, until its cached state shows the
+// switch — a few seconds, since this keyboard reads the other on a timer. Until
+// then the remote stays in the tapped host's style instead of flicking back, and
+// the old host's lists are not applied to it.
+let PEER_PENDING=null;
+function peerListsState(){
+  const st=peerState();
+  if(!st||!st.hosts)return null;
+  const p=PEER_PENDING;
+  if(p&&p.name===RMT_PEER&&Date.now()<p.until&&st.hosts.active!==p.slot)return null;
+  return st;
+}
 // A function declaration so it is a property of window: the pop-out calls it on
 // the pop-up window it opened, which has an address of its own. kind is 'style',
-// 'host', or anything else to follow the host again.
+// 'host', 'peer', or anything else to follow the host again.
 function setTabLock(kind,value){
+  RMT_PEER=kind==='peer'?lockPeer(value):null;
   RMT_HOST=kind==='host'?lockHost(value):null;
   RMT_LOCK=kind==='style'?lockId(value):null;
   try{
     const u=new URL(location.href);
-    u.searchParams.delete('style');u.searchParams.delete('host');
-    if(RMT_HOST!==null)u.searchParams.set('host',RMT_HOST);
+    u.searchParams.delete('style');u.searchParams.delete('host');u.searchParams.delete('peer');
+    if(RMT_PEER!==null)u.searchParams.set('peer',RMT_PEER);
+    else if(RMT_HOST!==null)u.searchParams.set('host',RMT_HOST);
     else if(RMT_LOCK)u.searchParams.set('style',RMT_LOCK);
     history.replaceState(history.state,'',u);
   }catch(e){}
@@ -1774,7 +1817,7 @@ function setTabLock(kind,value){
 // The same lock as it goes in an address, for the pop-out to carry along. Built
 // from the checked values, never copied from location.search.
 function tabLockQuery(){
-  return RMT_HOST!==null?'?host='+RMT_HOST:(RMT_LOCK?'?style='+RMT_LOCK:'');
+  return RMT_PEER!==null?'?peer='+RMT_PEER:RMT_HOST!==null?'?host='+RMT_HOST:(RMT_LOCK?'?style='+RMT_LOCK:'');
 }
 // The slot the remote is drawn from in this tab: the page's host when the tab
 // shows one the device has, otherwise whatever styleSlot says.
@@ -1791,10 +1834,13 @@ function pageSlotQuery(){return RMT_HOST!==null?'?slot='+RMT_HOST:''}
 // and a forced redraw would repaint it for no reason.
 function refreshActiveTemplate(force){
   return loadCustomTpls()
-    .then(()=>fetch('/api/ble_keyboard/hosts').then(r=>r.json()))
-    .then(d=>{
-      const a=(d.slots||[]).find(s=>s.slot===drawSlot(d));
-      if(window.applyTemplate)window.applyTemplate((a&&a.tpl)||'default',force!==false);
+    .then(()=>{
+      // A linked keyboard's style comes from its cached state, not from /hosts.
+      if(peerLock()!==null){if(window.applyPeerTarget)window.applyPeerTarget(force!==false);return}
+      return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
+        const a=(d.slots||[]).find(s=>s.slot===drawSlot(d));
+        if(window.applyTemplate)window.applyTemplate((a&&a.tpl)||'default',force!==false);
+      });
     }).catch(()=>{});
 }
 
@@ -2191,6 +2237,35 @@ function svgToIcon(text){
   return {rec:rec,len:len,notes:notes};
 }
 
+// One slot of a /hosts reply as a host-bar button, for this keyboard's bar and
+// for each linked keyboard's alike. The caller adds what a tap does.
+function hostBtn(s,active){
+  const b=document.createElement('button');
+  b.className='host-btn'+(active?' active':'')+(s.occupied?' occupied':'');
+  // Built as nodes rather than markup: s.name is the YAML button's name,
+  // so it is whatever the user typed. Through innerHTML a host called
+  // "Work & Home" rendered wrong and "TV <office>" lost its label to an
+  // unknown tag. Every other user string on this page already goes through
+  // textContent — this was the one that got missed.
+  //
+  // Prefer the stable identity so this matches the host MAC sensor and the
+  // address the phone shows for itself; s.addr rotates on Android.
+  const lbl=document.createElement('span');
+  lbl.className='slot-label';
+  lbl.textContent=s.name||('Host '+(s.slot+1));
+  b.appendChild(lbl);
+  // Its own element rather than a bare text node, so the address can be sized
+  // independently of the name — see .slot-addr.
+  const addr=document.createElement('span');
+  addr.className='slot-addr';
+  // A slot that never advertises has no host and never will, so neither an
+  // address nor "Empty" is the truth about it — "Empty" reads as a slot
+  // waiting to be paired.
+  addr.textContent=s.broadcast===false?'No BLE':(s.occupied?(s.identity||s.addr):'Empty');
+  b.appendChild(addr);
+  return b;
+}
+
 // ── Host Switcher ──
 (function(){
   const bar=document.getElementById('host-bar');
@@ -2200,6 +2275,17 @@ function svgToIcon(text){
       if(txt===lastHostsRaw)return;
       lastHostsRaw=txt;
       const d=JSON.parse(txt);
+      // Outlined only when there is another keyboard's bar to tell it from.
+      const linked=Object.keys(PEERS).length>0;
+      bar.classList.toggle('targeted',linked&&peerLock()===null);
+      // A tab driving a linked keyboard draws that one's remote; this keyboard's
+      // hosts are only shown, and the Host Actions card below still edits them.
+      if(peerLock()!==null){
+        if(window.onHostSwitched)window.onHostSwitched(styleSlot(d));
+        if(window.onHostsChanged)window.onHostsChanged(d);
+        drawBar(d,linked);
+        return;
+      }
       // Before the single-slot early return below: a one-host device still has
       // a hidden set and a repeat set to apply, and the active slot may have
       // changed.
@@ -2240,34 +2326,51 @@ function svgToIcon(text){
       // And that a host's style may have been changed from somewhere else, so its
       // row doesn't go on naming the old one — which + and − would step from.
       if(window.onHostsChanged)window.onHostsChanged(d);
-      if(!d.slots||d.slots.length<=1){bar.style.display='none';return}
+      drawBar(d,linked);
+    }).catch(()=>{
+      // A request that didn't arrive says nothing about the hosts: they are all
+      // still paired, and the bar already on screen is still right. Hiding it on
+      // any failure is what made the host buttons vanish for the rest of the
+      // session — the next answer is byte for byte the last one, so the guard at
+      // the top returns before ever reaching the line that shows the bar again,
+      // and only a reload brought them back. Measured: one dropped /hosts, gone
+      // until refresh. One dropped request is not rare on a device that is also
+      // serving a popped-out remote polling the same endpoint.
+      //
+      // So leave what is drawn alone, and clear the memo instead, which is what
+      // lets the next answer rebuild the bar whether or not anything changed.
+      // Only a bar that has never been filled stays hidden, which is the state
+      // the markup starts in anyway.
+      lastHostsRaw=null;
+      if(!bar.querySelector('.host-btn'))bar.style.display='none';
+    });
+  }
+  function drawBar(d,linked){
+      // One host is nothing to switch between — unless there is a linked
+      // keyboard, when it is the way back to this one.
+      if(!d.slots||(d.slots.length<=1&&!linked)){bar.style.display='none';return}
       bar.style.display='';
       bar.innerHTML='';
+      if(linked){
+        const head=document.createElement('div');
+        head.className='peer-head';
+        const nm=document.createElement('b');
+        nm.textContent=LOCAL_NAME||'This keyboard';
+        head.appendChild(nm);
+        bar.appendChild(head);
+      }
       d.slots.forEach(s=>{
-        const b=document.createElement('button');
-        b.className='host-btn'+(s.slot===d.active?' active':'')+(s.occupied?' occupied':'');
-        // Built as nodes rather than markup: s.name is the YAML button's name,
-        // so it is whatever the user typed. Through innerHTML a host called
-        // "Work & Home" rendered wrong and "TV <office>" lost its label to an
-        // unknown tag. Every other user string on this page already goes through
-        // textContent — this was the one that got missed.
-        //
-        // Prefer the stable identity so this matches the host MAC sensor and the
-        // address the phone shows for itself; s.addr rotates on Android.
-        const lbl=document.createElement('span');
-        lbl.className='slot-label';
-        lbl.textContent=s.name||('Host '+(s.slot+1));
-        b.appendChild(lbl);
-        // Its own element rather than a bare text node, so the address can be sized
-        // independently of the name — see .slot-addr.
-        const addr=document.createElement('span');
-        addr.className='slot-addr';
-        // A slot that never advertises has no host and never will, so neither an
-        // address nor "Empty" is the truth about it — "Empty" reads as a slot
-        // waiting to be paired.
-        addr.textContent=s.broadcast===false?'No BLE':(s.occupied?(s.identity||s.addr):'Empty');
-        b.appendChild(addr);
+        const b=hostBtn(s,s.slot===d.active);
         onTap(b,()=>{
+          // Back from a linked keyboard: this tab follows this one's host again.
+          // The memo is dropped so the answer re-applies this keyboard's lists
+          // even when its hosts have not changed since they were last read.
+          if(peerLock()!==null){
+            setTabLock('');
+            lastHostsRaw=null;
+            if(window.onStyleLock)window.onStyleLock('');
+            if(window.onTargetChanged)window.onTargetChanged();
+          }
           // Mark the new host at once, then re-read as soon as the device has
           // taken the switch. Without this the page waited for the next 5s poll
           // to pick up the new host's style and hidden/repeat/hold sets, while
@@ -2288,31 +2391,161 @@ function svgToIcon(text){
         },'active');
         bar.appendChild(b);
       });
-    }).catch(()=>{
-      // A request that didn't arrive says nothing about the hosts: they are all
-      // still paired, and the bar already on screen is still right. Hiding it on
-      // any failure is what made the host buttons vanish for the rest of the
-      // session — the next answer is byte for byte the last one, so the guard at
-      // the top returns before ever reaching the line that shows the bar again,
-      // and only a reload brought them back. Measured: one dropped /hosts, gone
-      // until refresh. One dropped request is not rare on a device that is also
-      // serving a popped-out remote polling the same endpoint.
-      //
-      // So leave what is drawn alone, and clear the memo instead, which is what
-      // lets the next answer rebuild the bar whether or not anything changed.
-      // Only a bar that has never been filled stays hidden, which is the state
-      // the markup starts in anyway.
-      lastHostsRaw=null;
-      if(!bar.querySelector('.host-btn'))bar.style.display='none';
-    });
   }
   pollEvery(loadHosts,5000);
   // For a change this page just made to the hosts: reading them at once is what
   // writes the storage key below, so every other tab hears of it now too.
   window.reloadHosts=loadHosts;
+  // The remote moved between keyboards: redraw the bar and, back on this one,
+  // re-apply its style and lists even though its hosts are unchanged.
+  window.reloadHostsNow=function(){lastHostsRaw=null;loadHosts()};
   // The other window says the hosts moved: read them now rather than waiting for
   // the next poll. lastHostsRaw makes this free when nothing actually changed.
   window.addEventListener('storage',e=>{if(e.key==='blekb_rmt_hosts')loadHosts()});
+})();
+
+// ── Linked keyboards ──
+// Each keyboard under peers: in the YAML gets a bar of its own below this one's,
+// drawn from the copy of its /state that this keyboard keeps while a page asks.
+// Tapping one of its hosts moves this tab's remote onto it (?peer= in the
+// address), and every key then goes out as peer:<name>:<key> for this keyboard
+// to pass on. Only the remote moves: keyboard, mouse and Host Actions stay here.
+(function(){
+  const wrap=document.getElementById('peer-bars');
+  let order=[],started=false,firstAnswer=true;
+  const ago=s=>s<60?s+'s ago':Math.round(s/60)+' min ago';
+  const styleOf=(st,slot)=>{const s=((st.hosts&&st.hosts.slots)||[]).find(x=>x.slot===slot);return (s&&s.tpl)||'default'};
+  const pending=name=>PEER_PENDING&&PEER_PENDING.name===name&&Date.now()<PEER_PENDING.until;
+  // The host whose style the remote shows: the one just tapped, until the
+  // other keyboard's state catches up with it.
+  const drawnSlot=(name,st)=>pending(name)?PEER_PENDING.slot:styleSlot(st.hosts);
+  function soon(){setTimeout(loadPeers,1200);setTimeout(loadPeers,3000)}
+  function render(){
+    wrap.innerHTML='';
+    order.forEach(name=>{
+      const p=PEERS[name],st=p.state;
+      const bar=document.createElement('div');
+      bar.className='host-bar'+(RMT_PEER===name?' targeted':'')+(p.ok?'':' down');
+      const head=document.createElement('div');
+      head.className='peer-head';
+      const nm=document.createElement('b');
+      nm.textContent=(st&&st.status&&st.status.device_name)||name;
+      head.appendChild(nm);
+      const note=document.createElement('span');
+      if(!st)note.textContent=p.ok?'':'waiting for it to answer';
+      else if(!p.ok)note.textContent='not answering'+(p.age>=0?' — last heard '+ago(p.age):'');
+      else{
+        // The style comes from this keyboard's own list, so one it lacks draws
+        // the full remote instead. Styles are copied across by hand.
+        const id=styleOf(st,drawnSlot(name,st));
+        if(id!=='default'&&RMT_CUSTOM_LOADED&&!tplById(id))
+          note.textContent='style '+id+" isn't on this keyboard — Export it there and Import it here";
+      }
+      if(note.textContent)head.appendChild(note);
+      bar.appendChild(head);
+      if(st&&st.hosts&&st.hosts.slots){
+        const act=pending(name)?PEER_PENDING.slot:st.hosts.active;
+        st.hosts.slots.forEach(s=>{
+          const b=hostBtn(s,s.slot===act);
+          onTap(b,()=>pick(name,s,st),'active');
+          bar.appendChild(b);
+        });
+      }
+      wrap.appendChild(bar);
+    });
+  }
+  function pick(name,s,st){
+    if(RMT_PEER!==name){
+      setTabLock('peer',name);
+      if(window.onStyleLock)window.onStyleLock('peer',name);
+    }
+    // Drawn now, inside the tap, for the same reason this keyboard's own host
+    // bar does: a popped-out window can only be resized to it during a gesture.
+    if(window.applyTemplate)window.applyTemplate(s.tpl||'default');
+    if(window.onRemoteFitNow)window.onRemoteFitNow();
+    // Its host already: just drive it. Switching to the slot a keyboard is on
+    // would drop that host's link and reconnect it for nothing.
+    if(s.slot!==st.hosts.active){
+      PEER_PENDING={name:name,slot:s.slot,until:Date.now()+12000};
+      // apiPost, not api(): a switch is not a key, and the recorder leaves
+      // switches out on this keyboard's own bar too.
+      apiPost('press',{action:'peer:'+name+':switch_host:'+s.slot}).catch(()=>{});
+      // That keyboard is read again straight after a press is passed on, so
+      // ask sooner than the poll would.
+      soon();
+    }
+    window.onTargetChanged();
+  }
+  function loadPeers(){
+    fetch('/api/ble_keyboard/peers').then(r=>r.ok?r.json():null).then(d=>{
+      // A 409 is the device short of memory right now; keep what is on screen.
+      if(!d||!Array.isArray(d.peers))return;
+      const next={};order=[];
+      d.peers.forEach(p=>{next[p.name]=p;order.push(p.name)});
+      PEERS=next;
+      if(RMT_PEER!==null&&!PEERS[RMT_PEER]){window.dropPeerLock();return}
+      render();
+      if(RMT_PEER!==null)window.applyPeerTarget(false);
+      if(firstAnswer){
+        firstAnswer=false;
+        // This keyboard's bar gains its heading and outline, and is shown even
+        // with one host, as the way back.
+        if(window.reloadHostsNow)window.reloadHostsNow();
+        // This keyboard only starts reading them once asked, so the first answer
+        // is usually empty. Ask again soon rather than in five seconds.
+        if(order.some(n=>!PEERS[n].state))soon();
+      }
+    }).catch(()=>{});
+  }
+  window.startPeers=function(){
+    if(started)return;
+    started=true;
+    pollEvery(loadPeers,5000);
+  };
+  // The remote, the badge and the lists for the linked keyboard this tab drives.
+  window.applyPeerTarget=function(force){
+    if(RMT_PEER===null)return;
+    drivesNote();  // this keyboard's name may have arrived since the tab moved
+    const p=PEERS[RMT_PEER],st=p&&p.state;
+    if(p&&!p.ok){showOffline('Not answering');dname.textContent='('+RMT_PEER+')'}
+    else if(st&&st.status)showStatus(st.status);
+    else{showOffline('Connecting…');dname.textContent='('+RMT_PEER+')'}
+    if(!st||!st.hosts)return;
+    if(PEER_PENDING&&PEER_PENDING.name===RMT_PEER&&(st.hosts.active===PEER_PENDING.slot||Date.now()>=PEER_PENDING.until))
+      PEER_PENDING=null;
+    let drew=false;
+    if(window.applyTemplate)drew=window.applyTemplate(styleOf(st,drawnSlot(RMT_PEER,st)),force)===true;
+    if(window.applyHidden&&!drew)window.applyHidden(false);
+    if(window.applyRepeat)window.applyRepeat(false);
+    if(window.applyHold)window.applyHold(false);
+  };
+  // Keyboard and mouse still type on this keyboard's own host; say so while
+  // the remote beside them drives another one.
+  function drivesNote(){
+    document.querySelectorAll('.kb-drives').forEach(el=>{
+      el.hidden=RMT_PEER===null;
+      el.textContent='→ '+(LOCAL_NAME||'this keyboard');
+      el.title="The remote is driving "+RMT_PEER+". The keyboard and mouse still type on this keyboard's own host.";
+    });
+  }
+  // The tab moved onto, off, or between keyboards.
+  window.onTargetChanged=function(){
+    render();
+    drivesNote();
+    if(window.onTabLockChanged)window.onTabLockChanged();
+    if(window.reloadHostsNow)window.reloadHostsNow();
+    if(RMT_PEER!==null)window.applyPeerTarget(true);
+    else pollStatus();
+  };
+  // An address naming a keyboard this one does not link to falls back to
+  // following this keyboard's host, as a ?host= for a missing slot does.
+  window.dropPeerLock=function(){
+    PEER_PENDING=null;
+    setTabLock('');
+    if(window.onStyleLock)window.onStyleLock('');
+    window.onTargetChanged();
+  };
+  drivesNote();
 })();
 
 // `alternate:` owns the whole chain (it splits the '|' itself), so its preset
@@ -3035,7 +3268,10 @@ function appendStep(el,val){
       .concat(Object.keys(slotTpl).map(Number).sort((a,b)=>a-b)
         .map(s=>({kind:'host',value:s,name:(slotNames[s]||('Host '+(s+1)))+' page'})))
       .concat(allTemplates().map(t=>({kind:'style',value:t.id,name:t.name+(t.custom?' (custom)':'')})));
-    const h=hostLock(),k=styleLock();
+    const h=hostLock(),k=styleLock(),p=peerLock();
+    // Driving a linked keyboard is chosen from the host bar, not here; stepping
+    // from it starts the list over on this keyboard.
+    if(p!==null){lockIdx=-1;if(lockName)lockName.textContent=p+' (linked keyboard)';return}
     lockIdx=lockOpts.findIndex(o=>h!==null?(o.kind==='host'&&o.value===h)
                                           :(k?(o.kind==='style'&&o.value===k):o.kind===''));
     if(!lockName)return;
@@ -3062,8 +3298,11 @@ function appendStep(el,val){
     if(window.applyRepeat)window.applyRepeat(true);
     if(window.applyHold)window.applyHold(true);
     if(window.onStyleLock)window.onStyleLock(o.kind,o.value);
+    if(window.onTargetChanged)window.onTargetChanged();
     tplNote('');
   }
+  // The host bar moved this tab onto or off a linked keyboard.
+  window.onTabLockChanged=fillLockSel;
   if(lockPrev)lockPrev.addEventListener('click',()=>stepLock(-1));
   if(lockNext)lockNext.addEventListener('click',()=>stepLock(1));
 
@@ -4760,11 +4999,14 @@ buildKeyboard();
   function stopRepeat(){if(ri){clearInterval(ri);ri=null}if(rt){clearTimeout(rt);rt=null}}
   // Tracks the button currently held down on the host, so the release is sent
   // exactly once however the press ends (up, cancel, or a flick off the card).
-  let holdEl=null;
+  let holdEl=null,holdPeer=null;
   function endHold(){
     if(!holdEl)return;
     holdEl.classList.remove('held');holdEl=null;
-    apiPost('release').catch(()=>{});
+    // Released where it went down, even if the tab has moved on since.
+    if(holdPeer!==null)apiPost('press',{action:'peer:'+holdPeer+':release'}).catch(()=>{});
+    else apiPost('release').catch(()=>{});
+    holdPeer=null;
   }
   // Puts a button down on the host and keeps it there. Shared by the pointer
   // and keyboard paths so the fallback exists once: 400 means this host
@@ -4773,6 +5015,11 @@ buildKeyboard();
   function startHold(el,act){
     endHold();  // a second finger, or a second key: only one hold at a time
     holdEl=el;el.classList.add('held');
+    holdPeer=peerLock();
+    // On a linked keyboard the hold is its hold: action. There is no answer to
+    // wait for — this keyboard only passes it on — and the far side already
+    // falls back to a press for anything that cannot be held.
+    if(holdPeer!==null){apiPost('press',{action:'peer:'+holdPeer+':hold:'+act}).catch(()=>{});return}
     const drop=()=>{el.classList.remove('held');if(holdEl===el)holdEl=null};
     apiPost('hold_action',{action:onPage(act)})
       .then(r=>{if(!r.ok){drop();press(act)}})
@@ -4780,9 +5027,13 @@ buildKeyboard();
   }
   // A key as it goes to the device. On a tab showing a host's page it is that
   // host's Host Action — the device runs the key as an ordinary press when that
-  // host has nothing set for it. Wrapped here, at the one place presses leave, so
-  // the macro recorder captures the same thing and a replay does the same.
-  function onPage(a){const h=hostLock();return h===null?a:'host_action:'+h+':'+a}
+  // host has nothing set for it. On a tab driving a linked keyboard it is passed
+  // on to that one. Wrapped here, at the one place presses leave, so the macro
+  // recorder captures the same thing and a replay does the same.
+  function onPage(a){
+    const p=peerLock();if(p!==null)return 'peer:'+p+':'+a;
+    const h=hostLock();return h===null?a:'host_action:'+h+':'+a;
+  }
   function press(a){api('press',{action:onPage(a)})}
   // `fired` is what keeps hold and tap from both counting: once the hold timer
   // has sent anything, pointerup must NOT send its usual press on release.
@@ -4879,17 +5130,22 @@ buildKeyboard();
   // ── Per-host hold-to-repeat ──
   // Timing lives on the device so it follows the host rather than the browser
   // that set it; the repeat itself is driven here, one ordinary press per tick.
+  // Each of the three per-host lists comes from its own endpoint for this
+  // keyboard, and from the cached /state of a linked one the tab drives — the
+  // same objects either way, so one function applies both.
   let lastRptKey=null;
+  function useRepeat(d,force){
+    const key=d.slot+':'+(d.set?1:0)+':'+d.delay+':'+d.rate+':'+(d.buttons||[]).join(',');
+    if(!force&&key===lastRptKey)return;
+    lastRptKey=key;
+    // set:false means this host was never configured — back to data-repeat.
+    rptSet=d.set?(d.buttons||[]):null;
+    rptDelay=d.delay||400;rptRate=d.rate||180;
+    stopRepeat();  // a rate change mid-hold would otherwise keep the old one
+  }
   window.applyRepeat=function(force){
-    fetch('/api/ble_keyboard/repeat'+pageSlotQuery()).then(r=>r.json()).then(d=>{
-      const key=d.slot+':'+(d.set?1:0)+':'+d.delay+':'+d.rate+':'+(d.buttons||[]).join(',');
-      if(!force&&key===lastRptKey)return;
-      lastRptKey=key;
-      // set:false means this host was never configured — back to data-repeat.
-      rptSet=d.set?(d.buttons||[]):null;
-      rptDelay=d.delay||400;rptRate=d.rate||180;
-      stopRepeat();  // a rate change mid-hold would otherwise keep the old one
-    }).catch(()=>{});
+    if(peerLock()!==null){const s=peerListsState();if(s&&s.repeat)useRepeat(s.repeat,force);return}
+    fetch('/api/ble_keyboard/repeat'+pageSlotQuery()).then(r=>r.json()).then(d=>useRepeat(d,force)).catch(()=>{});
   };
   window.applyRepeat(true);
 
@@ -4897,14 +5153,16 @@ buildKeyboard();
   // Which buttons stay down while held, for this host. Unlike the repeat set
   // this one has no markup fallback: an unconfigured host holds nothing.
   let lastHldKey=null;
+  function useHold(d,force){
+    const key=d.slot+':'+(d.buttons||[]).join(',');
+    if(!force&&key===lastHldKey)return;
+    lastHldKey=key;
+    hldSet=d.buttons||[];
+    endHold();  // whatever was held belonged to the old set
+  }
   window.applyHold=function(force){
-    fetch('/api/ble_keyboard/hold'+pageSlotQuery()).then(r=>r.json()).then(d=>{
-      const key=d.slot+':'+(d.buttons||[]).join(',');
-      if(!force&&key===lastHldKey)return;
-      lastHldKey=key;
-      hldSet=d.buttons||[];
-      endHold();  // whatever was held belonged to the old set
-    }).catch(()=>{});
+    if(peerLock()!==null){const s=peerListsState();if(s&&s.hold)useHold(s.hold,force);return}
+    fetch('/api/ble_keyboard/hold'+pageSlotQuery()).then(r=>r.json()).then(d=>useHold(d,force)).catch(()=>{});
   };
   window.applyHold(true);
 
@@ -4943,7 +5201,10 @@ buildKeyboard();
   // left empty so no stray label or divider is stranded behind them.
   let lastHiddenKey=null;
   window.applyHidden=function(force){
-    fetch('/api/ble_keyboard/hidden'+pageSlotQuery()).then(r=>r.json()).then(d=>{
+    if(peerLock()!==null){const s=peerListsState();if(s&&s.hidden)useHidden(s.hidden,force);return}
+    fetch('/api/ble_keyboard/hidden'+pageSlotQuery()).then(r=>r.json()).then(d=>useHidden(d,force)).catch(()=>{});
+  };
+  function useHidden(d,force){
       const key=d.slot+':'+(d.hidden||[]).join(',');
       if(!force&&key===lastHiddenKey)return;
       lastHiddenKey=key;
@@ -4981,8 +5242,7 @@ buildKeyboard();
       // around the remote has to be measured against THIS layout, not the one
       // before the host's hidden buttons were taken out of it.
       if(window.onRemoteResize)window.onRemoteResize();
-    }).catch(()=>{});
-  };
+  }
 
   // ── Per-host remote style ──
   // Draws the remote from a template. Every gesture is delegated from
@@ -5304,7 +5564,7 @@ buildKeyboard();
     // through drawTemplate directly and is deliberately never remembered.
     // Nor is a kept style or a host's page: the memory is shared by every tab,
     // and a tab that follows the host would come up in it on its next reload.
-    if(!lk&&hostLock()===null)rememberTemplate(t);
+    if(!lk&&hostLock()===null&&peerLock()===null)rememberTemplate(t);
     // Says it drew, so the caller knows the hidden set has already been applied
     // (forced, inside) and need not ask for it a second time.
     return true;
@@ -5334,7 +5594,8 @@ buildKeyboard();
   if(lock&&(!seed||seed.id!==lock))seed=RMT_BUILTIN.find(b=>b.id===lock)||null;
   // A host's page: which style that is comes with /hosts, so there is nothing
   // to go on yet — and the shared memory belongs to tabs following the host.
-  if(hostLock()!==null)seed=null;
+  // A linked keyboard's likewise waits for /peers.
+  if(hostLock()!==null||peerLock()!==null)seed=null;
   if(seed){
     // Straight to drawTemplate, and the tracking set by hand, so the answer
     // below — which is nearly always this same style — finds nothing to redo.

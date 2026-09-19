@@ -313,6 +313,7 @@ binary_sensor:
 * **web_host_check** (Optional, bool): Refuse requests addressed to a host name this device does not answer to. An IP address, any `.local` name, and any name with no dot in it (a short DHCP host name) all pass; add anything else with `web_allowed_hosts`. Defaults to `true`. This is what stops a website re-pointing its own domain at your device and having your browser drive the keyboard from there, so leave it on unless a reverse proxy needs otherwise. See [Securing the web control page](#securing-the-web-control-page).
 * **web_allowed_hosts** (Optional, string or list): Extra host names that count as this device — a reverse proxy's domain, a DNS entry, whatever your setup uses. Names here are trusted as fully as the device's own address, so list only ones you control. Ignored when `web_host_check` is `false`.
 * **web_allow_framing** (Optional, bool): Allow the page to be shown inside a frame — an `iframe` card on a dashboard, for instance. Defaults to `false`, because a framed page is still on its own origin: every same-origin check the device makes is satisfied while the click that triggered it belongs to whoever built the frame. Turn it on only for a dashboard you run yourself.
+* **peers** (Optional, list): Other keyboards running this component that this one's web page can drive over Wi-Fi — see [Linking a second keyboard](#linking-a-second-keyboard). Up to 4, each with a `name` (1–15 of `a-z`, `0-9`, `_`), a `url` (`http://<address>[:port]`, no path) and, when that keyboard's `web_server:` has a login, its `username` and `password`. Needs `web_control: true`.
 * **api_services** (Optional, bool): Auto-register all documented Home Assistant services (`run_action`, `run_macro`, `send_string`, `send_key`, `send_consumer`, `mouse_move`, `mouse_scroll`, `mouse_click`, `mouse_hold`, `mouse_release`, `mouse_abs`, `set_battery_level`, `switch_host`, `forget_host`) directly from the component — no `api: services:` yaml needed, and the HA cards work out of the box. Requires the `api:` component. Defaults to `false`. **Don't combine with the manual `api: services:` snippets below** — you'd register the same service names twice; delete the manual copies when enabling this. See [Home Assistant services](#home-assistant-services).
 * **ha_action** (Optional, bool): Allow the `ha_action:` prefix to fire Home Assistant actions from the device — how a remote key reaches things BLE can't, such as an IR blaster's `remote.send_command`. Requires the `api:` component (`api: homeassistant_services: true` is enabled automatically) and Home Assistant's own per-device permission. Defaults to `false` — the web page is unauthenticated unless you set that up, so this is a deliberate opt-in. See [Calling Home Assistant Actions](#calling-home-assistant-actions).
 * **host_slots** (Optional, int): Number of host slots for multi-host switching (1–10). Each slot can store a bonded host. Switch between hosts using buttons, HA services, or the web control page. Defaults to `4`.
@@ -540,6 +541,7 @@ espidf_ble_keyboard:
 | `"switch_host:next"` / `"switch_host:prev"` | Step to the next or previous host slot, wrapping around at the ends. Cycles through every configured slot, so an unpaired one is reached too (and advertises for pairing). Does nothing when only one slot is configured. |
 | `"switch_host:back"` | Return to the host slot that was active before the last switch, however that switch was made. Pressed again, it goes back again. |
 | `"host_action:N:<name>"` | Run host slot N's Host Action for `<name>` without switching to it. If slot N has no action for that name, it runs as an ordinary press on the active host. |
+| `"peer:<name>:<action>"` | Run `<action>` on a [linked keyboard](#linking-a-second-keyboard), exactly as its own page would — `peer:bedroom:volume_up`, `peer:bedroom:switch_host:1`. |
 | `"wait:connected"` / `"wait:connected:N"` | Pause a macro until the active host is connected and ready for keys, for at most N ms (default 10000, max 60000). On timeout the macro carries on. |
 | `"forget_host:N"` | Remove BLE bond for host slot N (0–9) and clear the slot. |
 | `"lcd:<text>"` | Put text on an [LCD panel](#lcd-panels)'s `@msg` line. Everything after the colon is the text. |
@@ -1396,6 +1398,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"switch_host:back"` | Return to the slot active before the last switch. See [Visiting another host and coming back](#multi-host-switching). |
 | `"prev_host"` / `"next_host"` / `"last_host"` | The same three as remote keys a style can place, remappable per host like any other. |
 | `"host_action:N:<name>"` | Run slot N's [Host Action](#host-actions-per-host-overrides) for `<name>` whichever host is active — `host_action:6:spare1`. A name slot N has no action for runs as an ordinary press. What a tab [showing a host's page](#remote-style-per-host) sends for every key. |
+| `"peer:<name>:<action>"` | Run an action on a [linked keyboard](#linking-a-second-keyboard). What a tab driving that keyboard sends for every key. |
 | `"wait:connected"` | Hold a macro until the active host is ready for keys, up to 10 s (`wait:connected:N` for N ms). |
 | `"forget_host:N"` | Remove the bond for host slot N (0–9). Clears the stored address and removes the BLE bond from the ESP32. If the forgotten host is currently connected, it is disconnected. |
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
@@ -2002,6 +2005,30 @@ The same remote-only view is at `http://<device>/ble_keyboard#remote` — bookma
 
 If the browser refuses the on-top window for any other reason, the remote opens as an ordinary window and the placeholder shows why.
 
+### Linking a second keyboard
+
+When one keyboard can't reach every host — Bluetooth range, a second room — put another ESP32 running this component near the rest, and let the first one's page drive both. List the second under `peers:`:
+
+```yaml
+espidf_ble_keyboard:
+  web_control: true
+  peers:
+    - name: bedroom
+      url: http://192.168.1.36
+      username: !secret bedroom_web_user      # its web_server auth, if it has one
+      password: !secret bedroom_web_password
+```
+
+The page then shows a bar of that keyboard's hosts below its own. Tap one and the remote switches that keyboard to it and drives it, in that host's style with its hidden, hold and repeat lists. Tap one of this keyboard's hosts to come back. The choice belongs to the tab (`?peer=bedroom` in the address), so one tab can drive the bedroom while another drives the lounge.
+
+- Only the remote moves. Keyboard, mouse and Host Actions stay on this keyboard, and the linked one's settings stay on its own page.
+- Styles are not copied between keyboards. Export one on the linked keyboard's page and Import it here; until then that host draws the full remote, and its bar says which style is missing.
+- Both keyboards need firmware with this feature.
+- Give the address as an IP or a `.local` name. A name with a dot in it, like `bedroom.lan`, goes in the linked keyboard's [`web_allowed_hosts`](#securing-the-web-control-page) too.
+- A macro or button reaches it the same way, with [`peer:bedroom:<action>`](#action-reference).
+
+**Anyone who can use this keyboard's page can drive the linked one**, because its login is stored in this keyboard's firmware.
+
 ### Backup and restore
 
 Macros, host actions and `mouse_goto` calibration only exist in the device's NVS — none of it is in your YAML. An NVS erase, a re-flash that clears storage, or a board swap loses the lot, and the calibration in particular is tedious to redo. The **Backup** and **Restore** buttons next to the **Host Actions** heading save and re-apply all of it as a single JSON file.
@@ -2055,6 +2082,8 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/goto_scale` | POST | `v` / `vx` / `vy` (scale), `save=1`, `reset=1` | Set `mouse_goto` calibration live (persist per host with `save`) |
 | `/api/ble_keyboard/goto_last` | GET | — | Last `mouse_goto` target (Windows coords) |
 | `/api/ble_keyboard/status` | GET | — | Returns `{"connected":bool,"paired":bool,"device_name":"..."}` |
+| `/api/ble_keyboard/state` | GET | — | `/hosts`, `/status` and the drawn host's `/hidden`, `/repeat` and `/hold` replies in one object — what a [linked keyboard](#linking-a-second-keyboard) reads |
+| `/api/ble_keyboard/peers` | GET | — | Each linked keyboard's last `/state`, with `ok` and its `age` in seconds. Only on a keyboard with `peers:` |
 | `/api/ble_keyboard/buttons` | GET | — | Returns JSON array of programmed buttons |
 | `/api/ble_keyboard/press` | POST | `action` (string) | Trigger a programmed button action |
 | `/api/ble_keyboard/hosts` | GET | — | Returns `{"active":N,"style_slot":N,"slots":[{"slot":N,"occupied":bool,"addr":"XX:XX:...","bonded":bool,"tpl":"style1"},...]}`. `tpl` is that host's [remote style](#remote-style-per-host) and is absent when it uses the default. `bonded` is false when the slot has no pairing key. `style_slot` is the slot the remote is drawn for — `active`, except while an action that switched host is still running |

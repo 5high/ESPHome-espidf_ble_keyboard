@@ -10,6 +10,9 @@ web control page shows the matching version badge.
 - **Remote keys for switching hosts, and a few more.** Previous, next and last host can sit on the
   remote itself, alongside new Backspace, Brightness Up/Down, and separate Play and Pause keys. Each
   can be remapped per host like any other key. On the web page and the Home Assistant card alike.
+- **One page can drive a second keyboard.** List it under the new `peers:` and its hosts appear in a
+  bar of their own; tap one and the remote switches that keyboard to it and drives it, in that host's
+  style. For hosts one keyboard's Bluetooth can't reach. Macros reach it with `peer:<name>:<action>`.
 
 ## v1.11.0 — 2026-09-19
 

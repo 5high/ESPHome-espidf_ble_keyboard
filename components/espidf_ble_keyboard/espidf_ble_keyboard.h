@@ -493,6 +493,21 @@ class EspidfBleKeyboard : public Component
   bool web_allow_framing() const { return web_allow_framing_; }
 #endif
 
+#ifdef USE_BLE_KB_PEERS
+  /// Another keyboard this one's page can drive over Wi-Fi, through `peer:`.
+  /// `url` is http://host[:port] with no path; user/pass are its web_server login.
+  void add_peer(const std::string &name, const std::string &url, const std::string &user,
+                const std::string &pass);
+  size_t peer_count() const { return peers_.size(); }
+  /// A page is looking at the peers. The cache is only refreshed while one is.
+  void note_peer_interest();
+  /// Near enough the size append_peers_json() will add, to reserve and to check
+  /// the heap against before building it.
+  size_t peers_json_size();
+  /// {"peers":[{"name","ok","age","state"}]} — each peer's last /state.
+  void append_peers_json(std::string &out);
+#endif
+
   void set_paired_binary_sensor(binary_sensor::BinarySensor *sensor) {
     paired_binary_sensor_ = sensor;
     if (paired_binary_sensor_ != nullptr) {
@@ -1108,6 +1123,32 @@ class EspidfBleKeyboard : public Component
   bool web_host_check_{true};
   bool web_allow_framing_{false};
   std::vector<std::string> web_allowed_hosts_;
+#endif
+
+#ifdef USE_BLE_KB_PEERS
+  // Linked keyboards. Every request to one runs on the action task: presses in
+  // the order they were queued, and the /state cache on its quiet ticks. The
+  // web task only reads the cache, under peer_mutex_.
+  struct Peer {
+    std::string name, url, user, pass;
+    std::string state;          // its last /state reply; empty when nobody is looking
+    uint32_t fetched_ms{0};     // when `state` arrived
+    uint32_t next_due_ms{0};    // next /state read
+    uint32_t down_until_ms{0};  // after a failure, presses are dropped until this
+    bool ok{false};             // whether the last request to it worked
+  };
+  std::vector<Peer> peers_;
+  SemaphoreHandle_t peer_mutex_{nullptr};
+  std::atomic<uint32_t> peer_interest_ms_{0};
+  bool peer_cache_live_{false};
+  static const uint32_t PEER_TIMEOUT_MS = 1500;
+  static const uint32_t PEER_POLL_MS = 4000;
+  static const uint32_t PEER_RETRY_MS = 15000;
+  static const uint32_t PEER_INTEREST_MS = 15000;
+  static const size_t PEER_MAX_REPLY = 6144;
+  bool peer_request_(Peer &p, bool post, const char *path, const std::string &body, std::string *out);
+  void run_peer_action_(const std::string &action);
+  void refresh_peers_();
 #endif
 
   // RSSI state (interval/timing/callbacks stay protected — only touched by member functions)

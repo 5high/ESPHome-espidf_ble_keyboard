@@ -4276,12 +4276,23 @@ void EspidfBleKeyboard::report_action_stack_() {
 void EspidfBleKeyboard::action_task_entry_(void *arg) {
     auto *self = static_cast<EspidfBleKeyboard *>(arg);
     std::string *job = nullptr;
+#ifdef USE_BLE_KB_PEERS
+    // With peers, wake twice a second even when idle: that is when the cache
+    // behind the page's view of them is refreshed, and only with nothing queued.
+    const TickType_t wait = self->peers_.empty() ? portMAX_DELAY : pdMS_TO_TICKS(500);
+#else
+    const TickType_t wait = portMAX_DELAY;
+#endif
     while (true) {
-        if (xQueueReceive(self->action_queue_, &job, portMAX_DELAY) == pdTRUE && job != nullptr) {
+        if (xQueueReceive(self->action_queue_, &job, wait) == pdTRUE && job != nullptr) {
             self->execute_action(*job);
             delete job;
             job = nullptr;
         }
+#ifdef USE_BLE_KB_PEERS
+        if (!self->peers_.empty() && uxQueueMessagesWaiting(self->action_queue_) == 0)
+            self->refresh_peers_();
+#endif
     }
 }
 
@@ -4357,8 +4368,9 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     // that was actually pressed.
     // Container verbs are excluded: recording one verbatim would put a whole
     // conditional or a repeat count on a panel instead of the key that was hit.
+    // A press sent to a linked keyboard is that keyboard's to show, not this one's.
     if (action_depth_ == 1 && action.find("lcd:") != 0 && action.find("if:") != 0 &&
-        action.find("alternate:") != 0 && action.find("repeat:") != 0) {
+        action.find("alternate:") != 0 && action.find("repeat:") != 0 && action.find("peer:") != 0) {
         // A key pressed on a tab showing another host's page arrives wrapped in
         // host_action:N:, and the panel wants the key — the style labels it — not
         // the wrapper.
@@ -4541,6 +4553,16 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         int tx = 0, ty = 0;
         if (sscanf(action.c_str(), "mouse_goto:%i:%i", &tx, &ty) == 2)
             send_mouse_goto(tx, ty);
+        return;
+    }
+    // Run an action on a linked keyboard. Consumed even in a build without
+    // peers:, or the whole string would be typed to the host as text.
+    if (action.rfind("peer:", 0) == 0) {
+#ifdef USE_BLE_KB_PEERS
+        run_peer_action_(action);
+#else
+        ESP_LOGW(TAG, "%s needs a peers: list in this keyboard's YAML", action.c_str());
+#endif
         return;
     }
     // Run a key as another host's Host Action, whichever host is active. This is

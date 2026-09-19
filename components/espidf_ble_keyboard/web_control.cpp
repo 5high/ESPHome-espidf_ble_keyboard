@@ -271,6 +271,195 @@ class StackHeadroomProbe {
   const char *url_;
 };
 
+// ── Read-only state ────────────────────────────────────────────────
+// Shared by each one's own endpoint and by /state, which is the five of them
+// side by side. Each appends exactly what its endpoint has always returned, so
+// the page reads either the same way. Out of line, so their locals are never
+// part of handleRequest's frame on the 4352-byte web task.
+
+static size_t status_json_size(EspidfBleKeyboard *kb) { return 512 + kb->lcd_status_json().size(); }
+
+__attribute__((noinline)) static void append_status_json(std::string &json, EspidfBleKeyboard *kb) {
+  // The panel values are already built, on the main loop. This endpoint used to
+  // walk every source and format each one here, which put a chain of
+  // string-building frames on the web task — 4352 bytes of stack, ~860 of them
+  // spare. A const ref and one append is all it costs now.
+  json += "{\"connected\":";
+  json += kb->is_connected() ? "true" : "false";
+  json += ",\"paired\":";
+  json += kb->is_paired() ? "true" : "false";
+  json += ",\"ha_action\":";
+  json += kb->ha_action_enabled() ? "true" : "false";
+  // Whether the active slot has a radio at all. Without it the badge reads
+  // "Disconnected" on a slot that is never meant to connect.
+  json += ",\"broadcast\":";
+  json += kb->slot_broadcasts(kb->active_host_slot()) ? "true" : "false";
+  // Escaped like every other endpoint's strings. ESPHome restricts device
+  // names, so this is consistency rather than a live bug — but a /status
+  // that cannot be parsed takes the whole page down with it.
+  json += ",\"device_name\":\"";
+  json_escape_append(json, kb->device_name());
+  json += "\",\"layout\":\"";
+  json_escape_append(json, kb->active_layout_id());
+  json += "\",\"layouts\":[";
+  for (size_t i = 0; i < layout_count(); i++) {
+    const KeyboardLayout *lay = layout_at(i);
+    if (lay == nullptr) continue;
+    if (i > 0) json += ",";
+    json += "{\"id\":\"";
+    json_escape_append(json, lay->id);
+    json += "\",\"name\":\"";
+    json_escape_append(json, lay->display_name);
+    json += "\"}";
+  }
+  json += "]";
+#ifdef USE_BLE_KB_PEERS
+  // How many linked keyboards there are, so the page only asks /peers on a
+  // keyboard that has some.
+  json += ",\"peers\":";
+  json += std::to_string(kb->peer_count());
+#endif
+  // Values for any ["lcd",…] panel the current remote style drew. On this
+  // endpoint rather than its own: the page already polls it every 3 s, and
+  // canHandle() pays a URL buffer and a heap string for every request the
+  // web server sees, so a second polled path is the expensive way to do it.
+  json += ",\"lcd\":";
+  json += kb->lcd_status_json();
+  json += "}";
+}
+
+static size_t hosts_json_size(EspidfBleKeyboard *kb) { return 64 + 200 * (size_t) kb->host_slots(); }
+
+__attribute__((noinline)) static void append_hosts_json(std::string &json, EspidfBleKeyboard *kb) {
+  // Build slot-to-name map from registered switch_host buttons
+  std::map<uint8_t, std::string> slot_names;
+  for (const auto &btn : kb->get_buttons()) {
+    if (btn.action.find("switch_host:") == 0) {
+      int slot = -1;
+      if (sscanf(btn.action.c_str(), "switch_host:%i", &slot) == 1 && slot >= 0) {
+        slot_names[(uint8_t) slot] = btn.name;
+      }
+    }
+  }
+  json += "{\"active\":";
+  json += std::to_string(kb->active_host_slot());
+  // Which slot's style the remote is drawn in. The active one, except while
+  // an action that switched host is still running — a macro that visits
+  // another host and comes back must not re-skin the remote twice on its
+  // way through. The host bar still follows "active": that is where keys go.
+  json += ",\"style_slot\":";
+  json += std::to_string(kb->style_slot());
+  json += ",\"slots\":[";
+  for (uint8_t i = 0; i < kb->host_slots(); i++) {
+    if (i > 0) json += ",";
+    const auto &h = kb->get_host_slot(i);
+    json += "{\"slot\":";
+    json += std::to_string(i);
+    json += ",\"occupied\":";
+    json += h.occupied ? "true" : "false";
+    json += ",\"broadcast\":";
+    json += kb->slot_broadcasts(i) ? "true" : "false";
+    if (h.occupied) {
+      char addr_str[18];
+      format_bd_addr(h.addr, addr_str);
+      json += ",\"addr\":\"";
+      json += addr_str;
+      json += "\"";
+      // The stable identity, which the UI shows in preference to `addr` —
+      // that is only what the host connected with, and a phone rotates it.
+      // Remembered on the slot once seen; the live lookup is the fallback
+      // for a host that has not connected since this was added.
+      esp_bd_addr_t identity;
+      bool have_identity = h.has_identity;
+      if (have_identity) {
+        memcpy(identity, h.identity, sizeof(esp_bd_addr_t));
+      } else {
+        have_identity = kb->peer_identity_addr(h.addr, identity);
+      }
+      if (have_identity) {
+        char id_str[18];
+        format_bd_addr(identity, id_str);
+        json += ",\"identity\":\"";
+        json += id_str;
+        json += "\"";
+      }
+      // Whether the stack still holds a key for this host. A slot can be
+      // occupied with no bond — the stack drops one after a failed pairing,
+      // and the host keeps its own copy, so it has to be paired again from
+      // its own side before it will work. Nothing else on the page could
+      // tell the difference between that and an ordinary idle host.
+      json += ",\"bonded\":";
+      json += kb->host_slot_bonded(i) ? "true" : "false";
+    }
+    auto it = slot_names.find(i);
+    if (it != slot_names.end()) {
+      json += ",\"name\":\"";
+      json_escape_append(json, it->second);  // button names are user-supplied
+      json += "\"";
+    }
+    // Which remote style this host is drawn in. Rides along here rather than
+    // on an endpoint of its own so the page's existing 5s poll of this
+    // response is what re-skins the remote after a host switch.
+    const std::string &style = kb->get_remote_style(i);
+    if (!style.empty()) {
+      json += ",\"tpl\":\"";
+      json += style;  // validated to [a-z0-9_] on the way in
+      json += "\"";
+    }
+    json += "}";
+  }
+  json += "]}";
+}
+
+static void append_name_list(std::string &json, const std::vector<std::string> &names) {
+  for (size_t i = 0; i < names.size(); i++) {
+    if (i > 0) json += ",";
+    json += "\"";
+    json_escape_append(json, names[i]);
+    json += "\"";
+  }
+}
+
+__attribute__((noinline)) static void append_hidden_json(std::string &json, EspidfBleKeyboard *kb, uint8_t slot) {
+  json += "{\"slot\":";
+  json += std::to_string(slot);
+  json += ",\"hidden\":[";
+  append_name_list(json, kb->get_hidden(slot));
+  json += "]}";
+}
+
+__attribute__((noinline)) static void append_repeat_json(std::string &json, EspidfBleKeyboard *kb, uint8_t slot) {
+  const auto &r = kb->get_repeat(slot);
+  // "set" is what tells the page whether to use these values or fall back to
+  // its own data-repeat defaults — an empty "buttons" with set:true means
+  // the user deliberately turned every repeat off for this host.
+  json += "{\"slot\":";
+  json += std::to_string(slot);
+  json += ",\"set\":";
+  json += r.set ? "true" : "false";
+  json += ",\"delay\":";
+  json += std::to_string(r.delay);
+  json += ",\"rate\":";
+  json += std::to_string(r.rate);
+  json += ",\"buttons\":[";
+  append_name_list(json, r.names);
+  json += "]}";
+}
+
+__attribute__((noinline)) static void append_hold_json(std::string &json, EspidfBleKeyboard *kb, uint8_t slot) {
+  const auto &r = kb->get_repeat(slot);
+  // The repeat set rides along so the editor can grey out the buttons that
+  // are already spoken for without a second round trip.
+  json += "{\"slot\":";
+  json += std::to_string(slot);
+  json += ",\"buttons\":[";
+  append_name_list(json, kb->get_hold(slot));
+  json += "],\"repeat\":[";
+  if (r.set)
+    append_name_list(json, r.names);
+  json += "]}";
+}
+
 // ── Internal handler class ─────────────────────────────────────────
 // Inherits from the platform-specific AsyncWebHandler via web_server_base
 
@@ -413,52 +602,54 @@ class BleKbWebHandler : public AsyncWebHandler {
 
     // GET-only endpoints (read state)
     if (path == "status") {
-      // Already built, on the main loop. This endpoint used to walk every source
-      // and format each one here, which put a chain of string-building frames on
-      // the web task — 4352 bytes of stack, ~860 of them spare. A const ref and
-      // one append is all it costs now, and the reserve is still sized from what
-      // is actually stored rather than from the caps.
-      const std::string &lcd = kb_->lcd_status_json();
-      std::string json = "{\"connected\":";
-      json.reserve(512 + lcd.size());  // one allocation instead of the five doublings this would take
-      json += kb_->is_connected() ? "true" : "false";
-      json += ",\"paired\":";
-      json += kb_->is_paired() ? "true" : "false";
-      json += ",\"ha_action\":";
-      json += kb_->ha_action_enabled() ? "true" : "false";
-      // Whether the active slot has a radio at all. Without it the badge reads
-      // "Disconnected" on a slot that is never meant to connect.
-      json += ",\"broadcast\":";
-      json += kb_->slot_broadcasts(kb_->active_host_slot()) ? "true" : "false";
-      // Escaped like every other endpoint's strings. ESPHome restricts device
-      // names, so this is consistency rather than a live bug — but a /status
-      // that cannot be parsed takes the whole page down with it.
-      json += ",\"device_name\":\"";
-      json += json_escape(kb_->device_name());
-      json += "\",\"layout\":\"";
-      json += json_escape(kb_->active_layout_id());
-      json += "\",\"layouts\":[";
-      for (size_t i = 0; i < layout_count(); i++) {
-        const KeyboardLayout *lay = layout_at(i);
-        if (lay == nullptr) continue;
-        if (i > 0) json += ",";
-        json += "{\"id\":\"";
-        json += json_escape(lay->id);
-        json += "\",\"name\":\"";
-        json += json_escape(lay->display_name);
-        json += "\"}";
-      }
-      json += "]";
-      // Values for any ["lcd",…] panel the current remote style drew. On this
-      // endpoint rather than its own: the page already polls it every 3 s, and
-      // canHandle() pays a URL buffer and a heap string for every request the
-      // web server sees, so a second polled path is the expensive way to do it.
-      json += ",\"lcd\":";
-      json += lcd;
+      std::string json;
+      json.reserve(status_json_size(kb_));  // one allocation instead of the five doublings this would take
+      append_status_json(json, kb_);
+      send_response(200, "application/json", json);
+      return;
+    }
+
+    // Everything the page reads to draw this keyboard's remote, in one request:
+    // /hosts, /status and the drawn slot's hidden, repeat and hold lists, each
+    // exactly as its own endpoint returns it. A linked keyboard reads this every
+    // few seconds while a page is looking at it, instead of five requests.
+    if (path == "state") {
+      const uint8_t slot = kb_->style_slot();
+      const size_t want = status_json_size(kb_) + hosts_json_size(kb_) + 1024;
+      if (heap_short(want, "State", ""))
+        return;
+      std::string json;
+      json.reserve(want);
+      json += "{\"hosts\":";
+      append_hosts_json(json, kb_);
+      json += ",\"status\":";
+      append_status_json(json, kb_);
+      json += ",\"hidden\":";
+      append_hidden_json(json, kb_, slot);
+      json += ",\"repeat\":";
+      append_repeat_json(json, kb_, slot);
+      json += ",\"hold\":";
+      append_hold_json(json, kb_, slot);
       json += "}";
       send_response(200, "application/json", json);
       return;
     }
+
+#ifdef USE_BLE_KB_PEERS
+    // The linked keyboards, as last read. Asking is also what keeps them being
+    // read: nobody asking for a while stops the traffic and frees the copies.
+    if (path == "peers") {
+      kb_->note_peer_interest();
+      const size_t want = kb_->peers_json_size();
+      if (heap_short(want, "Peers", ""))
+        return;
+      std::string json;
+      json.reserve(want);
+      kb_->append_peers_json(json);
+      send_response(200, "application/json", json);
+      return;
+    }
+#endif
 
     if (path == "memory") {
       // For the Host Actions card, which asks once a minute — its own endpoint
@@ -587,85 +778,9 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "hosts") {
-      // Build slot-to-name map from registered switch_host buttons
-      std::map<uint8_t, std::string> slot_names;
-      for (const auto &btn : kb_->get_buttons()) {
-        if (btn.action.find("switch_host:") == 0) {
-          int slot = -1;
-          if (sscanf(btn.action.c_str(), "switch_host:%i", &slot) == 1 && slot >= 0) {
-            slot_names[(uint8_t) slot] = btn.name;
-          }
-        }
-      }
-      std::string json = "{\"active\":";
-      json.reserve(512);
-      json += std::to_string(kb_->active_host_slot());
-      // Which slot's style the remote is drawn in. The active one, except while
-      // an action that switched host is still running — a macro that visits
-      // another host and comes back must not re-skin the remote twice on its
-      // way through. The host bar still follows "active": that is where keys go.
-      json += ",\"style_slot\":";
-      json += std::to_string(kb_->style_slot());
-      json += ",\"slots\":[";
-      for (uint8_t i = 0; i < kb_->host_slots(); i++) {
-        if (i > 0) json += ",";
-        const auto &h = kb_->get_host_slot(i);
-        json += "{\"slot\":";
-        json += std::to_string(i);
-        json += ",\"occupied\":";
-        json += h.occupied ? "true" : "false";
-        json += ",\"broadcast\":";
-        json += kb_->slot_broadcasts(i) ? "true" : "false";
-        if (h.occupied) {
-          char addr_str[18];
-          format_bd_addr(h.addr, addr_str);
-          json += ",\"addr\":\"";
-          json += addr_str;
-          json += "\"";
-          // The stable identity, which the UI shows in preference to `addr` —
-          // that is only what the host connected with, and a phone rotates it.
-          // Remembered on the slot once seen; the live lookup is the fallback
-          // for a host that has not connected since this was added.
-          esp_bd_addr_t identity;
-          bool have_identity = h.has_identity;
-          if (have_identity) {
-            memcpy(identity, h.identity, sizeof(esp_bd_addr_t));
-          } else {
-            have_identity = kb_->peer_identity_addr(h.addr, identity);
-          }
-          if (have_identity) {
-            char id_str[18];
-            format_bd_addr(identity, id_str);
-            json += ",\"identity\":\"";
-            json += id_str;
-            json += "\"";
-          }
-          // Whether the stack still holds a key for this host. A slot can be
-          // occupied with no bond — the stack drops one after a failed pairing,
-          // and the host keeps its own copy, so it has to be paired again from
-          // its own side before it will work. Nothing else on the page could
-          // tell the difference between that and an ordinary idle host.
-          json += ",\"bonded\":";
-          json += kb_->host_slot_bonded(i) ? "true" : "false";
-        }
-        auto it = slot_names.find(i);
-        if (it != slot_names.end()) {
-          json += ",\"name\":\"";
-          json += json_escape(it->second);  // button names are user-supplied
-          json += "\"";
-        }
-        // Which remote style this host is drawn in. Rides along here rather than
-        // on an endpoint of its own so the page's existing 5s poll of this
-        // response is what re-skins the remote after a host switch.
-        const std::string &style = kb_->get_remote_style(i);
-        if (!style.empty()) {
-          json += ",\"tpl\":\"";
-          json += style;  // validated to [a-z0-9_] on the way in
-          json += "\"";
-        }
-        json += "}";
-      }
-      json += "]}";
+      std::string json;
+      json.reserve(hosts_json_size(kb_));
+      append_hosts_json(json, kb_);
       send_response(200, "application/json", json);
       return;
     }
@@ -794,14 +909,9 @@ class BleKbWebHandler : public AsyncWebHandler {
         send_response(400, "text/plain", "Invalid slot");
         return;
       }
-      const auto &h = kb_->get_hidden((uint8_t) slot);
-      std::string json = "{\"slot\":" + std::to_string(slot) + ",\"hidden\":[";
+      std::string json;
       json.reserve(512);
-      for (size_t i = 0; i < h.size(); i++) {
-        if (i > 0) json += ",";
-        json += "\"" + json_escape(h[i]) + "\"";
-      }
-      json += "]}";
+      append_hidden_json(json, kb_, (uint8_t) slot);
       send_response(200, "application/json", json);
       return;
     }
@@ -812,20 +922,9 @@ class BleKbWebHandler : public AsyncWebHandler {
         send_response(400, "text/plain", "Invalid slot");
         return;
       }
-      const auto &r = kb_->get_repeat((uint8_t) slot);
-      // "set" is what tells the page whether to use these values or fall back to
-      // its own data-repeat defaults — an empty "buttons" with set:true means
-      // the user deliberately turned every repeat off for this host.
-      std::string json = "{\"slot\":" + std::to_string(slot) +
-                         ",\"set\":" + (r.set ? "true" : "false") +
-                         ",\"delay\":" + std::to_string(r.delay) +
-                         ",\"rate\":" + std::to_string(r.rate) + ",\"buttons\":[";
+      std::string json;
       json.reserve(512);
-      for (size_t i = 0; i < r.names.size(); i++) {
-        if (i > 0) json += ",";
-        json += "\"" + json_escape(r.names[i]) + "\"";
-      }
-      json += "]}";
+      append_repeat_json(json, kb_, (uint8_t) slot);
       send_response(200, "application/json", json);
       return;
     }
@@ -836,24 +935,9 @@ class BleKbWebHandler : public AsyncWebHandler {
         send_response(400, "text/plain", "Invalid slot");
         return;
       }
-      const auto &h = kb_->get_hold((uint8_t) slot);
-      const auto &r = kb_->get_repeat((uint8_t) slot);
-      // The repeat set rides along so the editor can grey out the buttons that
-      // are already spoken for without a second round trip.
-      std::string json = "{\"slot\":" + std::to_string(slot) + ",\"buttons\":[";
+      std::string json;
       json.reserve(512);
-      for (size_t i = 0; i < h.size(); i++) {
-        if (i > 0) json += ",";
-        json += "\"" + json_escape(h[i]) + "\"";
-      }
-      json += "],\"repeat\":[";
-      if (r.set) {
-        for (size_t i = 0; i < r.names.size(); i++) {
-          if (i > 0) json += ",";
-          json += "\"" + json_escape(r.names[i]) + "\"";
-        }
-      }
-      json += "]}";
+      append_hold_json(json, kb_, (uint8_t) slot);
       send_response(200, "application/json", json);
       return;
     }
