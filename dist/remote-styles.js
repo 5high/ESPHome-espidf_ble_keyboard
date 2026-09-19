@@ -27,6 +27,7 @@ minus:'<path d="M19 13H5v-2h14v2z"/>',
 prev:'<path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>',
 rew:'<path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>',
 play:'<path d="M8 5v14l11-7z"/>',
+pause:'<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>',
 stop:'<path d="M6 6h12v12H6z"/>',
 ff:'<path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>',
 next:'<path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>',
@@ -36,7 +37,13 @@ exit:'<path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.
 guide:'<path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM5 7h6v2H5V7zm0 4h6v2H5v-2zm0 4h6v2H5v-2zm8-8h6v2h-6V7zm0 4h6v2h-6v-2zm0 4h6v2h-6v-2z"/>',
 mic:'<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>',
 cc:'<path d="M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H5V6h14v12zM7 15h3v-1.5H8.5v-3H10V9H7v6zm7 0h3v-1.5h-1.5v-3H17V9h-3v6z"/>',
-tv:'<path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>'};
+tv:'<path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>',
+bspace:'<path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/>',
+bright_up:'<path d="M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm0-10c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/>',
+bright_dn:'<path d="M20 15.31L23.31 12 20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>',
+host_prev:'<path d="M17.59 18L19 16.59 14.42 12 19 7.41 17.59 6l-6 6zM11 18l1.41-1.41L7.83 12l4.58-4.59L11 6l-6 6z"/>',
+host_next:'<path d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6zM13 6l-1.41 1.41L16.17 12l-4.58 4.59L13 18l6-6z"/>',
+host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>'};
 
 const RMT_BTNS={
 remote_power:{t:'Power',i:'power',c:'power',g:0},
@@ -54,9 +61,13 @@ volume_up:{t:'Volume Up',i:'plus',r:1,g:2},
 volume_down:{t:'Volume Down',i:'minus',r:1,g:2},
 channel_up:{t:'Channel Up',i:'up',r:1,g:2},
 channel_down:{t:'Channel Down',i:'down',r:1,g:2},
+brightness_up:{t:'Brightness Up',i:'bright_up',r:1,g:2},
+brightness_down:{t:'Brightness Down',i:'bright_dn',r:1,g:2},
 prev_track:{t:'Previous',i:'prev',c:'media',g:3},
 rewind:{t:'Rewind',i:'rew',c:'media',r:1,g:3},
 play_pause:{t:'Play/Pause',i:'play',c:'media',g:3},
+play:{t:'Play',i:'play',c:'media',g:3},
+pause:{t:'Pause',i:'pause',c:'media',g:3},
 stop:{t:'Stop',i:'stop',c:'media',g:3},
 fast_forward:{t:'Fast Forward',i:'ff',c:'media',r:1,g:3},
 next_track:{t:'Next',i:'next',c:'media',g:3},
@@ -84,6 +95,7 @@ num1:{t:'1',x:'1',g:7},num2:{t:'2',x:'2',g:7},num3:{t:'3',x:'3',g:7},
 num4:{t:'4',x:'4',g:7},num5:{t:'5',x:'5',g:7},num6:{t:'6',x:'6',g:7},
 num7:{t:'7',x:'7',g:7},num8:{t:'8',x:'8',g:7},num9:{t:'9',x:'9',g:7},
 num0:{t:'0',x:'0',g:7},
+backspace:{t:'Backspace',i:'bspace',r:1,g:7},
 // Spares send nothing until the host they are on gives them an override. A
 // style normally relabels them, so the digit is only what they fall back to.
 spare1:{t:'Spare 1',x:'1',g:8},
@@ -117,7 +129,11 @@ spare28:{t:'Spare 28',x:'28',g:8},
 spare29:{t:'Spare 29',x:'29',g:8},
 spare30:{t:'Spare 30',x:'30',g:8},
 spare31:{t:'Spare 31',x:'31',g:8},
-spare32:{t:'Spare 32',x:'32',g:8}};
+spare32:{t:'Spare 32',x:'32',g:8},
+// Never repeats: held down, it would spin through every host.
+prev_host:{t:'Prev Host',i:'host_prev',g:9},
+next_host:{t:'Next Host',i:'host_next',g:9},
+last_host:{t:'Last Host',i:'host_last',g:9}};
 
 const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb-pad',
 maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',

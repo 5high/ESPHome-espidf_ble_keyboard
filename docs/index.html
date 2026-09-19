@@ -470,6 +470,7 @@
       <tr><td><code>"volume_up"</code></td><td class="desc">Volume up.</td></tr>
       <tr><td><code>"volume_down"</code></td><td class="desc">Volume down.</td></tr>
       <tr><td><code>"play_pause"</code></td><td class="desc">Play / pause media.</td></tr>
+      <tr><td><code>"play"</code> / <code>"pause"</code></td><td class="desc">Play (<code>0x00B0</code>) or pause (<code>0x00B1</code>) only — one-way, so a macro can pause without risking a resume.</td></tr>
       <tr><td><code>"next_track"</code></td><td class="desc">Skip to next track.</td></tr>
       <tr><td><code>"prev_track"</code></td><td class="desc">Previous track.</td></tr>
       <tr><td><code>"stop"</code></td><td class="desc">Stop media playback.</td></tr>
@@ -480,6 +481,8 @@
       <tr><td><code>"ok"</code></td><td class="desc">D-pad select — keyboard Enter (<code>0x28</code>), which more hosts accept than HID Menu Pick. Override per host with <code>"consumer:0x0041"</code> if a host needs Menu Pick.</td></tr>
       <tr><td><code>"home"</code> / <code>"back"</code> / <code>"search"</code> / <code>"info"</code></td><td class="desc">AC Home / Back / Search / More Info (<code>0x0223</code>, <code>0x0224</code>, <code>0x0221</code>, <code>0x0209</code>).</td></tr>
       <tr><td><code>"channel_up"</code> / <code>"channel_down"</code></td><td class="desc">Channel surf — Page Up / Page Down keypress.</td></tr>
+      <tr><td><code>"brightness_up"</code> / <code>"brightness_down"</code></td><td class="desc">Screen brightness (<code>0x006F</code> / <code>0x0070</code>) on phones, tablets and laptops. An external monitor ignores it.</td></tr>
+      <tr><td><code>"backspace"</code></td><td class="desc">Keyboard Backspace — correcting a digit or a TV search box.</td></tr>
       <tr><td><code>"color_red"</code> / <code>"color_green"</code> / <code>"color_yellow"</code> / <code>"color_blue"</code></td><td class="desc">Coloured remote keys — F1–F4.</td></tr>
       <tr><td><code>"app_explorer"</code> / <code>"app_browser"</code> / <code>"app_email"</code> / <code>"app_calc"</code></td><td class="desc">App launch keys (<code>0x0194</code>, <code>0x0223</code>, <code>0x018A</code>, <code>0x0192</code>).</td></tr>
       <tr><td><code>"consumer:0x0192"</code></td><td class="desc">Send any HID consumer control code — open apps, control brightness and more. See keycode reference.</td></tr>
@@ -504,6 +507,7 @@
       <tr><td><code>"switch_host:0"</code></td><td class="desc">Switch to host slot 0–9. Reconnects to stored host or advertises for new pairing.</td></tr>
       <tr><td><code>"switch_host:next"</code></td><td class="desc">Step one slot forward (or <code>"switch_host:prev"</code> for back), wrapping at the ends. One button rotates through the hosts.</td></tr>
       <tr><td><code>"switch_host:back"</code></td><td class="desc">Return to the slot active before the last switch, however it was made — what brings a macro home after it visits another host.</td></tr>
+      <tr><td><code>"prev_host"</code> / <code>"next_host"</code> / <code>"last_host"</code></td><td class="desc">The same three as remote keys a style can place, remappable per host.</td></tr>
       <tr><td><code>"host_action:6:spare1"</code></td><td class="desc">Run slot 6's Host Action for <code>spare1</code> without switching host. A name that slot has no action for runs as an ordinary press on the active host.</td></tr>
       <tr><td><code>"wait:connected"</code></td><td class="desc">Hold a macro until the active host is connected and ready for keys, rather than guessing a delay. Up to 10 s, or <code>"wait:connected:N"</code> ms (max 60000); carries on if the host never connects.</td></tr>
       <tr><td><code>"forget_host:0"</code></td><td class="desc">Remove BLE bond for host slot 0–9 and clear the stored address.</td></tr>

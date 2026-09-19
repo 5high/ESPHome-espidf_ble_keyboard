@@ -3749,6 +3749,11 @@ static const NamedConsumer NAMED_CONSUMERS[] = {
     {"up", 0x0042},           {"down", 0x0043},   {"left", 0x0044},
     {"right", 0x0045},
     {"rewind", 0x00B4},       {"fast_forward", 0x00B3},
+    // One-way, unlike play_pause, so a macro can pause without risking a resume.
+    {"play", 0x00B0},         {"pause", 0x00B1},
+    // Screens the host drives itself (phones, tablets, laptops); an external
+    // monitor ignores it.
+    {"brightness_up", 0x006F}, {"brightness_down", 0x0070},
     {"app_explorer", 0x0194}, {"app_browser", 0x0223},
     {"app_email", 0x018A},    {"app_calc", 0x0192},
     // Keys a TV remote has and a keyboard doesn't. Every one is a standard
@@ -3791,6 +3796,7 @@ static const NamedCombo NAMED_COMBOS[] = {
     {"num4", 0, 0x21}, {"num5", 0, 0x22}, {"num6", 0, 0x23},
     {"num7", 0, 0x24}, {"num8", 0, 0x25}, {"num9", 0, 0x26},
     {"num0", 0, 0x27},
+    {"backspace", 0, 0x2A},     // fixing a digit or a TV search box
 };
 
 bool EspidfBleKeyboard::execute_remote_action_(const std::string &action) {
@@ -3812,6 +3818,25 @@ bool EspidfBleKeyboard::execute_remote_action_(const std::string &action) {
         return true;  // handled: swallow it, so it can't fall through to "unknown action"
     }
     return false;
+}
+
+// Cycles exactly as the Lovelace cards do: plain wrap-around over every
+// configured slot, empty ones included (landing on an empty slot advertises for
+// new pairing, same as switch_host:N). The >1 test guards the modulo and stops a
+// one-slot config from "switching" to the slot it is already on — switch_host()
+// tears the link down unconditionally, so that would drop the host for nothing.
+void EspidfBleKeyboard::cycle_host_(int delta) {
+    if (host_slots_ > 1)
+        switch_host((uint8_t) ((active_slot_ + host_slots_ + delta) % host_slots_), true);
+}
+
+// Where the keyboard was before the last switch. Pressed again it goes back
+// again, so two hosts can be toggled.
+void EspidfBleKeyboard::return_to_last_host_() {
+    if (previous_slot_ >= 0 && previous_slot_ < host_slots_ && previous_slot_ != (int8_t) active_slot_)
+        switch_host((uint8_t) previous_slot_, true);
+    else
+        ESP_LOGW(TAG, "No earlier host to return to");
 }
 
 // "spare" followed by 1..MAX_SPARES. A rule rather than a table so the count is
@@ -4548,26 +4573,12 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     }
     if (action.find("switch_host:") == 0) {
         const std::string arg = action.substr(12);
-        // Relative forms cycle exactly as the Lovelace cards do: plain
-        // wrap-around over every configured slot, empty ones included (landing
-        // on an empty slot advertises for new pairing, same as switch_host:N).
-        // The >1 test guards the modulo and stops a one-slot config from
-        // "switching" to the slot it is already on — switch_host() tears the
-        // link down unconditionally, so that would drop the host for nothing.
         if (arg == "back") {
-            // Where the keyboard was before the last switch. Pressed again it goes
-            // back again, so two hosts can be toggled.
-            if (previous_slot_ >= 0 && previous_slot_ < host_slots_ && previous_slot_ != (int8_t) active_slot_)
-                switch_host((uint8_t) previous_slot_, true);
-            else
-                ESP_LOGW(TAG, "switch_host:back has no earlier host to return to");
+            return_to_last_host_();
             return;
         }
         if (arg == "next" || arg == "prev" || arg == "previous") {
-            if (host_slots_ > 1) {
-                int delta = (arg == "next") ? 1 : -1;
-                switch_host((uint8_t) ((active_slot_ + host_slots_ + delta) % host_slots_), true);
-            }
+            cycle_host_(arg == "next" ? 1 : -1);
             return;
         }
         int slot = 0;
@@ -4638,6 +4649,11 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     else if (action == "volume_up")    send_volume_up();
     else if (action == "volume_down")  send_volume_down();
     else if (action == "mute")         send_mute();
+    // Remote keys for the same thing as switch_host:next|prev|back — bare names,
+    // so a style can place them and a host can remap them.
+    else if (action == "next_host")    cycle_host_(1);
+    else if (action == "prev_host")    cycle_host_(-1);
+    else if (action == "last_host")    return_to_last_host_();
     else if (action == "left_click")   send_mouse_click(0x01);
     else if (action == "right_click")  send_mouse_click(0x02);
     else if (action == "middle_click") send_mouse_click(0x04);

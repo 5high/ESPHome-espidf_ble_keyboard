@@ -489,6 +489,7 @@ espidf_ble_keyboard:
 | `"volume_up"` | Volume up. |
 | `"volume_down"` | Volume down. |
 | `"play_pause"` | Play / pause media. |
+| `"play"` / `"pause"` | Play (`0x00B0`) or pause (`0x00B1`) only — one-way, so a macro can pause without risking a resume. |
 | `"next_track"` | Skip to next track. |
 | `"prev_track"` | Previous track. |
 | `"stop"` | Stop media playback. |
@@ -503,6 +504,7 @@ espidf_ble_keyboard:
 | `"search"` | AC Search (`0x0221`). |
 | `"info"` | AC More Info / Guide (`0x0209`). |
 | `"channel_up"` / `"channel_down"` | Channel surf — Page Up / Page Down keypress. |
+| `"brightness_up"` / `"brightness_down"` | Screen brightness (`0x006F` / `0x0070`) on hosts that drive their own screen — phones, tablets, laptops. An external monitor ignores it. |
 | `"color_red"` / `"color_green"` / `"color_yellow"` / `"color_blue"` | Coloured remote keys — F1–F4, as most media apps expect. |
 | `"app_explorer"` / `"app_browser"` / `"app_email"` / `"app_calc"` | App launch keys (`0x0194`, `0x0223`, `0x018A`, `0x0192`). |
 | `"menu"` / `"exit"` | Menu (`0x0040`) and Menu Escape (`0x0046`) — the hamburger and back-out keys a set-top remote has. |
@@ -510,6 +512,8 @@ espidf_ble_keyboard:
 | `"voice"` | Voice Command (`0x00CF`) — the microphone key. |
 | `"captions"` | Closed Caption (`0x0061`) — subtitles on/off. |
 | `"num0"` … `"num9"` | The keypad, as plain keyboard digits — direct channel entry on a TV, typing a number on a PC. |
+| `"backspace"` | Keyboard Backspace — correcting a digit or a TV search box. |
+| `"prev_host"` / `"next_host"` / `"last_host"` | Remote keys for `switch_host:prev`, `switch_host:next` and `switch_host:back` below. |
 | `"spare1"` … `"spare32"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
 | `"left_click"` | Mouse left click. |
 | `"right_click"` | Mouse right click. |
@@ -1174,7 +1178,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, the seven transport keys, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, and for a `lit:` button `lit_bg`, `lit_fg`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -1390,6 +1394,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"switch_host:N"` | Switch to host slot N (0–9). If the slot has a stored host, uses directed advertising to reconnect. If empty, starts normal advertising for new pairing. |
 | `"switch_host:next"` / `"switch_host:prev"` | Step one slot forward or back, wrapping at the ends — the same cycling the host switcher arrows on the cards do, but on the device, so a single remote key or macro can rotate through hosts. Empty slots are included in the rotation. |
 | `"switch_host:back"` | Return to the slot active before the last switch. See [Visiting another host and coming back](#multi-host-switching). |
+| `"prev_host"` / `"next_host"` / `"last_host"` | The same three as remote keys a style can place, remappable per host like any other. |
 | `"host_action:N:<name>"` | Run slot N's [Host Action](#host-actions-per-host-overrides) for `<name>` whichever host is active — `host_action:6:spare1`. A name slot N has no action for runs as an ordinary press. What a tab [showing a host's page](#remote-style-per-host) sends for every key. |
 | `"wait:connected"` | Hold a macro until the active host is ready for keys, up to 10 s (`wait:connected:N` for N ms). |
 | `"forget_host:N"` | Remove the bond for host slot N (0–9). Clears the stored address and removes the BLE bond from the ESP32. If the forgotten host is currently connected, it is disconnected. |

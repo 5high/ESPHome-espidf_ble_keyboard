@@ -929,6 +929,10 @@ class EspidfBleKeyboard : public Component
   /// Table-driven remote button actions (D-pad, Power, Channel, colour, apps).
   /// Returns false if the name isn't one of them, so the caller falls through.
   bool execute_remote_action_(const std::string &action);
+  /// Behind switch_host:next|prev|back and the next_host / prev_host /
+  /// last_host remote keys.
+  void cycle_host_(int delta);
+  void return_to_last_host_();
 
   /// Backs the `press_button:<object_id>` action — presses another ESPHome
   /// button. Honours hide_buttons and refuses to nest.

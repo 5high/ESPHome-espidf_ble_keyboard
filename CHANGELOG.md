@@ -4,6 +4,13 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
+## Unreleased
+
+### Added
+- **Remote keys for switching hosts, and a few more.** Previous, next and last host can sit on the
+  remote itself, alongside new Backspace, Brightness Up/Down, and separate Play and Pause keys. Each
+  can be remapped per host like any other key. On the web page and the Home Assistant card alike.
+
 ## v1.11.0 — 2026-09-19
 
 ### Added
