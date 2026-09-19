@@ -2019,9 +2019,10 @@ espidf_ble_keyboard:
       password: !secret bedroom_web_password
 ```
 
-The page then shows a bar of that keyboard's hosts below its own. Tap one and the remote switches that keyboard to it and drives it, in that host's style with its hidden, hold and repeat lists. Tap one of this keyboard's hosts to come back. The choice belongs to the tab (`?peer=bedroom` in the address), so one tab can drive the bedroom while another drives the lounge.
+The page then shows a bar of that keyboard's hosts below its own. Tap one and that keyboard switches to it, and the remote, keyboard, paste box and mouse all drive it — the remote in that host's style with its hidden, hold and repeat lists. Tap one of this keyboard's hosts to come back. The choice belongs to the tab (`?peer=bedroom` in the address), so one tab can drive the bedroom while another drives the lounge.
 
-- Only the remote moves. Keyboard, mouse and Host Actions stay on this keyboard, and the linked one's settings stay on its own page.
+- The Position Finder and Host Actions stay on this keyboard, and the linked one's settings stay on its own page.
+- Everything goes by way of this keyboard, so it is only as quick as the Wi-Fi between them: mouse movement is gathered up and sent a piece at a time rather than streamed.
 - Styles are not copied between keyboards. Export one on the linked keyboard's page and Import it here; until then that host draws the full remote, and its bar says which style is missing.
 - Both keyboards need firmware with this feature.
 - Give the address as an IP address or the keyboard's `.local` name.
@@ -2084,6 +2085,7 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/status` | GET | — | Returns `{"connected":bool,"paired":bool,"device_name":"..."}` |
 | `/api/ble_keyboard/state` | GET | — | `/hosts`, `/status` and the drawn host's `/hidden`, `/repeat` and `/hold` replies in one object — what a [linked keyboard](#linking-a-second-keyboard) reads |
 | `/api/ble_keyboard/peers` | GET | — | Each linked keyboard's last `/state`, with `ok` and its `age` in seconds. Only on a keyboard with `peers:` |
+| `/api/ble_keyboard/peer_forward` | POST | `peer`, `ep`, and that endpoint's own parameters | Pass one keyboard or mouse request (`string`, `key`, `hold_key`, `release`, `mouse_move`, `mouse_click`, `mouse_hold`, `mouse_release`, `mouse_scroll`) on to a linked keyboard |
 | `/api/ble_keyboard/buttons` | GET | — | Returns JSON array of programmed buttons |
 | `/api/ble_keyboard/press` | POST | `action` (string) | Trigger a programmed button action |
 | `/api/ble_keyboard/hosts` | GET | — | Returns `{"active":N,"style_slot":N,"slots":[{"slot":N,"occupied":bool,"addr":"XX:XX:...","bonded":bool,"tpl":"style1"},...]}`. `tpl` is that host's [remote style](#remote-style-per-host) and is absent when it uses the default. `bonded` is false when the slot has no pairing key. `style_slot` is the slot the remote is drawn for — `active`, except while an action that switched host is still running |

@@ -490,6 +490,48 @@ __attribute__((noinline)) static void send_peers(AsyncWebServerRequest *request,
   httpd_resp_sendstr_chunk(req, "]}");
   httpd_resp_send_chunk(req, nullptr, 0);
 }
+
+// The keyboard and mouse cards of a tab driving a linked keyboard: each request
+// exactly as the page would have made it here, passed on to the same endpoint
+// over there — so a typed '|', a held character or a scroll mean what they
+// always did. Only the endpoints those cards use. Null on success, else why not.
+__attribute__((noinline)) static const char *forward_to_peer(AsyncWebServerRequest *request, EspidfBleKeyboard *kb) {
+  const int index = kb->peer_index(request->arg("peer"));
+  if (index < 0)
+    return "No such peer";
+  const std::string ep = request->arg("ep");
+  auto num = [request](const char *k) { return request->hasArg(k) ? atoi(request->arg(k).c_str()) : 0; };
+  // Movement and scrolling are summed on this side and sent as they go, not
+  // queued a request each — see peer_add_motion().
+  if (ep == "mouse_move") {
+    kb->peer_add_motion(index, num("x"), num("y"), 0);
+    return nullptr;
+  }
+  if (ep == "mouse_scroll") {
+    kb->peer_add_motion(index, 0, 0, num("amount"));
+    return nullptr;
+  }
+  static const struct {
+    const char *ep;
+    const char *params[3];
+  } FORWARDED[] = {
+      {"string", {"keys", nullptr, nullptr}},     {"key", {"modifier", "keycode", nullptr}},
+      {"hold_key", {"char", "modifier", "keycode"}}, {"release", {nullptr, nullptr, nullptr}},
+      {"mouse_click", {"btn", nullptr, nullptr}}, {"mouse_hold", {"btn", nullptr, nullptr}},
+      {"mouse_release", {nullptr, nullptr, nullptr}},
+  };
+  for (const auto &f : FORWARDED) {
+    if (ep != f.ep)
+      continue;
+    std::vector<std::pair<std::string, std::string>> params;
+    for (const char *name : f.params) {
+      if (name != nullptr && request->hasArg(name))
+        params.emplace_back(name, request->arg(name));
+    }
+    return kb->peer_forward(index, ep, params) ? nullptr : "Busy";
+  }
+  return "Not something a linked keyboard is sent";
+}
 #endif
 
 // ── Internal handler class ─────────────────────────────────────────
@@ -1473,6 +1515,17 @@ class BleKbWebHandler : public AsyncWebHandler {
         kb_->queue_action(action);
       }
       send_response(200, "text/plain", "OK");
+
+    } else if (path == "peer_forward") {
+#ifdef USE_BLE_KB_PEERS
+      const char *why = forward_to_peer(request, kb_);
+      if (why == nullptr)
+        send_response(200, "text/plain", "OK");
+      else
+        send_response(strcmp(why, "Busy") == 0 ? 409 : 400, "text/plain", why);
+#else
+      send_response(400, "text/plain", "This keyboard has no peers");
+#endif
 
     } else if (path == "switch_host") {
       // Checked before the narrowing cast, as every other slot endpoint does.

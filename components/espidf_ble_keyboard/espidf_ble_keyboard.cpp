@@ -4286,9 +4286,12 @@ void EspidfBleKeyboard::action_task_entry_(void *arg) {
     while (true) {
         if (xQueueReceive(self->action_queue_, &job, wait) == pdTRUE && job != nullptr) {
 #ifdef USE_BLE_KB_PEERS
-            // A merged run of one key goes straight to the peer: execute_action
-            // would split its '|' here and press the key on this keyboard's host.
-            if (!self->peers_.empty() && self->coalesce_peer_presses_(*job))
+            // A keyboard or mouse request for a peer is not an action string at
+            // all, and a merged run of one key goes straight to the peer too:
+            // execute_action would split its '|' and press the key here.
+            if (!self->peers_.empty() && !job->empty() && (*job)[0] == PEER_JOB)
+                self->run_peer_forward_(*job);
+            else if (!self->peers_.empty() && self->coalesce_peer_presses_(*job))
                 self->run_peer_action_(*job);
             else
 #endif
@@ -4312,12 +4315,18 @@ void EspidfBleKeyboard::queue_macro_index_(int32_t index) {
     queue_action(macros_[(size_t) index].action);
 }
 
-void EspidfBleKeyboard::queue_action(const std::string &action) {
+bool EspidfBleKeyboard::queue_action(const std::string &action) {
     // No task means setup() could not create one; running inline is what this
     // did before, and a working button on a thin stack beats no button at all.
     if (action_queue_ == nullptr) {
+#ifdef USE_BLE_KB_PEERS
+        if (!action.empty() && action[0] == PEER_JOB) {
+            run_peer_forward_(action);
+            return true;
+        }
+#endif
         execute_action(action);
-        return;
+        return true;
     }
     auto *job = new std::string(action);
     if (xQueueSend(action_queue_, &job, 0) != pdTRUE) {
@@ -4326,7 +4335,9 @@ void EspidfBleKeyboard::queue_action(const std::string &action) {
         // dropping the newest says so rather than queueing minutes of them.
         delete job;
         ESP_LOGW(TAG, "Action queue full, dropped: %s", action.c_str());
+        return false;
     }
+    return true;
 }
 
 void EspidfBleKeyboard::execute_action(const std::string &action) {

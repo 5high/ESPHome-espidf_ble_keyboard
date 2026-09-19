@@ -496,39 +496,161 @@ void EspidfBleKeyboard::run_peer_action_(const std::string &action) {
     queue_action(action);
     return;
   }
-  if (p->down_until_ms != 0 && (int32_t) (millis() - p->down_until_ms) < 0) {
-    ESP_LOGW(TAG, "Peer %s is not answering; dropped %s", p->name.c_str(), action.c_str() + sep + 1);
-    return;
+  std::string body = "action=";
+  body.reserve(7 + (action.size() - sep) * 3);
+  form_encode_append(body, action.substr(sep + 1));
+  // A press can switch its host or re-skin its remote, so read it again soon
+  // instead of on the usual timer — only happens while a page is looking.
+  if (peer_post_(*p, "/api/ble_keyboard/press", body, action.c_str() + sep + 1) == PEER_OK)
+    p->next_due_ms = (millis() + 300) | 1;
+}
+
+// Sends one request to a peer and keeps its standing up to date — shared by the
+// peer: verb and by the keyboard and mouse requests passed on for a page.
+EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_post_(Peer &p, const std::string &path,
+                                                            const std::string &body, const char *what) {
+  if (p.down_until_ms != 0 && (int32_t) (millis() - p.down_until_ms) < 0) {
+    ESP_LOGW(TAG, "Peer %s is not answering; dropped %s", p.name.c_str(), what);
+    return PEER_UNREACHABLE;
   }
   // A failed allocation aborts in this build, and a press arriving in the middle
   // of a page load can find the heap nearly empty. Better one press lost, said
   // so, than the keyboard rebooting.
   const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
   if (block < PEER_PRESS_MIN_BLOCK) {
-    ESP_LOGW(TAG, "Peer %s: no memory to send %s just now (largest free block %u B); dropped", p->name.c_str(),
-             action.c_str() + sep + 1, (unsigned) block);
-    return;
+    ESP_LOGW(TAG, "Peer %s: no memory to send %s just now (largest free block %u B); dropped", p.name.c_str(), what,
+             (unsigned) block);
+    return PEER_BUSY;
   }
-  std::string body = "action=";
-  body.reserve(7 + (action.size() - sep) * 3);
-  form_encode_append(body, action.substr(sep + 1));
-  const PeerResult r = peer_request_(*p, true, "/api/ble_keyboard/press", body, nullptr);
+  const PeerResult r = peer_request_(p, true, path.c_str(), body, nullptr);
   // Only a keyboard that could not be connected to is taken as gone. A press
   // sent and not answered in time has probably run over there, and a busy one
   // is busy — neither is a reason to drop the presses behind it.
-  if (r == PEER_OK) {
-    p->down_until_ms = 0;
-    // A press can switch its host or re-skin its remote, so read it again soon
-    // instead of on the usual timer — only happens while a page is looking.
-    p->next_due_ms = (millis() + 300) | 1;
-  } else if (r == PEER_UNREACHABLE) {
-    p->down_until_ms = (millis() + PEER_DOWN_MS) | 1;
-  }
+  if (r == PEER_OK)
+    p.down_until_ms = 0;
+  else if (r == PEER_UNREACHABLE)
+    p.down_until_ms = (millis() + PEER_DOWN_MS) | 1;
   if (r == PEER_OK || r == PEER_UNREACHABLE) {
     xSemaphoreTake(peer_mutex_, portMAX_DELAY);
-    p->ok = r == PEER_OK;
+    p.ok = r == PEER_OK;
     xSemaphoreGive(peer_mutex_);
   }
+  return r;
+}
+
+int EspidfBleKeyboard::peer_index(const std::string &name) const {
+  for (size_t i = 0; i < peers_.size(); i++) {
+    if (peers_[i].name == name)
+      return (int) i;
+  }
+  return -1;
+}
+
+static std::string peer_job(int index, const char *ep) {
+  std::string job(1, '\x1F');
+  job += std::to_string(index);
+  job += '\x1F';
+  job += ep;
+  job += '\x1F';
+  return job;
+}
+
+bool EspidfBleKeyboard::peer_forward(int index, const std::string &ep,
+                                     const std::vector<std::pair<std::string, std::string>> &params) {
+  if (index < 0 || (size_t) index >= peers_.size())
+    return false;
+  std::string job = peer_job(index, ep.c_str());
+  if (ep == "string") {
+    // Kept as text, so consecutive keystrokes can be joined before they go.
+    for (const auto &kv : params) {
+      if (kv.first == "keys")
+        job += kv.second;
+    }
+  } else {
+    for (size_t i = 0; i < params.size(); i++) {
+      if (i > 0)
+        job += '&';
+      job += params[i].first;
+      job += '=';
+      form_encode_append(job, params[i].second);
+    }
+  }
+  return queue_action(job);
+}
+
+void EspidfBleKeyboard::peer_add_motion(int index, int dx, int dy, int scroll) {
+  if (index < 0 || (size_t) index >= peers_.size() || (size_t) index >= MAX_PEERS)
+    return;
+  peer_dx_[index] += dx;
+  peer_dy_[index] += dy;
+  peer_scroll_[index] += scroll;
+  // One job waiting per peer at most; what arrives while it waits or while its
+  // request is out simply adds to the totals it will send.
+  if (!peer_motion_queued_[index].exchange(true) && !queue_action(peer_job(index, "motion")))
+    peer_motion_queued_[index] = false;
+}
+
+void EspidfBleKeyboard::flush_peer_motion_(int index) {
+  // Cleared before reading, so motion arriving from here on queues a fresh job
+  // rather than being lost behind this one.
+  peer_motion_queued_[index] = false;
+  Peer &p = peers_[index];
+  // A HID report carries -127..127 a report; anything past that stays in the
+  // totals for the next send.
+  auto take = [](std::atomic<int32_t> &total) {
+    const int32_t v = total.exchange(0);
+    const int32_t c = v > 127 ? 127 : (v < -127 ? -127 : v);
+    if (c != v)
+      total += v - c;
+    return c;
+  };
+  const int32_t dx = take(peer_dx_[index]), dy = take(peer_dy_[index]), sc = take(peer_scroll_[index]);
+  if (dx != 0 || dy != 0) {
+    peer_post_(p, "/api/ble_keyboard/mouse_move", "x=" + std::to_string(dx) + "&y=" + std::to_string(dy),
+               "a mouse move");
+  }
+  if (sc != 0)
+    peer_post_(p, "/api/ble_keyboard/mouse_scroll", "amount=" + std::to_string(sc), "a scroll");
+  if ((peer_dx_[index] != 0 || peer_dy_[index] != 0 || peer_scroll_[index] != 0) &&
+      !peer_motion_queued_[index].exchange(true) && !queue_action(peer_job(index, "motion")))
+    peer_motion_queued_[index] = false;
+}
+
+// "\x1F<index>\x1F<endpoint>\x1F<payload>", from peer_forward() or peer_add_motion().
+void EspidfBleKeyboard::run_peer_forward_(const std::string &job) {
+  const size_t a = job.find('\x1F', 1);
+  const size_t b = a == std::string::npos ? a : job.find('\x1F', a + 1);
+  const int index = atoi(job.c_str() + 1);
+  if (b == std::string::npos || index < 0 || (size_t) index >= peers_.size())
+    return;
+  const std::string ep = job.substr(a + 1, b - a - 1);
+  if (ep == "motion") {
+    flush_peer_motion_(index);
+    return;
+  }
+  std::string body;
+  if (ep == "string") {
+    // Typing sends a keystroke a request; joined up with the ones already
+    // waiting behind it, a burst goes as one — in order, since only the run
+    // at the front of the queue is taken.
+    std::string text = job.substr(b + 1);
+    size_t encoded = text.size() * 3;
+    const size_t head = b + 1;
+    std::string *next = nullptr;
+    while (encoded < PEER_MAX_TEXT_BODY && xQueuePeek(action_queue_, &next, 0) == pdTRUE && next != nullptr &&
+           next->size() > head && next->compare(0, head, job, 0, head) == 0 &&
+           encoded + (next->size() - head) * 3 <= PEER_MAX_TEXT_BODY &&
+           xQueueReceive(action_queue_, &next, 0) == pdTRUE) {
+      text.append(*next, head, std::string::npos);
+      encoded += (next->size() - head) * 3;
+      delete next;
+    }
+    body = "keys=";
+    form_encode_append(body, text);
+  } else {
+    body = job.substr(b + 1);
+  }
+  peer_post_(peers_[index], "/api/ble_keyboard/" + ep, body, ep.c_str());
 }
 
 // Holding a repeating key on a linked keyboard's remote queues the same press

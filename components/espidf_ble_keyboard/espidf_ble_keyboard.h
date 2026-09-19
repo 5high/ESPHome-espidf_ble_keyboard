@@ -451,7 +451,8 @@ class EspidfBleKeyboard : public Component
   /// option either: `delay:` blocks with vTaskDelay, so a chain with delays in
   /// it would stall ESPHome for its whole duration. Returns immediately; the
   /// caller does not learn whether the action ran.
-  void queue_action(const std::string &action);
+  /// False when the queue was full and the action was dropped (and logged).
+  bool queue_action(const std::string &action);
 
   /// Execute an action string (combo:, consumer:, named actions, or literal text).
   /// Used by buttons, macros, web API, and YAML automations.
@@ -519,6 +520,16 @@ class EspidfBleKeyboard : public Component
     std::shared_ptr<const std::string> state;
   };
   void peer_snapshot(std::vector<PeerSnapshot> &out);
+  /// Index of the peer called `name`, or -1.
+  int peer_index(const std::string &name) const;
+  /// One of the keyboard or mouse cards' requests, passed on to the same
+  /// endpoint on a peer, on the action task in queue order. False when the
+  /// queue was full.
+  bool peer_forward(int index, const std::string &ep,
+                    const std::vector<std::pair<std::string, std::string>> &params);
+  /// Mouse movement and scrolling for a peer. Summed here and sent as one
+  /// request whenever the last one has gone, so a drag never builds a backlog.
+  void peer_add_motion(int index, int dx, int dy, int scroll);
 #endif
 
   void set_paired_binary_sensor(binary_sensor::BinarySensor *sensor) {
@@ -1191,6 +1202,18 @@ class EspidfBleKeyboard : public Component
   void run_peer_action_(const std::string &action);
   bool coalesce_peer_presses_(std::string &job);
   void refresh_peers_();
+  // Keyboard and mouse requests for a peer ride the action queue as
+  // "\x1F<index>\x1F<endpoint>\x1F<payload>" — a control character no action
+  // string starts with. The payload is the text for "string", nothing for
+  // "motion", and the form-encoded body for the rest.
+  static const char PEER_JOB = '\x1F';
+  static const size_t MAX_PEERS = 4;          // keep in sync with MAX_PEERS in __init__.py
+  static const size_t PEER_MAX_TEXT_BODY = 800;  // typed text merged into one request, encoded
+  std::atomic<int32_t> peer_dx_[MAX_PEERS]{}, peer_dy_[MAX_PEERS]{}, peer_scroll_[MAX_PEERS]{};
+  std::atomic<bool> peer_motion_queued_[MAX_PEERS]{};
+  PeerResult peer_post_(Peer &p, const std::string &path, const std::string &body, const char *what);
+  void run_peer_forward_(const std::string &job);
+  void flush_peer_motion_(int index);
 #endif
 
   // RSSI state (interval/timing/callbacks stay protected — only touched by member functions)

@@ -601,7 +601,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 </div>
 
 <div class="card" id="finder-card">
-<h2><svg viewBox="0 0 24 24"><path d="M11 2h2v6h-2zM2 11h6v2H2zm14 0h6v2h-6zm-5 5h2v6h-2zM7 7l3 3-1.4 1.4L5.6 8.4zm10 0l1.4 1.4-3 3L14 11zm0 10l-3-3 1.4-1.4 3 3zM7 17l-1.4-1.4 3-3L10 14z"/></svg>Position Finder<button class="macro-edit-btn" id="finder-edit-toggle">Edit</button></h2>
+<h2><svg viewBox="0 0 24 24"><path d="M11 2h2v6h-2zM2 11h6v2H2zm14 0h6v2h-6zm-5 5h2v6h-2zM7 7l3 3-1.4 1.4L5.6 8.4zm10 0l1.4 1.4-3 3L14 11zm0 10l-3-3 1.4-1.4 3 3zM7 17l-1.4-1.4 3-3L10 14z"/></svg>Position Finder<span class="kb-drives" data-local hidden></span><button class="macro-edit-btn" id="finder-edit-toggle">Edit</button></h2>
 <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Locked by default so a stray tap can't move the cursor &mdash; click <strong>Edit</strong> to aim &amp; calibrate. Then press &amp; drag the map to move the cursor; copy the <code>mouse_goto</code> value into a button/macro.</div>
 <div id="finder-map" style="position:relative;width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:crosshair;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none"></div>
 <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
@@ -961,7 +961,20 @@ function pollEvery(fn,ms){
 // so nothing on the device changes, and curl calls that pass ?args keep working.
 //
 // `opts` is merged last, for the callers that need an AbortSignal.
+//
+// A tab driving a linked keyboard sends the keyboard and mouse cards' requests
+// there: each goes to this keyboard's peer_forward with the same parameters, and
+// is passed on to the same endpoint over there. opts.peer overrides which
+// keyboard — null for this one — for a release that must reach wherever its hold
+// went down, even if the tab has moved on since.
+const PEER_FWD=['string','key','hold_key','release','mouse_move','mouse_click','mouse_hold','mouse_release','mouse_scroll'];
 function apiPost(endpoint,params,opts){
+  let target=peerLock();
+  if(opts&&'peer' in opts){target=opts.peer;opts=Object.assign({},opts);delete opts.peer}
+  if(target!==null&&PEER_FWD.indexOf(endpoint)>=0){
+    params=Object.assign({peer:target,ep:endpoint},params||{});
+    endpoint='peer_forward';
+  }
   return fetch('/api/ble_keyboard/'+endpoint,
                Object.assign({method:'POST'},
                              params?{body:new URLSearchParams(params)}:null,
@@ -1099,8 +1112,12 @@ function recPaint(){
 }
 
 function recordStep(endpoint,params){
-  const step=recStepFor(endpoint,params||{});
-  if(!step)return;
+  // Keys and mouse sent to a linked keyboard are recorded as going there, so the
+  // macro replays where it was recorded. A remote press arrives already wrapped.
+  const pfx=endpoint!=='press'&&peerLock()!==null?'peer:'+peerLock()+':':'';
+  const raw=recStepFor(endpoint,params||{});
+  if(!raw)return;
+  const step=pfx+raw;
   // A '|' typed on the on-screen keyboard would split the macro into two steps
   // when it ran. Only typed text can carry one — a press: action legitimately
   // does, and is recorded verbatim.
@@ -1110,34 +1127,35 @@ function recordStep(endpoint,params){
   const now=Date.now(),gap=recSteps.length?now-recLastMs:0;
   const prev=recSteps.length?recSteps[recSteps.length-1]:'';
   const next=recSteps.slice();
-  if(step.indexOf('string:')===0&&prev.indexOf('string:')===0){
+  const STR=pfx+'string:',SCR=pfx+SCROLL;
+  if(step.indexOf(STR)===0&&prev.indexOf(STR)===0){
     // The keyboard posts one character per keypress, so typing 'hello' arrives
     // as five calls — merge them into one step rather than five.
     //
     // Deliberately not time-gated: typing slowly is still typing, and gating it
     // put a delay: between individual letters. Text only stops accumulating
     // when something that isn't text is pressed.
-    next[next.length-1]=prev+step.substring(7);
-  }else if(step.indexOf(SCROLL)===0&&prev.indexOf(SCROLL)===0){
+    next[next.length-1]=prev+step.substring(STR.length);
+  }else if(step.indexOf(SCR)===0&&prev.indexOf(SCR)===0){
     // Scrolling is one continuous gesture, so notches accumulate into a single
     // step rather than one step each: ten clicks of the wheel is mouse_scroll:-30,
     // not ten copies of mouse_scroll:-3 eating 160 of the 255 characters.
     //
     // Checked before the held-button rule below, so a *held* scroll button
     // accumulates too instead of collapsing to a single notch.
-    const a=parseInt(prev.substring(SCROLL.length),10)||0,
-          b=parseInt(step.substring(SCROLL.length),10)||0,
+    const a=parseInt(prev.substring(SCR.length),10)||0,
+          b=parseInt(step.substring(SCR.length),10)||0,
           sum=a+b;
     // Same direction only — reversing is a new gesture, not a cancellation, and
     // summing it would silently produce a scroll of zero. Capped at the int8 the
     // HID report carries; past that the run continues in a fresh step.
-    if(a&&b&&(a<0)===(b<0)&&sum>=-127&&sum<=127)next[next.length-1]=SCROLL+sum;
+    if(a&&b&&(a<0)===(b<0)&&sum>=-127&&sum<=127)next[next.length-1]=SCR+sum;
     else next.push(step);            // still no delay: the gesture is unbroken
   }else if(gap<REC_GAP&&step===prev){
     recLastMs=now;return;              // held button auto-firing: keep one press
   }else{
     // Fixed spacing between presses, never before the first one.
-    if(next.length)next.push('delay:'+(prev==='home'?REC_DELAY_HOME:REC_DELAY));
+    if(next.length)next.push('delay:'+(prev.replace(/^peer:[a-z0-9_]+:/,'')==='home'?REC_DELAY_HOME:REC_DELAY));
     next.push(step);
   }
   if(next.join(' | ').length>recBudget()){
@@ -2543,13 +2561,21 @@ function hostBtn(s,active){
     if(window.applyRepeat)window.applyRepeat(false);
     if(window.applyHold)window.applyHold(false);
   };
-  // Keyboard and mouse still type on this keyboard's own host; say so while
-  // the remote beside them drives another one.
+  // Which keyboard each card drives while the tab is on a linked one: keyboard
+  // and mouse go there with the remote; the Position Finder, calibrated for this
+  // keyboard's own screens, stays here (data-local).
   function drivesNote(){
+    const p=RMT_PEER!==null&&PEERS[RMT_PEER],st=p&&p.state;
+    const peerName=(st&&st.status&&st.status.device_name)||RMT_PEER;
     document.querySelectorAll('.kb-drives').forEach(el=>{
       el.hidden=RMT_PEER===null;
-      el.textContent='→ '+(LOCAL_NAME||'this keyboard');
-      el.title="The remote is driving "+RMT_PEER+". The keyboard and mouse still type on this keyboard's own host.";
+      if(el.hasAttribute('data-local')){
+        el.textContent='→ '+(LOCAL_NAME||'this keyboard');
+        el.title='Stays on this keyboard: its calibration belongs to this keyboard\'s own screens.';
+      }else{
+        el.textContent='→ '+peerName;
+        el.title='Typing and pointing go to '+peerName+', the keyboard the remote is driving.';
+      }
     });
   }
   // The tab moved onto, off, or between keyboards.
@@ -4519,7 +4545,9 @@ function buildKeyboard(){
   // pointerup typing the character a second time: when the device refuses to
   // hold a key, the fallback tap is sent from the reply — and that reply can
   // arrive long before the finger comes off.
-  let heldEl=null,holdT=null,holdWatch=null,holdArmed=false;
+  // keyHoldPeer: the keyboard a hold went down on — a linked one's name, or null
+  // for this one — so its release goes there even if the tab has moved since.
+  let heldEl=null,holdT=null,holdWatch=null,holdArmed=false,keyHoldPeer=null;
   // How long a key must be down before it is treated as held rather than
   // pressed. Ordinary typing never reaches it, so ordinary typing keeps the tap
   // path it always had — which matters more than it sounds: holding a key that
@@ -4557,8 +4585,9 @@ function buildKeyboard(){
     // lands leaves the key down on the host, and the device then swallows both a
     // re-hold and a tap of that key — one lost packet and that key goes quiet
     // while every other one keeps working.
-    chainOp(()=>apiPost('release')
-      .catch(()=>apiPost('release').catch(()=>{})));
+    const at={peer:keyHoldPeer};
+    chainOp(()=>apiPost('release',null,at)
+      .catch(()=>apiPost('release',null,at).catch(()=>{})));
     clearStickyMods();
   }
   function startKeyHold(k,el){
@@ -4568,7 +4597,8 @@ function buildKeyboard(){
     // which key types it depends on the layout — the device resolves those the
     // same way it resolves typed text.
     const p=r.ep==='string'?{char:r.params.keys}:r.params;
-    heldEl=el;holdArmed=true;
+    heldEl=el;holdArmed=true;keyHoldPeer=peerLock();
+    const at={peer:keyHoldPeer};
     // Type it once instead of holding it. Guarded on this press still being the
     // one in progress: a finger already lifted has had its release queued, and
     // typing here as well would put a stray character on the host.
@@ -4581,10 +4611,10 @@ function buildKeyboard(){
       // may well have been carried out — and a key left down is not a key that
       // simply does not repeat, it is one that goes dead, because the device
       // drops both a re-hold and a tap of a key it already holds.
-      if(lift)chainOp(()=>apiPost('release').catch(()=>{}));
+      if(lift)chainOp(()=>apiPost('release',null,at).catch(()=>{}));
       api(r.ep,r.params);clearStickyMods();
     };
-    chainOp(()=>apiPost('hold_key',p)
+    chainOp(()=>apiPost('hold_key',p,at)
       // Nothing this layout can hold — a dead key, most often, which is two
       // strokes and so has no single key to leave down. The key still works, it
       // just does not repeat.
@@ -5029,7 +5059,7 @@ buildKeyboard();
     holdEl.classList.remove('held');holdEl=null;
     // Released where it went down, even if the tab has moved on since.
     if(holdPeer!==null)apiPost('press',{action:'peer:'+holdPeer+':release'}).catch(()=>{});
-    else apiPost('release').catch(()=>{});
+    else apiPost('release',null,{peer:null}).catch(()=>{});
     holdPeer=null;
   }
   // Puts a button down on the host and keeps it there. Shared by the pointer
