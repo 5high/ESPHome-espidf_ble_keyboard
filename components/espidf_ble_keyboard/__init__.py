@@ -8,7 +8,7 @@ import esphome.config_validation as cv
 import esphome.final_validate as fv
 from esphome.components import binary_sensor, button, sensor, text, text_sensor
 from esphome.const import CONF_ID
-from esphome.core import CORE, EsphomeError, HexInt
+from esphome.core import EsphomeError, HexInt
 from esphome import automation
 
 _LOGGER = logging.getLogger(__name__)
@@ -362,13 +362,20 @@ def _peer_name(value):
 
 
 def _peer_url(value):
-    """http://host[:port] and nothing more. The device appends the API path
-    itself, and it has no TLS client configured for this."""
+    """http://<IPv4 address or .local name>[:port] and nothing more. The device
+    appends the API path itself; it speaks plain http, and finds a .local name
+    over the mDNS it already runs — there is no DNS client in the build."""
     value = cv.string_strict(value).strip().rstrip("/")
-    if re.fullmatch(r"http://([A-Za-z0-9.\-]+|\[[0-9A-Fa-f:]+\])(:\d{1,5})?", value) is None:
+    m = re.fullmatch(r"http://([A-Za-z0-9.\-]+)(?::(\d{1,5}))?", value)
+    host = m.group(1).lower() if m else ""
+    ipv4 = re.fullmatch(r"(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})", host)
+    if (m is None
+            or (ipv4 is not None and any(int(o) > 255 for o in ipv4.groups()))
+            or (ipv4 is None and not re.fullmatch(r"[a-z0-9\-]+\.local", host))
+            or (m.group(2) is not None and not 1 <= int(m.group(2)) <= 65535)):
         raise cv.Invalid(
-            f"'{value}' is not a peer address — give http://<address>[:port] with no path, "
-            "e.g. http://192.168.1.36 (https is not supported)"
+            f"'{value}' is not a peer address — give http://<IP address>[:port] or "
+            "http://<name>.local, with no path, e.g. http://192.168.1.36 (https is not supported)"
         )
     return value
 
@@ -652,20 +659,6 @@ async def to_code(config):
             for peer in config[CONF_PEERS]:
                 cg.add(var.add_peer(peer[CONF_NAME], peer[CONF_URL],
                                     peer[CONF_USERNAME], peer[CONF_PASSWORD]))
-            from esphome.components.esp32 import (
-                add_idf_sdkconfig_option,
-                include_builtin_idf_component,
-            )
-            # ESPHome leaves the HTTP client out of builds unless asked, and
-            # ESP-IDF compiles its login support out unless told otherwise.
-            include_builtin_idf_component("esp_http_client")
-            add_idf_sdkconfig_option("CONFIG_ESP_HTTP_CLIENT_ENABLE_BASIC_AUTH", True)
-            add_idf_sdkconfig_option("CONFIG_ESP_HTTP_CLIENT_ENABLE_DIGEST_AUTH", True)
-            # Peers are plain http, and the client's TLS side is most of what it
-            # costs in flash. Left alone when http_request is in the config,
-            # which may well need https.
-            if "http_request" not in CORE.config:
-                add_idf_sdkconfig_option("CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS", False)
 
         # Compress the control page into the firmware. Stored raw it was 243 KB
         # of flash — the single largest thing in the image, 15% of it — and the

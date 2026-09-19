@@ -15,6 +15,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,9 +34,6 @@
 #include "web_control.h"
 #endif
 
-#ifdef USE_BLE_KB_PEERS
-struct esp_http_client;  // esp_http_client.h, which only peers.cpp includes
-#endif
 
 namespace esphome {
 namespace espidf_ble_keyboard {
@@ -505,11 +503,22 @@ class EspidfBleKeyboard : public Component
   size_t peer_count() const { return peers_.size(); }
   /// A page is looking at the peers. The cache is only refreshed while one is.
   void note_peer_interest();
-  /// Near enough the size append_peers_json() will add, to reserve and to check
-  /// the heap against before building it.
-  size_t peers_json_size();
-  /// {"peers":[{"name","ok","age","state"}]} — each peer's last /state.
-  void append_peers_json(std::string &out);
+  /// The web server just took a request that is not one of the page's steady
+  /// polls — a page loading, most likely. Peer reads wait until it has settled.
+  void note_web_busy();
+  /// The page itself was just served: a load is starting. On top of what
+  /// note_web_busy() does, the cached peer state is let go for the duration.
+  void note_page_load();
+  /// Each peer as /peers reports it. `state` is shared with the cache rather than
+  /// copied, and stays valid for as long as the caller holds it even if the
+  /// cache moves on meanwhile.
+  struct PeerSnapshot {
+    const char *name;
+    bool ok;
+    int32_t age;  // seconds since its state was read; -1 before the first answer
+    std::shared_ptr<const std::string> state;
+  };
+  void peer_snapshot(std::vector<PeerSnapshot> &out);
 #endif
 
   void set_paired_binary_sensor(binary_sensor::BinarySensor *sensor) {
@@ -1134,35 +1143,51 @@ class EspidfBleKeyboard : public Component
   // the order they were queued, and the /state cache on its quiet ticks. The
   // web task only reads the cache, under peer_mutex_.
   struct Peer {
-    std::string name, url, user, pass;
-    std::string state;          // its last /state reply; empty when nobody is looking
+    std::string name, host, user, pass;
+    uint16_t port{80};
+    uint32_t ip{0};        // network order; 0 until a .local name has been looked up
+    bool by_name{false};   // a .local name, looked up again if its address stops answering
+    // The login it last asked for, answered up front on every request after.
+    enum : uint8_t { AUTH_NONE, AUTH_BASIC, AUTH_DIGEST } auth{AUTH_NONE};
+    std::string realm, nonce, opaque;
+    bool qop_auth{false};
+    uint32_t nc{0};
+    // Its last /state reply; null when nobody is looking. Shared so /peers can
+    // send it straight from here instead of copying it into a reply.
+    std::shared_ptr<const std::string> state;
     uint32_t fetched_ms{0};     // when `state` arrived
     uint32_t next_due_ms{0};    // next /state read
     uint32_t down_until_ms{0};  // after it can't be reached, presses are dropped until this
     bool ok{false};             // whether it is answering; what greys its bar
     uint8_t read_fails{0};      // /state reads failed in a row
-    // [0] reads /state, [1] sends presses. Kept between requests so each is a
-    // single one: the login is negotiated once, not per request. Two, because
-    // the client ties a digest login to one method. Freed after PEER_IDLE_MS.
-    esp_http_client *clients[2]{nullptr, nullptr};
-    uint32_t used_ms[2]{0, 0};
   };
   std::vector<Peer> peers_;
   SemaphoreHandle_t peer_mutex_{nullptr};
   std::atomic<uint32_t> peer_interest_ms_{0};
+  std::atomic<uint32_t> web_busy_ms_{0};
+  std::atomic<uint32_t> page_load_ms_{0};
   bool peer_cache_live_{false};
+  bool peer_starved_{false};  // reads paused for want of memory; logged on each change
+  static const uint32_t PEER_QUIET_MS = 2000;          // no reads this soon after a page-load request
+  static const size_t PEER_READ_MIN_BLOCK = 8192;      // a read holds a client, a socket and the reply
+  static const size_t PEER_READ_MIN_FREE = 16384;
+  static const size_t PEER_PRESS_MIN_BLOCK = 4096;
   static const uint32_t PEER_TIMEOUT_MS = 1500;       // a press
   static const uint32_t PEER_READ_TIMEOUT_MS = 3000;  // a /state read, which can wait behind its own page
   static const uint32_t PEER_POLL_MS = 4000;
   static const uint32_t PEER_RETRY_MS = 15000;
   static const uint32_t PEER_INTEREST_MS = 15000;
-  static const uint32_t PEER_IDLE_MS = 15000;
   static const uint32_t PEER_SLOW_MS = 700;
   static const size_t PEER_MAX_REPLY = 6144;
   static const size_t PEER_MAX_CHAIN = 240;
   // BUSY is its 409: short of memory for the reply just now, not gone.
   enum PeerResult : uint8_t { PEER_OK, PEER_BUSY, PEER_NO_REPLY, PEER_UNREACHABLE };
   PeerResult peer_request_(Peer &p, bool post, const char *path, const std::string &body, std::string *out);
+  PeerResult peer_exchange_(Peer &p, bool post, const char *path, const std::string &body, std::string *out,
+                            int &status, std::string &challenge);
+  bool peer_resolve_(Peer &p);
+  void peer_auth_append_(Peer &p, const char *method, const char *path, std::string &out);
+  bool peer_take_challenge_(Peer &p, const std::string &challenge);
   void run_peer_action_(const std::string &action);
   bool coalesce_peer_presses_(std::string &job);
   void refresh_peers_();

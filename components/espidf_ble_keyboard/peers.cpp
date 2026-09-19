@@ -1,20 +1,35 @@
 // Linked keyboards: the peer: verb, and the cache of each peer's /state that
 // lets this keyboard's page show another keyboard's hosts. Compiled only when
-// the config lists peers:, which is also what pulls esp_http_client into the
-// build — a keyboard without peers carries none of this.
+// the config lists peers: — a keyboard without peers carries none of this.
 //
 // Everything that talks to a peer runs on the action task. Presses go out in
 // the order they were queued, so a macro's delay: still means what it says, and
 // the cache is refreshed only on that task's quiet ticks and only while a page
-// is asking for it. The web task never waits on the network: /peers copies the
-// cache under peer_mutex_ and returns.
+// is asking for it. The web task never waits on the network: /peers takes a
+// reference to the cache under peer_mutex_ and sends it from there, uncopied.
+//
+// The HTTP here is a few hundred lines on plain sockets rather than ESP-IDF's
+// esp_http_client, which linked its TLS stack and a DNS resolver for requests
+// that are neither — about 86 KB of flash, and several KB of heap per request on
+// a keyboard whose heap is what runs out first.
 #include "espidf_ble_keyboard.h"
 
 #ifdef USE_BLE_KB_PEERS
 
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
-#include "esp_http_client.h"
+#include "esp_heap_caps.h"
+#include "esp_random.h"
+#include "esp_rom_md5.h"
+#include "lwip/ip_addr.h"
+#include "lwip/sockets.h"
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <strings.h>
+#ifdef USE_MDNS
+#include <mdns.h>
+#endif
 
 namespace esphome {
 namespace espidf_ble_keyboard {
@@ -25,30 +40,11 @@ static const char *const TAG = "espidf_ble_keyboard.peer";
 // rather than each waiting out the timeout — five presses at a dead keyboard
 // would otherwise hold the action task for over seven seconds.
 static const uint32_t PEER_DOWN_MS = 5000;
+// A reply's status line and headers. ESPHome's run to a few hundred bytes.
+static const size_t PEER_MAX_HEAD = 1536;
+static const uint32_t PEER_MDNS_TIMEOUT_MS = 2000;
 
 namespace {
-
-struct PeerReply {
-  std::string *out;
-  size_t cap;
-  bool too_big;
-};
-
-// Collects the reply body. The 401 that opens a digest login has a body too, and
-// it arrives through here before the real answer, so only a 200's body counts.
-esp_err_t peer_http_event(esp_http_client_event_t *evt) {
-  if (evt->event_id != HTTP_EVENT_ON_DATA || evt->user_data == nullptr)
-    return ESP_OK;
-  auto *r = static_cast<PeerReply *>(evt->user_data);
-  if (r->out == nullptr || esp_http_client_get_status_code(evt->client) != 200)
-    return ESP_OK;
-  if (r->too_big || r->out->size() + (size_t) evt->data_len > r->cap) {
-    r->too_big = true;
-    return ESP_OK;
-  }
-  r->out->append(static_cast<const char *>(evt->data), (size_t) evt->data_len);
-  return ESP_OK;
-}
 
 // application/x-www-form-urlencoded, the way the page's own apiPost sends it:
 // the far keyboard reads its parameters from the body.
@@ -68,6 +64,102 @@ void form_encode_append(std::string &out, const std::string &s) {
   }
 }
 
+void base64_append(std::string &out, const std::string &in) {
+  static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  size_t i = 0;
+  for (; i + 2 < in.size(); i += 3) {
+    const uint32_t v = ((uint8_t) in[i] << 16) | ((uint8_t) in[i + 1] << 8) | (uint8_t) in[i + 2];
+    out += T[(v >> 18) & 63];
+    out += T[(v >> 12) & 63];
+    out += T[(v >> 6) & 63];
+    out += T[v & 63];
+  }
+  if (i < in.size()) {
+    uint32_t v = (uint8_t) in[i] << 16;
+    if (i + 1 < in.size())
+      v |= (uint8_t) in[i + 1] << 8;
+    out += T[(v >> 18) & 63];
+    out += T[(v >> 12) & 63];
+    out += i + 1 < in.size() ? T[(v >> 6) & 63] : '=';
+    out += '=';
+  }
+}
+
+// MD5 through the chip's ROM, which ESPHome's own web server already uses to
+// check the same logins. Lowercase hex, which is what that check compares.
+class Md5Hex {
+ public:
+  Md5Hex() { esp_rom_md5_init(&ctx_); }
+  Md5Hex &add(const char *s, size_t n) {
+    esp_rom_md5_update(&ctx_, s, n);
+    return *this;
+  }
+  Md5Hex &add(const char *s) { return add(s, strlen(s)); }
+  Md5Hex &add(const std::string &s) { return add(s.data(), s.size()); }
+  void hex(char out[33]) {
+    uint8_t d[16];
+    esp_rom_md5_final(d, &ctx_);
+    for (int i = 0; i < 16; i++)
+      snprintf(out + i * 2, 3, "%02x", d[i]);
+  }
+
+ private:
+  md5_context_t ctx_;
+};
+
+// One parameter of a WWW-Authenticate header, quoted or bare; empty if absent.
+std::string auth_param(const std::string &h, const char *key) {
+  const size_t klen = strlen(key);
+  size_t i = 0;
+  while (i < h.size()) {
+    while (i < h.size() && (h[i] == ' ' || h[i] == ','))
+      i++;
+    const size_t name = i;
+    while (i < h.size() && h[i] != '=' && h[i] != ',' && h[i] != ' ')
+      i++;
+    const bool match = i - name == klen && strncasecmp(h.c_str() + name, key, klen) == 0;
+    while (i < h.size() && h[i] == ' ')
+      i++;
+    if (i >= h.size() || h[i] != '=')
+      continue;
+    i++;
+    std::string val;
+    if (i < h.size() && h[i] == '"') {
+      const size_t end = h.find('"', i + 1);
+      val = h.substr(i + 1, (end == std::string::npos ? h.size() : end) - i - 1);
+      i = end == std::string::npos ? h.size() : end + 1;
+    } else {
+      const size_t end = h.find(',', i);
+      val = h.substr(i, (end == std::string::npos ? h.size() : end) - i);
+      i = end == std::string::npos ? h.size() : end;
+    }
+    if (match)
+      return val;
+  }
+  return std::string();
+}
+
+// Closes the socket on every way out of a function.
+struct SocketGuard {
+  int fd;
+  explicit SocketGuard(int f) : fd(f) {}
+  ~SocketGuard() {
+    if (fd >= 0)
+      lwip_close(fd);
+  }
+};
+
+bool send_all(int fd, const char *data, size_t len) {
+  while (len > 0) {
+    const int n = lwip_send(fd, data, len, 0);
+    if (n <= 0)
+      return false;
+    data += n;
+    len -= (size_t) n;
+  }
+  return true;
+}
+
 }  // namespace
 
 void EspidfBleKeyboard::add_peer(const std::string &name, const std::string &url, const std::string &user,
@@ -76,99 +168,305 @@ void EspidfBleKeyboard::add_peer(const std::string &name, const std::string &url
     peer_mutex_ = xSemaphoreCreateMutex();
   Peer p;
   p.name = name;
-  p.url = url;
   p.user = user;
   p.pass = pass;
+  // http://<host>[:port], checked by the schema. An address is used as it is; a
+  // .local name is looked up over mDNS the first time it is needed.
+  std::string host = url.rfind("http://", 0) == 0 ? url.substr(7) : url;
+  const size_t colon = host.rfind(':');
+  if (colon != std::string::npos) {
+    p.port = (uint16_t) atoi(host.c_str() + colon + 1);
+    host.resize(colon);
+  }
+  p.host = host;
+  ip4_addr_t addr;
+  if (ip4addr_aton(host.c_str(), &addr))
+    p.ip = addr.addr;
+  else
+    p.by_name = true;
   peers_.push_back(std::move(p));
 }
 
 // Never 0, which is what "nobody has asked yet" reads as.
 void EspidfBleKeyboard::note_peer_interest() { peer_interest_ms_.store(millis() | 1); }
-
-static esp_http_client_handle_t peer_client_new(const std::string &url, const std::string &user,
-                                                const std::string &pass, uint32_t timeout_ms) {
-  esp_http_client_config_t cfg = {};
-  cfg.url = url.c_str();
-  cfg.timeout_ms = (int) timeout_ms;
-  cfg.event_handler = peer_http_event;
-  cfg.disable_auto_redirect = true;
-  cfg.user_agent = "espidf_ble_keyboard";
-  // A digest Authorization header alone is ~300 bytes; the default 512 leaves
-  // the request line and the other headers very little room.
-  cfg.buffer_size_tx = 1024;
-  if (!user.empty()) {
-    // The client answers the far side's 401 with whichever scheme it asked for.
-    cfg.username = user.c_str();
-    cfg.password = pass.c_str();
-    cfg.max_authorization_retries = 1;
-  }
-  return esp_http_client_init(&cfg);
+void EspidfBleKeyboard::note_web_busy() { web_busy_ms_.store(millis() | 1); }
+void EspidfBleKeyboard::note_page_load() {
+  const uint32_t now = millis() | 1;
+  page_load_ms_.store(now);
+  web_busy_ms_.store(now);
 }
 
-// Each kind of request goes out on a client kept for it, so after the first one
-// the login is already known and every request is a single exchange instead of
-// a 401 and a retry. The far side closes the connection after each reply, so
-// what this saves is that extra round trip — half the traffic, on a keyboard
-// whose radio is shared with Bluetooth and can be slow to answer.
+// The peer's address: given, or found over mDNS for a .local name and kept until
+// a connection to it fails.
+bool EspidfBleKeyboard::peer_resolve_(Peer &p) {
+  if (p.ip != 0)
+    return true;
+#ifdef USE_MDNS
+  const size_t dot = p.host.find('.');
+  const std::string label = p.host.substr(0, dot);
+  esp_ip4_addr_t addr{};
+  if (mdns_query_a(label.c_str(), PEER_MDNS_TIMEOUT_MS, &addr) == ESP_OK && addr.addr != 0) {
+    p.ip = addr.addr;
+    const auto *b = reinterpret_cast<const uint8_t *>(&addr.addr);  // network order
+    ESP_LOGI(TAG, "Peer %s is at %u.%u.%u.%u", p.name.c_str(), b[0], b[1], b[2], b[3]);
+    return true;
+  }
+  ESP_LOGW(TAG, "Peer %s: nothing answered for %s", p.name.c_str(), p.host.c_str());
+#else
+  ESP_LOGW(TAG, "Peer %s: %s needs mDNS, which this config has turned off — give its address instead",
+           p.name.c_str(), p.host.c_str());
+#endif
+  return false;
+}
+
+// The Authorization header for the next request, from the challenge the peer
+// last sent. ESPHome issues a fresh nonce with each 401 and accepts a response
+// built on any of them, so one challenge serves every request after it; if a
+// peer ever does refuse it, peer_request_() takes the new challenge and asks
+// once more.
+void EspidfBleKeyboard::peer_auth_append_(Peer &p, const char *method, const char *path, std::string &out) {
+  if (p.user.empty() || p.auth == Peer::AUTH_NONE)
+    return;
+  if (p.auth == Peer::AUTH_BASIC) {
+    out += "Authorization: Basic ";
+    base64_append(out, p.user + ":" + p.pass);
+    out += "\r\n";
+    return;
+  }
+  char ha1[33], ha2[33], resp[33], nc[9], cnonce[17];
+  p.nc++;
+  snprintf(nc, sizeof(nc), "%08x", (unsigned) p.nc);
+  snprintf(cnonce, sizeof(cnonce), "%08x%08x", (unsigned) esp_random(), (unsigned) esp_random());
+  Md5Hex().add(p.user).add(":").add(p.realm).add(":").add(p.pass).hex(ha1);
+  Md5Hex().add(method).add(":").add(path).hex(ha2);
+  Md5Hex r;
+  r.add(ha1, 32).add(":").add(p.nonce).add(":");
+  if (p.qop_auth)
+    r.add(nc).add(":").add(cnonce).add(":auth:");
+  r.add(ha2, 32).hex(resp);
+  out += "Authorization: Digest username=\"";
+  out += p.user;
+  out += "\", realm=\"";
+  out += p.realm;
+  out += "\", nonce=\"";
+  out += p.nonce;
+  out += "\", uri=\"";
+  out += path;
+  out += "\", algorithm=MD5, response=\"";
+  out += resp;
+  out += '"';
+  if (p.qop_auth) {
+    out += ", qop=auth, nc=";
+    out += nc;
+    out += ", cnonce=\"";
+    out += cnonce;
+    out += '"';
+  }
+  if (!p.opaque.empty()) {
+    out += ", opaque=\"";
+    out += p.opaque;
+    out += '"';
+  }
+  out += "\r\n";
+}
+
+// Keeps what a 401 asked for. False if it asked for something this can't do.
+bool EspidfBleKeyboard::peer_take_challenge_(Peer &p, const std::string &challenge) {
+  if (strncasecmp(challenge.c_str(), "Digest ", 7) == 0) {
+    const std::string params = challenge.substr(7);
+    p.realm = auth_param(params, "realm");
+    p.nonce = auth_param(params, "nonce");
+    p.opaque = auth_param(params, "opaque");
+    p.qop_auth = auth_param(params, "qop").find("auth") != std::string::npos;
+    p.nc = 0;
+    p.auth = p.nonce.empty() ? Peer::AUTH_NONE : Peer::AUTH_DIGEST;
+  } else if (strncasecmp(challenge.c_str(), "Basic", 5) == 0) {
+    p.auth = Peer::AUTH_BASIC;
+  } else {
+    p.auth = Peer::AUTH_NONE;
+  }
+  return p.auth != Peer::AUTH_NONE;
+}
+
+// One request on a connection of its own, which the peer closes after its
+// reply. `status` is 0 when no complete reply came back.
+EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_exchange_(Peer &p, bool post, const char *path,
+                                                                const std::string &body, std::string *out,
+                                                                int &status, std::string &challenge) {
+  status = 0;
+  const uint32_t timeout = post ? PEER_TIMEOUT_MS : PEER_READ_TIMEOUT_MS;
+  const int fd = lwip_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (fd < 0) {
+    ESP_LOGW(TAG, "Peer %s: no socket free", p.name.c_str());
+    return PEER_BUSY;
+  }
+  SocketGuard guard(fd);
+  struct timeval tv;
+  tv.tv_sec = timeout / 1000;
+  tv.tv_usec = (timeout % 1000) * 1000;
+
+  // Connect with a time limit: a keyboard that is off would otherwise hold the
+  // action task for as long as TCP keeps retrying.
+  struct sockaddr_in sa {};
+  sa.sin_family = AF_INET;
+  sa.sin_port = htons(p.port);
+  sa.sin_addr.s_addr = p.ip;
+  const int flags = lwip_fcntl(fd, F_GETFL, 0);
+  lwip_fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  int r = lwip_connect(fd, reinterpret_cast<struct sockaddr *>(&sa), sizeof(sa));
+  if (r < 0 && errno != EINPROGRESS)
+    return PEER_UNREACHABLE;
+  if (r < 0) {
+    fd_set wr;
+    FD_ZERO(&wr);
+    FD_SET(fd, &wr);
+    struct timeval ctv = tv;
+    int err = 0;
+    socklen_t len = sizeof(err);
+    if (lwip_select(fd + 1, nullptr, &wr, nullptr, &ctv) <= 0 ||
+        lwip_getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0)
+      return PEER_UNREACHABLE;
+  }
+  lwip_fcntl(fd, F_SETFL, flags);
+  lwip_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  lwip_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+  std::string head;
+  head.reserve(p.auth == Peer::AUTH_DIGEST ? 512 : 192);
+  head += post ? "POST " : "GET ";
+  head += path;
+  head += " HTTP/1.1\r\nHost: ";
+  head += p.host;
+  if (p.port != 80) {
+    head += ':';
+    head += std::to_string(p.port);
+  }
+  head += "\r\nConnection: close\r\n";
+  peer_auth_append_(p, post ? "POST" : "GET", path, head);
+  if (post) {
+    head += "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: ";
+    head += std::to_string(body.size());
+    head += "\r\n";
+  }
+  head += "\r\n";
+  if (!send_all(fd, head.data(), head.size()) || (post && !send_all(fd, body.data(), body.size())))
+    return PEER_NO_REPLY;
+  std::string().swap(head);
+
+  // The reply: status line and headers into `hdr`, then the body — kept only
+  // when it is a 200 someone asked for, and never past PEER_MAX_REPLY.
+  std::string hdr;
+  hdr.reserve(256);
+  char buf[256];
+  bool in_body = false;
+  long want = -1;  // Content-Length, or -1 to read until the peer closes
+  size_t got = 0;
+  bool too_big = false;
+  while (true) {
+    if (in_body && want >= 0 && got >= (size_t) want)
+      break;
+    const int n = lwip_recv(fd, buf, sizeof(buf), 0);
+    if (n == 0)
+      break;  // closed: the reply is complete
+    if (n < 0)
+      return PEER_NO_REPLY;  // timed out or reset part-way
+    size_t off = 0;
+    if (!in_body) {
+      hdr.append(buf, (size_t) n);
+      const size_t end = hdr.find("\r\n\r\n");
+      if (end == std::string::npos) {
+        if (hdr.size() > PEER_MAX_HEAD)
+          return PEER_NO_REPLY;
+        continue;
+      }
+      in_body = true;
+      // Status line, then the two headers this needs.
+      const size_t sp = hdr.find(' ');
+      status = sp == std::string::npos ? 0 : atoi(hdr.c_str() + sp + 1);
+      size_t line = hdr.find("\r\n");
+      while (line != std::string::npos && line < end) {
+        const size_t start = line + 2;
+        const size_t next = hdr.find("\r\n", start);
+        const size_t colon = hdr.find(':', start);
+        if (colon != std::string::npos && colon < next) {
+          size_t v = colon + 1;
+          while (v < next && hdr[v] == ' ')
+            v++;
+          const size_t nlen = colon - start;
+          if (nlen == 14 && strncasecmp(hdr.c_str() + start, "content-length", 14) == 0)
+            want = atol(hdr.c_str() + v);
+          else if (nlen == 16 && strncasecmp(hdr.c_str() + start, "www-authenticate", 16) == 0)
+            challenge = hdr.substr(v, next - v);
+        }
+        line = next;
+      }
+      // Whatever came in past the headers is the start of the body.
+      const size_t body_at = end + 4;
+      const size_t extra = hdr.size() - body_at;
+      off = (size_t) n - extra;
+    }
+    const size_t len = (size_t) n - off;
+    got += len;
+    if (out != nullptr && status == 200 && !too_big) {
+      if (out->size() + len > PEER_MAX_REPLY)
+        too_big = true;
+      else
+        out->append(buf + off, len);
+    }
+  }
+  if (!in_body || status == 0)
+    return PEER_NO_REPLY;
+  if (too_big) {
+    ESP_LOGW(TAG, "Peer %s: reply to %s over %u bytes, ignored", p.name.c_str(), path, (unsigned) PEER_MAX_REPLY);
+    return PEER_NO_REPLY;
+  }
+  if (want >= 0 && got < (size_t) want)
+    return PEER_NO_REPLY;  // closed early
+  return PEER_OK;
+}
+
+// A request, logging in when the peer asks: its first reply is a 401 carrying
+// the challenge, and every request after that answers it up front.
 EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_request_(Peer &p, bool post, const char *path,
                                                                const std::string &body, std::string *out) {
-  const std::string url = p.url + path;
-  PeerReply reply{out, PEER_MAX_REPLY, false};
-  if (out != nullptr)
-    out->clear();
-
-  const int k = post ? 1 : 0;
-  esp_http_client_handle_t client = p.clients[k];
-  if (client == nullptr) {
-    client = peer_client_new(url, p.user, p.pass, post ? PEER_TIMEOUT_MS : PEER_READ_TIMEOUT_MS);
-    if (client == nullptr) {
-      ESP_LOGW(TAG, "Peer %s: no memory for a request", p.name.c_str());
-      return PEER_BUSY;
-    }
-    p.clients[k] = client;
-  } else {
-    esp_http_client_set_url(client, url.c_str());
-  }
-  esp_http_client_set_user_data(client, &reply);
-  esp_http_client_set_method(client, post ? HTTP_METHOD_POST : HTTP_METHOD_GET);
-  if (post) {
-    esp_http_client_set_header(client, "Content-Type", "application/x-www-form-urlencoded");
-    esp_http_client_set_post_field(client, body.data(), (int) body.size());
-  }
+  if (!peer_resolve_(p))
+    return PEER_UNREACHABLE;
   const uint32_t start = millis();
-  const esp_err_t err = esp_http_client_perform(client);
-  const uint32_t took = millis() - start;
-  const int status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
-  // The body pointer and the reply collector die with this call.
-  esp_http_client_set_post_field(client, nullptr, 0);
-  esp_http_client_set_user_data(client, nullptr);
-  const bool worked = err == ESP_OK && status == 200 && !reply.too_big;
-  if (err == ESP_OK) {
-    p.used_ms[k] = millis() | 1;
-  } else {
-    // Its connection is in an unknown state; the next request starts clean.
-    esp_http_client_cleanup(client);
-    p.clients[k] = nullptr;
+  int status = 0;
+  PeerResult r = PEER_NO_REPLY;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    std::string challenge;
+    if (out != nullptr)
+      out->clear();
+    r = peer_exchange_(p, post, path, body, out, status, challenge);
+    if (r != PEER_OK || status != 401 || p.user.empty() || attempt > 0 || !peer_take_challenge_(p, challenge))
+      break;
   }
-
+  const uint32_t took = millis() - start;
   // Normal is well under this; a slower answer is what fills the action queue.
   if (took > PEER_SLOW_MS)
     ESP_LOGW(TAG, "Peer %s: %s %s took %u ms", p.name.c_str(), post ? "POST" : "GET", path, (unsigned) took);
-  if (worked)
+  if (r == PEER_UNREACHABLE) {
+    ESP_LOGW(TAG, "Peer %s: could not connect to %s", p.name.c_str(), p.host.c_str());
+    // A .local name may have moved to another address; look it up again.
+    if (p.by_name)
+      p.ip = 0;
+    return r;
+  }
+  if (r != PEER_OK) {
+    if (r == PEER_NO_REPLY)
+      ESP_LOGW(TAG, "Peer %s: %s %s got no reply in time", p.name.c_str(), post ? "POST" : "GET", path);
+    return r;
+  }
+  if (status == 200)
     return PEER_OK;
   if (status == 409)
     return PEER_BUSY;  // it logs that itself, with its heap figures
-  if (status == 401) {
+  if (status == 401)
     ESP_LOGW(TAG, "Peer %s refused the login — check username and password under peers:", p.name.c_str());
-  } else if (reply.too_big) {
-    ESP_LOGW(TAG, "Peer %s: reply to %s over %u bytes, ignored", p.name.c_str(), path, (unsigned) PEER_MAX_REPLY);
-  } else {
-    ESP_LOGW(TAG, "Peer %s: %s %s failed (%s, HTTP %d)", p.name.c_str(), post ? "POST" : "GET", path,
-             esp_err_to_name(err), status);
-  }
-  // Could not connect at all, as against sent and not answered in time — the
-  // second has probably run over there, and says nothing about the next press.
-  return err == ESP_ERR_HTTP_CONNECT ? PEER_UNREACHABLE : PEER_NO_REPLY;
+  else
+    ESP_LOGW(TAG, "Peer %s: %s %s answered HTTP %d", p.name.c_str(), post ? "POST" : "GET", path, status);
+  return PEER_NO_REPLY;
 }
 
 // peer:<name>:<action> — run <action> on that keyboard, exactly as its own page
@@ -200,6 +498,15 @@ void EspidfBleKeyboard::run_peer_action_(const std::string &action) {
   }
   if (p->down_until_ms != 0 && (int32_t) (millis() - p->down_until_ms) < 0) {
     ESP_LOGW(TAG, "Peer %s is not answering; dropped %s", p->name.c_str(), action.c_str() + sep + 1);
+    return;
+  }
+  // A failed allocation aborts in this build, and a press arriving in the middle
+  // of a page load can find the heap nearly empty. Better one press lost, said
+  // so, than the keyboard rebooting.
+  const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  if (block < PEER_PRESS_MIN_BLOCK) {
+    ESP_LOGW(TAG, "Peer %s: no memory to send %s just now (largest free block %u B); dropped", p->name.c_str(),
+             action.c_str() + sep + 1, (unsigned) block);
     return;
   }
   std::string body = "action=";
@@ -260,22 +567,13 @@ bool EspidfBleKeyboard::coalesce_peer_presses_(std::string &job) {
 // a refresh waits on one request at most.
 void EspidfBleKeyboard::refresh_peers_() {
   const uint32_t now = millis();
-  // Clients nothing has used for a while give their memory back.
-  for (auto &p : peers_) {
-    for (int k = 0; k < 2; k++) {
-      if (p.clients[k] != nullptr && now - p.used_ms[k] > PEER_IDLE_MS) {
-        esp_http_client_cleanup(p.clients[k]);
-        p.clients[k] = nullptr;
-      }
-    }
-  }
   const uint32_t interest = peer_interest_ms_.load();
   if (interest == 0 || now - interest > PEER_INTEREST_MS) {
     // Nobody is looking: no traffic, and give the memory back.
     if (peer_cache_live_) {
       xSemaphoreTake(peer_mutex_, portMAX_DELAY);
       for (auto &p : peers_) {
-        std::string().swap(p.state);
+        p.state.reset();
         p.fetched_ms = 0;
         p.next_due_ms = 0;
       }
@@ -284,10 +582,47 @@ void EspidfBleKeyboard::refresh_peers_() {
     }
     return;
   }
+  // A read holds a socket, its buffers and the reply at once, for as long as
+  // the other keyboard takes to answer. A page loading here asks for a
+  // dozen things together, and a read landing in the middle of that ran the
+  // heap out on 2026-09-19. So no read within a few seconds of a page-load
+  // request, and none while memory is short; the cache just stays as it was.
+  if (now - web_busy_ms_.load() < PEER_QUIET_MS) {
+    // A page is loading: the cached state (~3 KB per peer) is memory its burst
+    // of requests needs more. The page's first /peers asks come back empty and
+    // the bars fill in a few seconds later, once the load has settled.
+    if (peer_cache_live_ && now - page_load_ms_.load() < PEER_QUIET_MS) {
+      xSemaphoreTake(peer_mutex_, portMAX_DELAY);
+      for (auto &p : peers_) {
+        p.state.reset();
+        p.next_due_ms = 0;
+      }
+      xSemaphoreGive(peer_mutex_);
+      peer_cache_live_ = false;
+    }
+    return;
+  }
+  const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  const size_t free_now = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  const bool starved = block < PEER_READ_MIN_BLOCK || free_now < PEER_READ_MIN_FREE;
+  if (starved != peer_starved_) {
+    peer_starved_ = starved;
+    if (starved)
+      ESP_LOGW(TAG, "Peer reads paused: largest free block %u B, heap %u B free", (unsigned) block,
+               (unsigned) free_now);
+    else
+      ESP_LOGI(TAG, "Peer reads resumed");
+  }
+  if (starved)
+    return;
   for (auto &p : peers_) {
     if (p.next_due_ms != 0 && (int32_t) (now - p.next_due_ms) < 0)
       continue;
+    // Sized from the last answer, so the reply lands in one allocation rather
+    // than a string doubling its way up through the fragmented heap. Only this
+    // task writes `state`, so reading its size here needs no lock.
     std::string body;
+    body.reserve(p.state ? p.state->size() + 128 : 2048);
     const PeerResult r = peer_request_(p, false, "/api/ble_keyboard/state", std::string(), &body);
     // Embedded as-is in /peers, so anything that is not one JSON object is
     // treated as no answer rather than passed on to break the page.
@@ -301,9 +636,14 @@ void EspidfBleKeyboard::refresh_peers_() {
       p.read_fails = 0;
     else if (r != PEER_BUSY && p.read_fails < 255)
       p.read_fails++;
+    // Built outside the lock; the old state is let go inside it, and freed
+    // only once a /peers reply still sending it has finished.
+    std::shared_ptr<const std::string> fresh;
+    if (ok)
+      fresh = std::make_shared<const std::string>(std::move(body));
     xSemaphoreTake(peer_mutex_, portMAX_DELAY);
     if (ok) {
-      p.state.swap(body);
+      p.state.swap(fresh);
       p.fetched_ms = done | 1;
       p.ok = true;
     } else if (p.read_fails >= 2) {
@@ -320,39 +660,18 @@ void EspidfBleKeyboard::refresh_peers_() {
   }
 }
 
-size_t EspidfBleKeyboard::peers_json_size() {
-  size_t n = 16;
-  xSemaphoreTake(peer_mutex_, portMAX_DELAY);
-  for (const auto &p : peers_)
-    n += p.name.size() + p.state.size() + 64;
-  xSemaphoreGive(peer_mutex_);
-  return n;
-}
-
-void EspidfBleKeyboard::append_peers_json(std::string &out) {
+// Under the lock only long enough to take a reference to each state, so a slow
+// client of /peers never holds up the action task's next swap.
+void EspidfBleKeyboard::peer_snapshot(std::vector<PeerSnapshot> &out) {
   const uint32_t now = millis();
-  out += "{\"peers\":[";
+  out.clear();
+  out.reserve(peers_.size());
   xSemaphoreTake(peer_mutex_, portMAX_DELAY);
-  for (size_t i = 0; i < peers_.size(); i++) {
-    const Peer &p = peers_[i];
-    if (i > 0)
-      out += ',';
-    out += "{\"name\":\"";
-    out += p.name;  // [a-z0-9_], checked by the schema
-    out += "\",\"ok\":";
-    out += p.ok ? "true" : "false";
-    // Seconds since its state was read; -1 before the first answer.
-    out += ",\"age\":";
-    out += p.fetched_ms != 0 ? std::to_string((now - p.fetched_ms) / 1000) : std::string("-1");
-    out += ",\"state\":";
-    if (p.state.empty())
-      out += "null";
-    else
-      out += p.state;
-    out += '}';
+  for (const auto &p : peers_) {
+    out.push_back({p.name.c_str(), p.ok,
+                   p.fetched_ms != 0 ? (int32_t) ((now - p.fetched_ms) / 1000) : -1, p.state});
   }
   xSemaphoreGive(peer_mutex_);
-  out += "]}";
 }
 
 }  // namespace espidf_ble_keyboard

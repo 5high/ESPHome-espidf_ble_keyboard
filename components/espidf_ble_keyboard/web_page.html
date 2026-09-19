@@ -971,6 +971,17 @@ function apiPost(endpoint,params,opts){
 // GET a JSON endpoint. A 409 is the device short of memory to build the reply
 // right now — it answers that instead of rebooting — so it is asked again after
 // a pause, a few times. Any other failure rejects with the device's own text.
+// The big replies — the styles, the button list, each logo, a backup — are built
+// whole on the device, several KB at a time, on a heap that a page load already
+// squeezes. They go one after another instead of all at once; each still waits
+// out a 409 by itself, and holds the queue while it does.
+let HEAVY_Q=Promise.resolve();
+function oneAtATime(fn){
+  const p=HEAVY_Q.then(fn,fn);
+  HEAVY_Q=p.catch(()=>{});
+  return p;
+}
+function apiGetHeavy(pathAndQuery){return oneAtATime(()=>apiGetJSON(pathAndQuery))}
 function apiGetJSON(pathAndQuery,tries){
   tries=tries||0;
   return fetch('/api/ble_keyboard/'+pathAndQuery).then(r=>{
@@ -1311,8 +1322,8 @@ function pollStatus(){
     // copies appear later than any single load-time pass would catch.
     document.querySelectorAll('option.ha-preset').forEach(o=>{o.disabled=!d.ha_action;o.style.display=d.ha_action?'':'none'});
     // Only a keyboard with peers: in its YAML says so, and only that one is asked.
-    if(d.peers>0&&window.startPeers)window.startPeers();
-    else if(peerLock()!==null&&window.dropPeerLock)window.dropPeerLock();
+    if(d.peers>0){if(window.startPeers)window.startPeers()}
+    else if(window.stopPeers)window.stopPeers();
     if(peerLock()===null)showStatus(d);
   }).catch(()=>{if(peerLock()===null)showOffline('Offline')});
 }
@@ -1741,7 +1752,7 @@ function tplById(id){
 // The device stores each template as the compact JSON the page sent, and never
 // looks inside; anything unparseable is skipped rather than breaking the list.
 function loadCustomTpls(){
-  return apiGetJSON('remote_templates').then(d=>{
+  return apiGetHeavy('remote_templates').then(d=>{
     RMT_CUSTOM_MAX=d.max||RMT_CUSTOM_MAX;RMT_CUSTOM_LEN=d.len||RMT_CUSTOM_LEN;
     const out=[];
     (d.items||[]).forEach(it=>{
@@ -1882,10 +1893,10 @@ try{
   if(c&&typeof c==='object'&&!Array.isArray(c))ICON_CACHE=c;
 }catch(e){}
 const ICON_FRESH={},ICON_WAIT={};
-// Icon reads go to the device one at a time. Each body is a few KB on a heap the
-// Bluetooth stack shares, and a page load asking for every logo at once is what
-// ran the device out of memory and rebooted it.
-let ICON_Q=Promise.resolve();
+// Icon reads go to the device one at a time, in the same queue as the other big
+// replies. Each body is a few KB on a heap the Bluetooth stack shares, and a page
+// load asking for every logo at once is what ran the device out of memory and
+// rebooted it.
 function saveIconCache(){try{localStorage.setItem(ICON_KEY,JSON.stringify(ICON_CACHE))}catch(e){}}
 // A popped-out remote is another document with its own copy; this keeps the two
 // agreeing when an icon is imported or deleted in the main page.
@@ -1908,7 +1919,7 @@ function fetchIcon(n){
     if(!r.ok)throw new Error('HTTP '+r.status);
     return r.text();
   });
-  const p=(ICON_Q=ICON_Q.then(()=>get(0),()=>get(0))).then(txt=>{
+  const p=oneAtATime(()=>get(0)).then(txt=>{
     let rec=null;
     if(txt!==null){try{rec=JSON.parse(txt)}catch(e){}if(rec&&iconBad(rec))rec=null}
     setIcon(n,rec);
@@ -2477,6 +2488,7 @@ function hostBtn(s,active){
     window.onTargetChanged();
   }
   function loadPeers(){
+    if(!live)return;
     fetch('/api/ble_keyboard/peers').then(r=>r.ok?r.json():null).then(d=>{
       // A 409 is the device short of memory right now; keep what is on screen.
       if(!d||!Array.isArray(d.peers))return;
@@ -2497,10 +2509,22 @@ function hostBtn(s,active){
       }
     }).catch(()=>{});
   }
+  let live=false;
   window.startPeers=function(){
+    live=true;
     if(started)return;
     started=true;
     pollEvery(loadPeers,5000);
+  };
+  // The keyboard says it has no peers any more — reflashed without them. Its
+  // /peers is gone, so nothing would ever replace the bars already drawn.
+  window.stopPeers=function(){
+    if(!live&&!order.length)return;
+    live=false;
+    PEERS={};order=[];firstAnswer=true;
+    render();
+    if(RMT_PEER!==null)window.dropPeerLock();
+    else if(window.reloadHostsNow)window.reloadHostsNow();
   };
   // The remote, the badge and the lists for the linked keyboard this tab drives.
   window.applyPeerTarget=function(force){
@@ -2667,7 +2691,7 @@ function appendStep(el,val){
   });
 
   function loadButtons(){
-    apiGetJSON('buttons').then(btns=>{
+    apiGetHeavy('buttons').then(btns=>{
       // Macros are the editable entries. Refresh the shared name list first so
       // a rename or delete immediately re-flags any override referencing it.
       knownMacroNames=btns.filter(b=>b.editable).map(b=>b.name);
@@ -4119,7 +4143,7 @@ function appendStep(el,val){
 
   if(bkSave)bkSave.addEventListener('click',()=>{
     status('Reading settings...');
-    apiGetJSON('backup').then(d=>{
+    apiGetHeavy('backup').then(d=>{
       // Icon bodies are gathered here rather than by the device: its backup is
       // built in one string on the heap the Bluetooth stack shares, and sixteen
       // logos would put tens of KB on it. Each comes over on a request of its own,
@@ -4212,7 +4236,7 @@ function appendStep(el,val){
     fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(h=>{
       slots=(h.slots||[]).map(s=>s.slot).filter(s=>typeof s==='number');
       if(!slots.length)throw new Error('the device reported no host slots');
-      return apiGetJSON('buttons');
+      return apiGetHeavy('buttons');
     }).then(btns=>{
       // Delete highest index first so earlier indices don't shift under us.
       const idx=btns.filter(b=>b.editable).map(b=>b.index).sort((a,b)=>b-a);

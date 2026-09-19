@@ -17,6 +17,8 @@ web control page shows the matching version badge.
 ### Changed
 - **The firmware is about 60 KB smaller.** The control page is stored without its comments and
   indentation.
+- **Loading the web page is easier on the keyboard's memory.** It asks for its styles, button list
+  and logos one at a time instead of all at once.
 
 ## v1.11.0 — 2026-09-19
 

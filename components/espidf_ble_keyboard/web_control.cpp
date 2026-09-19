@@ -460,6 +460,38 @@ __attribute__((noinline)) static void append_hold_json(std::string &json, Espidf
   json += "]}";
 }
 
+#ifdef USE_BLE_KB_PEERS
+// {"peers":[{"name","ok","age","state"}]}, sent in pieces so each peer's cached
+// state goes out straight from where it is kept. Building the reply as one
+// string meant a second ~3 KB copy on every poll, which a page load could not
+// spare. Out of line, so its buffer is never part of handleRequest's frame.
+__attribute__((noinline)) static void send_peers(AsyncWebServerRequest *request, EspidfBleKeyboard *kb) {
+  std::vector<EspidfBleKeyboard::PeerSnapshot> peers;
+  kb->peer_snapshot(peers);
+  // Sets the status, type and ESPHome's default headers; the body follows as
+  // chunks on the same request.
+  AsyncWebServerResponse *response = request->beginResponse(200, "application/json");
+  response->addHeader("Connection", "close");
+  httpd_req_t *req = *request;
+  httpd_resp_sendstr_chunk(req, "{\"peers\":[");
+  char head[96];
+  for (size_t i = 0; i < peers.size(); i++) {
+    const auto &p = peers[i];
+    // The name is [a-z0-9_], checked by the schema, so it needs no escaping.
+    snprintf(head, sizeof(head), "%s{\"name\":\"%s\",\"ok\":%s,\"age\":%ld,\"state\":", i > 0 ? "," : "", p.name,
+             p.ok ? "true" : "false", (long) p.age);
+    httpd_resp_sendstr_chunk(req, head);
+    if (p.state)
+      httpd_resp_send_chunk(req, p.state->data(), (ssize_t) p.state->size());
+    else
+      httpd_resp_sendstr_chunk(req, "null");
+    httpd_resp_sendstr_chunk(req, "}");
+  }
+  httpd_resp_sendstr_chunk(req, "]}");
+  httpd_resp_send_chunk(req, nullptr, 0);
+}
+#endif
+
 // ── Internal handler class ─────────────────────────────────────────
 // Inherits from the platform-specific AsyncWebHandler via web_server_base
 
@@ -551,6 +583,9 @@ class BleKbWebHandler : public AsyncWebHandler {
 
     // Serve the page — use Progmem response to avoid heap-copying the large HTML
     if (url == "/ble_keyboard") {
+#ifdef USE_BLE_KB_PEERS
+      kb_->note_page_load();  // the burst of requests a page load brings starts here
+#endif
       // The bytes are gzip, compressed at codegen from web_page.html and handed
       // over by set_web_page(). They are sent straight out of flash: the Progmem
       // response holds a pointer, so nothing is copied to the heap, and the
@@ -600,6 +635,17 @@ class BleKbWebHandler : public AsyncWebHandler {
 
     std::string path = url.substr(strlen("/api/ble_keyboard/"));
 
+#ifdef USE_BLE_KB_PEERS
+    // Anything but the steady polls means a page is loading or being used, and
+    // reads of a linked keyboard hold off until it settles — see
+    // refresh_peers_(). The page itself is marked in its own branch above.
+    // `state` is another keyboard's own poll of this one: counting it would let
+    // two keyboards that list each other keep pausing each other.
+    if (path != "status" && path != "hosts" && path != "peers" && path != "memory" && path != "state" &&
+        path != "goto_last")
+      kb_->note_web_busy();
+#endif
+
     // GET-only endpoints (read state)
     if (path == "status") {
       std::string json;
@@ -640,13 +686,7 @@ class BleKbWebHandler : public AsyncWebHandler {
     // read: nobody asking for a while stops the traffic and frees the copies.
     if (path == "peers") {
       kb_->note_peer_interest();
-      const size_t want = kb_->peers_json_size();
-      if (heap_short(want, "Peers", ""))
-        return;
-      std::string json;
-      json.reserve(want);
-      kb_->append_peers_json(json);
-      send_response(200, "application/json", json);
+      send_peers(request, kb_);
       return;
     }
 #endif
