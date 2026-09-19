@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
-## Unreleased
+## v1.11.0 — 2026-09-19
 
 ### Added
 - **A tab can keep the remote on one style.** Chosen on the page or given in the address, it holds
