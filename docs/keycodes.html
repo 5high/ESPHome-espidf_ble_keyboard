@@ -554,6 +554,7 @@
       <tr><td><code>switch_host:next</code></td><td>Step one slot forward (or <code>switch_host:prev</code> for back), wrapping at the ends. Empty slots are included in the rotation.</td></tr>
       <tr><td><code>switch_host:back</code></td><td>Return to the slot that was active before the last switch, however it was made. Pressed again, it goes back again.</td></tr>
       <tr><td><code>prev_host</code> / <code>next_host</code> / <code>last_host</code></td><td>The same three as remote keys a style can place, remappable per host.</td></tr>
+      <tr><td><code>next_keyboard</code> / <code>prev_host_all</code> / <code>next_host_all</code></td><td>Web page remote only: move the tab to the next linked keyboard, or through every host of every linked keyboard.</td></tr>
       <tr><td><code>peer:&lt;name&gt;:&lt;action&gt;</code></td><td>Run an action on a linked keyboard listed under <code>peers:</code> — <code>peer:bedroom:switch_host:1</code>.</td></tr>
       <tr><td><code>wait:connected</code></td><td>Hold a macro until the active host is ready for keys, up to 10 s — <code>wait:connected:N</code> for N ms (max 60000). On timeout the macro carries on.</td></tr>
       <tr><td><code>forget_host:0</code></td><td>Remove BLE bond for host slot 0–9 and clear the stored address.</td></tr>

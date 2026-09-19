@@ -43,7 +43,10 @@ bright_up:'<path d="M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69
 bright_dn:'<path d="M20 15.31L23.31 12 20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>',
 host_prev:'<path d="M17.59 18L19 16.59 14.42 12 19 7.41 17.59 6l-6 6zM11 18l1.41-1.41L7.83 12l4.58-4.59L11 6l-6 6z"/>',
 host_next:'<path d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6zM13 6l-1.41 1.41L16.17 12l-4.58 4.59L13 18l6-6z"/>',
-host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>'};
+host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>',
+kb_next:'<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>',
+all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1.41zM4 6v12H2V6h2z"/>',
+all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>'};
 
 const RMT_BTNS={
 remote_power:{t:'Power',i:'power',c:'power',g:0},
@@ -133,7 +136,13 @@ spare32:{t:'Spare 32',x:'32',g:8},
 // Never repeats: held down, it would spin through every host.
 prev_host:{t:'Prev Host',i:'host_prev',g:9},
 next_host:{t:'Next Host',i:'host_next',g:9},
-last_host:{t:'Last Host',i:'host_last',g:9}};
+last_host:{t:'Last Host',i:'host_last',g:9},
+// Keys for the web page's own remote: they move the tab across linked keyboards
+// (peers: in the YAML) and are handled there, never sent. Anywhere else they do
+// nothing.
+next_keyboard:{t:'Next Keyboard',i:'kb_next',g:9},
+prev_host_all:{t:'Prev Host (all)',i:'all_prev',g:9},
+next_host_all:{t:'Next Host (all)',i:'all_next',g:9}};
 
 const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb-pad',
 maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',

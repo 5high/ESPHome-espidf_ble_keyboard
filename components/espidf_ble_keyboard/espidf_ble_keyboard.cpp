@@ -4694,6 +4694,12 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     else if (action == "next_host")    cycle_host_(1);
     else if (action == "prev_host")    cycle_host_(-1);
     else if (action == "last_host")    return_to_last_host_();
+    // Keys the web page's own remote acts on, to move a tab across linked
+    // keyboards; it never sends them. Arriving from anywhere else — the Home
+    // Assistant card, a macro — there is nothing for them to do here, and
+    // falling through would type their names on the host.
+    else if (action == "next_keyboard" || action == "prev_host_all" || action == "next_host_all")
+        ESP_LOGI(TAG, "%s only does something on the web page's remote", action.c_str());
     else if (action == "left_click")   send_mouse_click(0x01);
     else if (action == "right_click")  send_mouse_click(0x02);
     else if (action == "middle_click") send_mouse_click(0x04);

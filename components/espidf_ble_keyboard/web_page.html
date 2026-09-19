@@ -1403,7 +1403,10 @@ bright_up:'<path d="M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69
 bright_dn:'<path d="M20 15.31L23.31 12 20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>',
 host_prev:'<path d="M17.59 18L19 16.59 14.42 12 19 7.41 17.59 6l-6 6zM11 18l1.41-1.41L7.83 12l4.58-4.59L11 6l-6 6z"/>',
 host_next:'<path d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6zM13 6l-1.41 1.41L16.17 12l-4.58 4.59L13 18l6-6z"/>',
-host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>'};
+host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>',
+kb_next:'<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>',
+all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1.41zM4 6v12H2V6h2z"/>',
+all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>'};
 // Every action the remote can show. t=title, i=icon id, x=text label,
 // c=extra classes, r=repeats by default, g=group in the Host Actions grids.
 const RMT_BTNS={
@@ -1494,7 +1497,15 @@ spare32:{t:'Spare 32',x:'32',g:8},
 // Never repeats: held down, it would spin through every host.
 prev_host:{t:'Prev Host',i:'host_prev',g:9},
 next_host:{t:'Next Host',i:'host_next',g:9},
-last_host:{t:'Last Host',i:'host_last',g:9}};
+last_host:{t:'Last Host',i:'host_last',g:9},
+// Keys for the web page's own remote: they move the tab across linked keyboards
+// (peers: in the YAML) and are handled there, never sent. Anywhere else they do
+// nothing.
+next_keyboard:{t:'Next Keyboard',i:'kb_next',g:9},
+prev_host_all:{t:'Prev Host (all)',i:'all_prev',g:9},
+next_host_all:{t:'Next Host (all)',i:'all_next',g:9}};
+// The keys above that the page acts on itself.
+const RMT_PAGE_KEYS=['next_keyboard','prev_host_all','next_host_all'];
 const RMT_KINDS=['row','dpad','ring','strip','rocker','media','apps','grid','lcd','-'];
 // A theme may only set these, and each maps to a custom property the .rmt-*
 // rules already read. An imported template therefore cannot inject CSS: keys
@@ -1814,6 +1825,8 @@ function peerLock(){return RMT_PEER}
 // The linked keyboards as /peers last described them, by name. Each holds its
 // own /state under `state`, or null before its first answer.
 let PEERS={};
+// This keyboard's own /hosts, as last read — for the keys that step across keyboards.
+let LOCAL_HOSTS=null;
 function peerState(){const p=RMT_PEER!==null&&PEERS[RMT_PEER];return (p&&p.state)||null}
 // A host just tapped on a linked keyboard, until its cached state shows the
 // switch — a few seconds, since this keyboard reads the other on a timer. Until
@@ -2304,6 +2317,7 @@ function hostBtn(s,active){
       if(txt===lastHostsRaw)return;
       lastHostsRaw=txt;
       const d=JSON.parse(txt);
+      LOCAL_HOSTS=d;
       // Outlined only when there is another keyboard's bar to tell it from.
       const linked=Object.keys(PEERS).length>0;
       bar.classList.toggle('targeted',linked&&peerLock()===null);
@@ -2390,37 +2404,45 @@ function hostBtn(s,active){
       }
       d.slots.forEach(s=>{
         const b=hostBtn(s,s.slot===d.active);
-        onTap(b,()=>{
-          // Back from a linked keyboard: this tab follows this one's host again.
-          // The memo is dropped so the answer re-applies this keyboard's lists
-          // even when its hosts have not changed since they were last read.
-          if(peerLock()!==null){
-            setTabLock('');
-            lastHostsRaw=null;
-            if(window.onStyleLock)window.onStyleLock('');
-            if(window.onTargetChanged)window.onTargetChanged();
-          }
-          // Mark the new host at once, then re-read as soon as the device has
-          // taken the switch. Without this the page waited for the next 5s poll
-          // to pick up the new host's style and hidden/repeat/hold sets, while
-          // Home Assistant — which the firmware pushes to inside switch_host —
-          // had already moved on. The switch is applied by the time the POST
-          // answers, so this fetch sees the new slot.
-          bar.querySelectorAll('.host-btn').forEach(x=>x.classList.remove('active'));
-          b.classList.add('active');
-          // The style this host uses came with /hosts, so it can be drawn now
-          // instead of a second from now when the device answers — and drawing it
-          // now is what lets the popped-out window be resized to it, because that
-          // resize only works inside a press and the answer arrives long after
-          // this one is over. If the switch fails, the next poll puts it back.
-          if(window.applyTemplate)window.applyTemplate(s.tpl||'default');
-          if(window.onRemoteFitNow)window.onRemoteFitNow();
-          apiPost('switch_host',{slot:s.slot})
-            .then(loadHosts).catch(()=>{});
-        },'active');
+        onTap(b,()=>pickLocal(s,true),'active');
         bar.appendChild(b);
       });
   }
+  // One of this keyboard's hosts, from its bar or from a remote key that steps
+  // across keyboards. `always` is the bar's own behaviour, which switches even to
+  // the host already active; a key arriving from a linked keyboard only moves the
+  // tab back when that host is the active one, rather than dropping its link.
+  function pickLocal(s,always){
+    // Back from a linked keyboard: this tab follows this one's host again. The
+    // memo is dropped so the answer re-applies this keyboard's lists even when
+    // its hosts have not changed since they were last read.
+    const wasPeer=peerLock()!==null;
+    if(wasPeer){
+      setTabLock('');
+      lastHostsRaw=null;
+      if(window.onStyleLock)window.onStyleLock('');
+      if(window.onTargetChanged)window.onTargetChanged();
+    }
+    if(!always&&LOCAL_HOSTS&&s.slot===LOCAL_HOSTS.active)return;
+    // Mark the new host at once, then re-read as soon as the device has taken
+    // the switch. Without this the page waited for the next 5s poll to pick up
+    // the new host's style and hidden/repeat/hold sets, while Home Assistant —
+    // which the firmware pushes to inside switch_host — had already moved on.
+    // The switch is applied by the time the POST answers, so this fetch sees the
+    // new slot.
+    const i=LOCAL_HOSTS?LOCAL_HOSTS.slots.findIndex(x=>x.slot===s.slot):-1;
+    bar.querySelectorAll('.host-btn').forEach((x,j)=>x.classList.toggle('active',j===i));
+    // The style this host uses came with /hosts, so it can be drawn now instead
+    // of a second from now when the device answers — and drawing it now is what
+    // lets the popped-out window be resized to it, because that resize only
+    // works inside a press and the answer arrives long after this one is over.
+    // If the switch fails, the next poll puts it back.
+    if(window.applyTemplate)window.applyTemplate(s.tpl||'default');
+    if(window.onRemoteFitNow)window.onRemoteFitNow();
+    apiPost('switch_host',{slot:s.slot})
+      .then(loadHosts).catch(()=>{});
+  }
+  window.pickLocalHost=pickLocal;
   pollEvery(loadHosts,5000);
   // For a change this page just made to the hosts: reading them at once is what
   // writes the storage key below, so every other tab hears of it now too.
@@ -2515,6 +2537,7 @@ function hostBtn(s,active){
       PEERS=next;
       if(RMT_PEER!==null&&!PEERS[RMT_PEER]){window.dropPeerLock();return}
       render();
+      syncPresets();
       if(RMT_PEER!==null)window.applyPeerTarget(false);
       if(firstAnswer){
         firstAnswer=false;
@@ -2526,6 +2549,64 @@ function hostBtn(s,active){
         if(order.some(n=>!PEERS[n].state))soon();
       }
     }).catch(()=>{});
+  }
+  // Remote keys that move this tab rather than press anything (RMT_PAGE_KEYS).
+  // The keyboards go in the order their bars are drawn: this one, then each peer.
+  window.pageKey=function(a){
+    const kbs=[null].concat(order);
+    const hostsOf=k=>k===null?LOCAL_HOSTS:((PEERS[k]&&PEERS[k].state&&PEERS[k].state.hosts)||null);
+    const activeOf=k=>{const h=hostsOf(k);return !h?null:(k!==null&&pending(k)?PEER_PENDING.slot:h.active)};
+    const go=(k,s)=>{
+      if(k===null){if(window.pickLocalHost)window.pickLocalHost(s,false);return}
+      const st=PEERS[k]&&PEERS[k].state;
+      if(st&&st.hosts)pick(k,s,st);
+    };
+    if(a==='next_keyboard'){
+      // The next keyboard along, on whichever host it is already on.
+      if(kbs.length<2)return;
+      const k=kbs[(kbs.indexOf(RMT_PEER)+1)%kbs.length];
+      const h=hostsOf(k),s=h&&h.slots.find(x=>x.slot===activeOf(k));
+      if(s)go(k,s);
+      return;
+    }
+    // Every host of every keyboard, in bar order, and one step along it from
+    // where this tab is. With no linked keyboard it is this keyboard's own hosts.
+    const all=[];
+    kbs.forEach(k=>{const h=hostsOf(k);((h&&h.slots)||[]).forEach(s=>all.push({k:k,s:s}))});
+    if(!all.length)return;
+    const cur=activeOf(RMT_PEER);
+    const i=Math.max(0,all.findIndex(e=>e.k===RMT_PEER&&e.s.slot===cur));
+    const next=all[(i+(a==='prev_host_all'?-1:1)+all.length)%all.length];
+    go(next.k,next.s);
+  };
+  // Presets for macros and Host Actions that drive a linked keyboard — one set
+  // per peer, only on a keyboard that has some, renewed when the list changes.
+  // The Host Actions list copies the macro one whenever the buttons reload, so
+  // both get the group either way.
+  let presetNames='';
+  function syncPresets(){
+    const names=order.join(',');
+    if(names===presetNames)return;
+    presetNames=names;
+    ['mp','ov-preset'].forEach(id=>{
+      const sel=document.getElementById(id);
+      if(!sel)return;
+      const old=sel.querySelector('optgroup.peer-preset');
+      if(old)old.remove();
+      if(!order.length)return;
+      const og=document.createElement('optgroup');
+      og.label='Linked keyboards';og.className='peer-preset';
+      order.forEach(n=>{
+        [['switch_host:','switch to host (edit slot)'],['next_host','next host'],['prev_host','prev host'],
+         ['','any action (edit)']].forEach(([act,label])=>{
+          const o=document.createElement('option');
+          o.value='peer:'+n+':'+act;
+          o.textContent=n+': '+label;
+          og.appendChild(o);
+        });
+      });
+      sel.appendChild(og);
+    });
   }
   let live=false;
   window.startPeers=function(){
@@ -2541,6 +2622,7 @@ function hostBtn(s,active){
     live=false;
     PEERS={};order=[];firstAnswer=true;
     render();
+    syncPresets();
     if(RMT_PEER!==null)window.dropPeerLock();
     else if(window.reloadHostsNow)window.reloadHostsNow();
   };
@@ -5067,6 +5149,7 @@ buildKeyboard();
   // remapped the action to something unholdable (a macro, a sequence), and an
   // ordinary press beats leaving a dead button.
   function startHold(el,act){
+    if(RMT_PAGE_KEYS.indexOf(act)>=0){press(act);return}  // nothing to hold down
     endHold();  // a second finger, or a second key: only one hold at a time
     holdEl=el;el.classList.add('held');
     holdPeer=peerLock();
@@ -5088,7 +5171,11 @@ buildKeyboard();
     const p=peerLock();if(p!==null)return 'peer:'+p+':'+a;
     const h=hostLock();return h===null?a:'host_action:'+h+':'+a;
   }
-  function press(a){api('press',{action:onPage(a)})}
+  function press(a){
+    // A key that moves this tab between keyboards is acted on here and never sent.
+    if(RMT_PAGE_KEYS.indexOf(a)>=0){if(window.pageKey)window.pageKey(a);return}
+    api('press',{action:onPage(a)});
+  }
   // `fired` is what keeps hold and tap from both counting: once the hold timer
   // has sent anything, pointerup must NOT send its usual press on release.
   {let sx,sy,ok,ab,fired=false;

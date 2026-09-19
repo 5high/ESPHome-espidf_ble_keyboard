@@ -508,6 +508,7 @@
       <tr><td><code>"switch_host:next"</code></td><td class="desc">Step one slot forward (or <code>"switch_host:prev"</code> for back), wrapping at the ends. One button rotates through the hosts.</td></tr>
       <tr><td><code>"switch_host:back"</code></td><td class="desc">Return to the slot active before the last switch, however it was made — what brings a macro home after it visits another host.</td></tr>
       <tr><td><code>"prev_host"</code> / <code>"next_host"</code> / <code>"last_host"</code></td><td class="desc">The same three as remote keys a style can place, remappable per host.</td></tr>
+      <tr><td><code>"next_keyboard"</code> / <code>"prev_host_all"</code> / <code>"next_host_all"</code></td><td class="desc">Web page remote only: move the tab to the next linked keyboard, or through every host of every linked keyboard.</td></tr>
       <tr><td><code>"peer:&lt;name&gt;:&lt;action&gt;"</code></td><td class="desc">Run an action on a linked keyboard listed under <code>peers:</code> — <code>"peer:bedroom:switch_host:1"</code>.</td></tr>
       <tr><td><code>"host_action:6:spare1"</code></td><td class="desc">Run slot 6's Host Action for <code>spare1</code> without switching host. A name that slot has no action for runs as an ordinary press on the active host.</td></tr>
       <tr><td><code>"wait:connected"</code></td><td class="desc">Hold a macro until the active host is connected and ready for keys, rather than guessing a delay. Up to 10 s, or <code>"wait:connected:N"</code> ms (max 60000); carries on if the host never connects.</td></tr>

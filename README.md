@@ -515,6 +515,7 @@ espidf_ble_keyboard:
 | `"num0"` … `"num9"` | The keypad, as plain keyboard digits — direct channel entry on a TV, typing a number on a PC. |
 | `"backspace"` | Keyboard Backspace — correcting a digit or a TV search box. |
 | `"prev_host"` / `"next_host"` / `"last_host"` | Remote keys for `switch_host:prev`, `switch_host:next` and `switch_host:back` below. |
+| `"next_keyboard"` / `"prev_host_all"` / `"next_host_all"` | Web page remote only: move the tab to the next [linked keyboard](#linking-a-second-keyboard), or step through every host of every linked keyboard. Anywhere else they do nothing. |
 | `"spare1"` … `"spare32"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
 | `"left_click"` | Mouse left click. |
 | `"right_click"` | Mouse right click. |
@@ -1180,7 +1181,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, and for a `lit:` button `lit_bg`, `lit_fg`. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -2026,7 +2027,8 @@ The page then shows a bar of that keyboard's hosts below its own. Tap one and th
 - Styles are not copied between keyboards. Export one on the linked keyboard's page and Import it here; until then that host draws the full remote, and its bar says which style is missing.
 - Both keyboards need firmware with this feature.
 - Give the address as an IP address or the keyboard's `.local` name.
-- A macro or button reaches it the same way, with [`peer:bedroom:<action>`](#action-reference).
+- A macro or button reaches it the same way, with [`peer:bedroom:<action>`](#action-reference); the preset lists in Macros and Host Actions offer the common ones. That switches the other keyboard, not the tab.
+- To move the tab from the remote, give a style the `next_keyboard`, `prev_host_all` or `next_host_all` keys: the next keyboard on whatever host it is on, or one step through every host of every keyboard, in the order the bars show them.
 
 **Anyone who can use this keyboard's page can drive the linked one**, because its login is stored in this keyboard's firmware.
 
