@@ -2740,6 +2740,8 @@ void EspidfBleKeyboard::release_style_hold_() {
     if (held >= 0 && (uint8_t) held != active_slot_) publish_remote_lists_();
 }
 
+bool EspidfBleKeyboard::is_advertising() const { return s_adv_running.load(); }
+
 void EspidfBleKeyboard::switch_host(uint8_t slot, bool from_action) {
     if (slot >= host_slots_) {
         ESP_LOGW(TAG, "Invalid host slot %u (max %u)", slot, host_slots_ - 1);

@@ -34,6 +34,9 @@ web control page shows the matching version badge.
 - **The host switcher on a card sizes itself to its longest host name**, instead of a fixed width
   that cut off anything past about ten characters. Still one width for the whole set, so the arrows
   stay where your finger left them.
+- **The web page says whether the radio is calling.** The badge still reads Connected or
+  Disconnected — that is the question it answers — but hovering it says whether the keyboard is
+  advertising and waiting for the host or has gone silent, and `/status` reports it.
 
 ### Fixed
 - **A host could be left waiting after a quick run through the hosts.** Stepping to another host

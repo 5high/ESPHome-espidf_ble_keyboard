@@ -594,6 +594,11 @@ class EspidfBleKeyboard : public Component
     }
   }
   bool is_connected() const { return is_connected_; }
+  /// Whether the radio is out there waiting to be found. Defined in the .cpp,
+  /// where the advertising state lives: "Disconnected" cannot tell a keyboard
+  /// that is calling from one that has gone quiet, and that is the difference
+  /// between waiting and going to look at the host's Bluetooth settings.
+  bool is_advertising() const;
   uint16_t conn_id() const { return conn_id_; }
   /// Called from the GAP task once the current link is encrypted.
   void mark_link_secure() { link_secure_.store(true); }

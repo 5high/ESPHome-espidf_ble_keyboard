@@ -1340,6 +1340,12 @@ function showStatus(d){
   sdot.className='status-dot'+(noBle?'':p?' paired':c?' connected':'');
   stxt.className='status-text'+((!noBle&&(c||p))?' on':'');
   stxt.textContent=noBle?'No BLE':p?'Paired':c?'Connected':'Disconnected';
+  // The badge answers one question — is the host there — so whether the radio
+  // is calling stays out of it and goes in the tooltip, where it answers the
+  // second question only when it is asked: waiting for a host, or silent and
+  // worth looking into.
+  stxt.title=(noBle||c||p)?'':d.advertising===true?'Advertising — waiting for the host':
+                                                   'Not advertising';
   if(d.device_name){dname.textContent='('+d.device_name+')';document.title=d.device_name+(POPOUT?' — Remote':' — BLE Control')}
   // Whatever the style on screen asked for. Sent on every tick rather than
   // only when it changes: the map is a handful of short strings, and the

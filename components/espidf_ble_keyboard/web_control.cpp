@@ -294,6 +294,11 @@ __attribute__((noinline)) static void append_status_json(std::string &json, Espi
   // "Disconnected" on a slot that is never meant to connect.
   json += ",\"broadcast\":";
   json += kb->slot_broadcasts(kb->active_host_slot()) ? "true" : "false";
+  // And whether that radio is calling. A keyboard waiting to be found and one
+  // that has gone quiet both read as "Disconnected" otherwise, which is the
+  // difference between waiting and going to the host's Bluetooth settings.
+  json += ",\"advertising\":";
+  json += kb->is_advertising() ? "true" : "false";
   // Escaped like every other endpoint's strings. ESPHome restricts device
   // names, so this is consistency rather than a live bug — but a /status
   // that cannot be parsed takes the whole page down with it.
