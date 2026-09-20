@@ -359,13 +359,18 @@
     <div class="feature">
       <div class="feature-icon">🌐</div>
       <h3>Web Control</h3>
-      <p>Built-in web page with full keyboard, mouse, remote, and a <strong>Position Finder</strong> (calibrates <code>mouse_goto</code> per host). Access from any browser — no Home Assistant needed. Enable with <code>web_control: true</code>.</p>
+      <p>Built-in web page with full keyboard, mouse, remote, and a <strong>Position Finder</strong> (calibrates <code>mouse_goto</code> per host). Access from any browser — no Home Assistant needed. Enable with <code>web_control: true</code>. Remote styles you make here export as one list and import onto another keyboard in a single paste, logos and all.</p>
       <img src="web_server.png" alt="Web Control Page" style="max-width:100%;border-radius:8px;margin-top:8px;">
     </div>
     <div class="feature">
       <div class="feature-icon">🔀</div>
       <h3>Multi-Host Switching</h3>
       <p>Pair with up to 10 hosts and switch between them with a button press. Uses directed advertising for fast reconnection. Slots persist across reboots.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔗</div>
+      <h3>Linked Keyboards</h3>
+      <p>List a second ESP32 running this component under <code>peers:</code> and its hosts join this one's web page in a bar of their own. Tap one and the remote, keyboard, paste box and mouse drive it over Wi-Fi — for hosts one keyboard's Bluetooth can't reach. Macros reach it with <code>peer:&lt;name&gt;:&lt;action&gt;</code>, and a Home Assistant card can step through both keyboards' hosts.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">🌍</div>
