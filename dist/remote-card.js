@@ -23,7 +23,7 @@
  *   device: bluetooth_keyboard    # your ESPHome device name
  *   # peer_hosts:                 # add a linked keyboard's hosts to the switcher
  *   #   - peer: bedroom
- *   #     slots: 2
+ *   #     slots: 2               # a count, or '1-3, 5' like host_slots
  *   #     names: [Bed TV, Bed PC]
  *   #     label: Bedroom
  *   #     remote_style: style3   # what that host's remote looks like
@@ -40,6 +40,7 @@
  *   # hold_entity: sensor.x_hold_buttons       # per-host press-and-hold list
  *   # repeat_entity: sensor.x_repeat_buttons   # per-host hold-to-repeat config
  *   # host_slots: 4                # show host switcher (needs >1; default 0 = hidden)
+ *   #                             # or pick the hosts: '1-3, 5, 7-10'
  *   # host_names:                   # custom names for each host slot (optional)
  *   #   - TV
  *   #   - Phone
@@ -160,6 +161,28 @@ function pastedStylesOf(raw) {
   return { styles, error: null };
 }
 
+// Which hosts the switcher offers. A number is a count, as it always was — 4 is
+// the first four — and a string picks them out by the numbers the switcher
+// shows: "1-3, 5, 7-10" for a keyboard whose other slots are not worth a place
+// on this card. What comes back is the device's own 0-based slots, in order and
+// without repeats, so "1-3" is slots 0, 1 and 2.
+function hostSlotList(spec) {
+  const max = 10;   // MAX_HOST_SLOTS on the device
+  if (typeof spec === 'number')
+    return Array.from({ length: Math.max(0, Math.min(max, Math.floor(spec))) }, (_, i) => i);
+  const picked = new Set();
+  const take = (from, to) => {
+    for (let n = Math.min(from, to); n <= Math.max(from, to); n++)
+      if (n >= 1 && n <= max) picked.add(n - 1);
+  };
+  const parts = Array.isArray(spec) ? spec : typeof spec === 'string' ? spec.split(',') : [];
+  for (const part of parts) {
+    const m = String(part).trim().match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if (m) take(Number(m[1]), Number(m[2] === undefined ? m[1] : m[2]));
+  }
+  return [...picked].sort((a, b) => a - b);
+}
+
 class BleRemoteCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
@@ -180,7 +203,7 @@ class BleRemoteCard extends HTMLElement {
     // others without polling.
     // The sensor is this keyboard's active host, so it is followed only while
     // that is the host the card is on — not while a linked keyboard's is.
-    if (this._config.host_slots > 1 && !this._peerName()) {
+    if (this._config.host_list.length > 1 && !this._peerName()) {
       const entity = this._config.active_host_entity
         || Object.keys(hass.states).find(eid =>
              eid.startsWith('sensor.') && eid.includes(this._config.device) && eid.endsWith('_active_host')
@@ -226,6 +249,8 @@ class BleRemoteCard extends HTMLElement {
       repeat_entity: config.repeat_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_repeat_buttons`,
       host_slots: config.host_slots || 0,
+      // The slots the switcher offers, 0-based, from the count or list above.
+      host_list: hostSlotList(config.host_slots || 0),
       host_names: config.host_names || [],
       active_host_entity: config.active_host_entity || null,
       show_mac: config.show_mac !== false,
@@ -256,7 +281,7 @@ class BleRemoteCard extends HTMLElement {
     // keyboard's own that is a linked keyboard's, which is what lets a card
     // drive one without a switcher to select it.
     const first = this._hostChain()[0];
-    this._target = first ? { peer: first.peer, slot: first.slot, entry: first.entry } : null;
+    this._target = first ? { peer: first.peer, slot: first.slot, entry: first.entry, name: first.name } : null;
     this._activeSlot = first ? first.slot : 0;
     // Forces the next _renderStyle() to redraw even if the resolved id is
     // unchanged — the pasted JSON may have been edited under the same id.
@@ -442,7 +467,7 @@ class BleRemoteCard extends HTMLElement {
     const slot = this._activeSlot || 0;
     const apiSlot = (this._hostSlots || []).find(s => s.slot === slot);
     const names = this._config.host_names;
-    if (this._config.host_slots > 0) {
+    if (this._config.host_list.length > 0) {
       vals['@slot'] = String(slot);
       // Same order of preference the host bar uses, so the two never disagree.
       vals['@host'] = (names && names[slot]) || (apiSlot && apiSlot.name) ||
@@ -684,7 +709,7 @@ class BleRemoteCard extends HTMLElement {
     // title was configured) and the ESP's own URL, which HA fills in as
     // configuration_url because web_control requires the web_server component.
     const wantsName = !this._config.name;
-    const wantsUrl = this._config.host_slots > 1 && !this._config.host_url;
+    const wantsUrl = this._config.host_list.length > 1 && !this._config.host_url;
     if ((wantsName || wantsUrl) && this._hass) {
       const nameSpan = shadow.querySelector('.header-name');
       const slug = this._config.device.replace(/-/g, '_');
@@ -750,14 +775,25 @@ class BleRemoteCard extends HTMLElement {
   }
 
   // The switcher's hosts, in order: this keyboard's, then each linked
-  // keyboard's. One entry per host, so stepping is just walking this list.
+  // keyboard's. One entry per host, so stepping is just walking this list. Each
+  // carries the name configured for it — names line up with the hosts shown, so
+  // three names belong to the three hosts chosen rather than to slots 1 to 3.
   _hostChain() {
     const chain = [];
-    for (let i = 0; i < (this._config.host_slots || 0); i++) chain.push({ peer: null, slot: i, entry: null });
-    for (const k of this._config.peer_hosts) {
-      for (let i = 0; i < (k.slots || 0); i++) chain.push({ peer: k.peer || null, slot: i, entry: k });
+    const names = this._config.host_names || [];
+    this._config.host_list.forEach((slot, i) => chain.push({ peer: null, slot, entry: null, name: names[i] }));
+    for (const k of (this._config.peer_hosts || [])) {
+      hostSlotList(k.slots || 0).forEach((slot, i) =>
+        chain.push({ peer: k.peer || null, slot, entry: k, name: (k.names || [])[i] }));
     }
     return chain;
+  }
+
+  // The name configured for one of this keyboard's slots, if the switcher shows
+  // it at all. Looked up by position for the same reason as above.
+  _configNameFor(slot) {
+    const i = this._config.host_list.indexOf(slot);
+    return i < 0 ? undefined : (this._config.host_names || [])[i];
   }
 
   // Which keyboard the buttons drive: the one the selected host belongs to.
@@ -787,7 +823,7 @@ class BleRemoteCard extends HTMLElement {
   }
 
   _goToHost(c) {
-    this._target = { peer: c.peer, slot: c.slot, entry: c.entry };
+    this._target = { peer: c.peer, slot: c.slot, entry: c.entry, name: c.name };
     this._activeSlot = c.slot;
     this._switchHost(c.slot);
     // A linked keyboard's hosts can each want their own style, and nothing on
@@ -801,19 +837,14 @@ class BleRemoteCard extends HTMLElement {
   // of them rather than to a guess. A linked keyboard's hosts carry its name as
   // well as their own, which no 84px field was ever going to hold.
   _hostLabels() {
-    const names = this._config.host_names || [];
-    const out = [];
-    for (let i = 0; i < (this._config.host_slots || 0); i++) {
-      const api = this._hostSlots.find(s => s.slot === i);
-      out.push(names[i] || (api && api.name) || 'Host ' + (i + 1));
-    }
-    for (const k of this._config.peer_hosts) {
-      const label = k.label || k.peer || '';
-      for (let i = 0; i < (k.slots || 0); i++) {
-        out.push(`${label}: ${(k.names || [])[i] || 'Host ' + (i + 1)}`);
+    return this._hostChain().map(c => {
+      if (c.peer) {
+        const label = (c.entry && (c.entry.label || c.entry.peer)) || c.peer;
+        return `${label}: ${c.name || 'Host ' + (c.slot + 1)}`;
       }
-    }
-    return out;
+      const api = this._hostSlots.find(s => s.slot === c.slot);
+      return c.name || (api && api.name) || 'Host ' + (c.slot + 1);
+    });
   }
 
   // Widen the name field to fit the longest of them, measured rather than
@@ -866,7 +897,7 @@ class BleRemoteCard extends HTMLElement {
   }
 
   connectedCallback() {
-    if (this._initialized && this._config && this._config.host_slots > 1) {
+    if (this._initialized && this._config && this._config.host_list.length > 1) {
       this._startHostPolling();
     }
     // A hidden tab or a switched-away dashboard never delivers pointerup, and a
@@ -895,7 +926,7 @@ class BleRemoteCard extends HTMLElement {
     // /hosts answers for the keyboard this card points at; while a linked
     // keyboard's host is the one selected, its names come from peer_hosts and
     // this keyboard's answer would only fight the selection.
-    if (!this._hass || this._config.host_slots < 2 || this._peerName()) return;
+    if (!this._hass || this._config.host_list.length < 2 || this._peerName()) return;
     const baseUrl = this._hostBaseUrl();
     if (!baseUrl) {
       this._updateHostDisplay();
@@ -931,18 +962,15 @@ class BleRemoteCard extends HTMLElement {
     const t = this._target;
     if (t && t.peer) {
       const label = (t.entry && (t.entry.label || t.entry.peer)) || t.peer;
-      const names = (t.entry && t.entry.names) || [];
-      this._hostNameEl.textContent = `${label}: ${names[t.slot] || 'Host ' + (t.slot + 1)}`;
+      this._hostNameEl.textContent = `${label}: ${t.name || 'Host ' + (t.slot + 1)}`;
       // /hosts is this keyboard's; it says nothing about that one's addresses.
       this._hostAddrEl.style.display = 'none';
       return;
     }
-    const names = this._config.host_names;
+    const cfgName = this._configNameFor(this._activeSlot);
     const apiSlot = this._hostSlots.find(s => s.slot === this._activeSlot);
-    this._hostNameEl.textContent = (names && names[this._activeSlot])
-      ? names[this._activeSlot]
-      : (apiSlot && apiSlot.name) ? apiSlot.name
-      : 'Host ' + (this._activeSlot + 1);
+    this._hostNameEl.textContent = cfgName
+      || (apiSlot && apiSlot.name) || ('Host ' + (this._activeSlot + 1));
     // Without device data there's nothing truthful to show, so the element
     // collapses rather than leaving a blank gap beside the arrows.
     const showAddr = this._config.show_mac && this._hostDataAvailable;
@@ -1279,7 +1307,7 @@ function remoteEditorSchema(config) {
     // shows it as a text box. That is survivable: it is the one field most
     // cards never set.
     { name: 'lcd_entities', selector: { object: {} } },
-    { name: 'host_slots', selector: { number: { min: 0, max: 10, step: 1, mode: 'box' } } },
+    { name: 'host_slots', selector: { text: {} } },
     { name: 'host_names', selector: { text: {} } },
     { name: 'peer_hosts', selector: { text: { multiline: true } } },
     { name: 'active_host_entity', selector: { entity: { domain: 'sensor' } } },
@@ -1324,7 +1352,7 @@ const REMOTE_EDITOR_LABELS = {
   repeat_entity: 'Hold-to-repeat sensor (optional)',
   lcd_entity: 'LCD values sensor (optional)',
   lcd_entities: 'LCD keys read from Home Assistant instead, e.g. temp: sensor.lounge',
-  host_slots: 'Host switcher (needs 2+; 0 = hide)',
+  host_slots: 'Host switcher: how many hosts, or which — 1-3,5,7-10 (0 = hide)',
   host_names: 'Host names, comma-separated (optional)',
   peer_hosts: 'Linked keyboards, one per line: bedroom | 2 | Bed TV, Bed PC | Bedroom | style3',
   active_host_entity: 'Active-host sensor (optional)',
@@ -1352,6 +1380,9 @@ class BleRemoteCardEditor extends HTMLElement {
     if (Array.isArray(this._config.host_names)) {
       this._config.host_names = this._config.host_names.join(', ');
     }
+    // host_slots edits as text, so it can hold a list as well as a count.
+    if (typeof this._config.host_slots === 'number')
+      this._config.host_slots = String(this._config.host_slots);
     // Same for peer_hosts, a list of mappings that edits as one line each.
     if (Array.isArray(this._config.peer_hosts)) {
       this._config.peer_hosts = peerHostsToText(this._config.peer_hosts);
@@ -1383,6 +1414,13 @@ class BleRemoteCardEditor extends HTMLElement {
     this._config = config;
     // Hand the card a real list again — it expects host_names to be an array.
     const out = { ...config };
+    // A plain number still means a count of hosts; anything else is the list of
+    // hosts to show, and stays a string.
+    if (typeof out.host_slots === 'string') {
+      const t = out.host_slots.trim();
+      out.host_slots = /^\d+$/.test(t) ? Number(t) : t;
+      if (out.host_slots === 0 || out.host_slots === '') delete out.host_slots;
+    }
     if (typeof out.host_names === 'string') {
       const names = out.host_names.split(',').map((n) => n.trim()).filter(Boolean);
       if (names.length) out.host_names = names;

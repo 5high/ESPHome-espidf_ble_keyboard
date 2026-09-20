@@ -19,6 +19,10 @@ web control page shows the matching version badge.
   keyboard's Remote Style box and one press saves them all, icons included — the way to give a linked
   keyboard the same remotes. Styles are matched by id: known ones are replaced, new ones added,
   nothing is deleted, and a list that would not fit is refused before anything is written.
+- **A card's host switcher can show only the hosts you want.** `host_slots` still takes a count, and
+  now also a list by the numbers the switcher shows — `'1-3, 5, 7-10'` — so a dashboard can carry
+  three of ten paired machines. `host_names` line up with the hosts shown, and a linked keyboard's
+  `slots` takes the same list.
 - **A dashboard card can cover both keyboards.** List a linked keyboard's hosts under `peer_hosts`
   and the card's arrows carry on from this keyboard's hosts into that one's, with every press
   following whichever host is selected. Tapping the host name jumps a whole keyboard at a time, and

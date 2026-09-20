@@ -1716,15 +1716,15 @@ Optional configuration:
 | Option | Default | Description |
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
-| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots`, `names` and an optional `label`. Leave `host_slots` at 0 and the card drives nothing but the keyboards listed here. In the visual editor this is one line per keyboard — `bedroom \| 2 \| Bed TV, Bed PC \| Bedroom`. Tapping the host name jumps a whole keyboard. |
+| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots` — a count or a list like `'1-3, 5'`, same as `host_slots` — `names` for the hosts it shows, in that order, and an optional `label`. Leave `host_slots` at 0 and the card drives nothing but the keyboards listed here. In the visual editor this is one line per keyboard — `bedroom \| 2 \| Bed TV, Bed PC \| Bedroom`. Tapping the host name jumps a whole keyboard. |
 | `zoom` | `1` | Scales the whole card — touchpad, buttons and text together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, and everything scales by the same factor in both directions so the controls keep their shape. |
 | `sensitivity` | `1.5` | Base cursor speed multiplier. |
 | `mouse_acceleration` | `0.15` | Speed-based acceleration factor. Higher = more acceleration on fast swipes. |
 | `mouse_max_speed` | `4.5` | Maximum sensitivity cap. Limits how fast the cursor can move. |
 | `scroll_sensitivity` | `2` | Scroll speed multiplier. |
 | `tap_to_click` | `true` | Tap the touchpad for a left click (5px dead zone prevents accidental clicks). |
-| `host_slots` | `0` | Number of host slots. Set to match your `host_slots` config to show a [host switcher](#host-switcher-on-the-cards) in the header. Needs at least `2` — `0` or `1` hides it. |
-| `host_names` | `[]` | List of custom names for each host slot (e.g., `["TV", "Phone"]`). Index 0 = slot 0. Falls back to `switch_host` button names from the ESP32, then "Host N". |
+| `host_slots` | `0` | Which hosts the switcher offers. A number is a count — `4` is the first four — and a string picks them out by the numbers the switcher shows, e.g. `'1-3, 5, 7-10'`, for a keyboard whose other slots don't belong on this card. Needs at least two hosts; `0` hides the switcher. See [Host switcher on the cards](#host-switcher-on-the-cards). |
+| `host_names` | `[]` | Names for the hosts the switcher shows, in the order it shows them (e.g., `["TV", "Phone"]`). With a count that is slot 0, slot 1 and so on; with a list like `'1,5'` the first name is host 1 and the second host 5. Falls back to `switch_host` button names from the ESP32, then "Host N". |
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |
 | `show_mac` | `true` | Show the active host's MAC address to the left of the switcher. |
 | `host_url` | Auto | Address of the ESP32 (e.g. `http://192.168.1.50`), used to read slot MACs. Auto-detected from the device's HA registry entry. |
@@ -2333,13 +2333,13 @@ Optional configuration:
 | Option | Default | Description |
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
-| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots`, `names` and an optional `label`. Leave `host_slots` at 0 and the card drives nothing but the keyboards listed here. In the visual editor this is one line per keyboard — `bedroom \| 2 \| Bed TV, Bed PC \| Bedroom`. Tapping the host name jumps a whole keyboard. |
+| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots` — a count or a list like `'1-3, 5'`, same as `host_slots` — `names` for the hosts it shows, in that order, and an optional `label`. Leave `host_slots` at 0 and the card drives nothing but the keyboards listed here. In the visual editor this is one line per keyboard — `bedroom \| 2 \| Bed TV, Bed PC \| Bedroom`. Tapping the host name jumps a whole keyboard. |
 | `zoom` | `1` | Scales the whole card — keys, labels and spacing together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, and everything scales by the same factor in both directions so the keys keep their shape. |
 | `show_fkeys` | `true` | Show the F1–F12 function key row. |
 | `show_paste` | `true` | Show the paste bar above the keys. Paste or type text there and press Send to type the whole thing at once; the **auto** checkbox types pasted text immediately. On HTTPS a clipboard button sends the clipboard in one tap. |
 | `layout` | `us` | Keyboard layout for the on-screen card: `us`, `uk`, `de`, or `be`. UK draws the ISO shape (extra `\|` key, `£` on Shift+3); DE draws QWERTZ (Y/Z swapped, `ü`/`ö`/`ä`/`ß` keys, German modifier labels); BE draws AZERTY (A↔Q and Z↔W swapped, `M` on home row, `é è à ç ù` on the digit row). Set this to match the ESP's `keyboard_layout` option so the visual matches what gets typed. |
-| `host_slots` | `0` | Number of host slots. Set to match your `host_slots` config to show a [host switcher](#host-switcher-on-the-cards) in the header. Needs at least `2` — `0` or `1` hides it. |
-| `host_names` | `[]` | List of custom names for each host slot (e.g., `["TV", "Phone"]`). Index 0 = slot 0, etc. Falls back to switch_host button names from the ESP32, then "Host N". |
+| `host_slots` | `0` | Which hosts the switcher offers. A number is a count — `4` is the first four — and a string picks them out by the numbers the switcher shows, e.g. `'1-3, 5, 7-10'`, for a keyboard whose other slots don't belong on this card. Needs at least two hosts; `0` hides the switcher. See [Host switcher on the cards](#host-switcher-on-the-cards). |
+| `host_names` | `[]` | Names for the hosts the switcher shows, in the order it shows them (e.g., `["TV", "Phone"]`). With a count that is slot 0, slot 1 and so on; with a list like `'1,5'` the first name is host 1 and the second host 5. Falls back to switch_host button names from the ESP32, then "Host N". |
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |
 | `show_mac` | `true` | Show the active host's MAC address to the left of the switcher. |
 | `host_url` | Auto | Address of the ESP32 (e.g. `http://192.168.1.50`), used to read slot MACs. Auto-detected from the device's HA registry entry. |
@@ -2430,7 +2430,7 @@ Optional configuration:
 | Option | Default | Description |
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
-| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots`, `names` and an optional `label`, plus `remote_style` — the style a linked keyboard draws cannot be read from here. Leave `host_slots` at 0 and the card drives nothing but the keyboards listed here. In the visual editor this is one line per keyboard — `bedroom \| 2 \| Bed TV, Bed PC \| Bedroom \| style3`. Tapping the host name jumps a whole keyboard. |
+| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots` — a count or a list like `'1-3, 5'`, same as `host_slots` — `names` for the hosts it shows, in that order, and an optional `label`, plus `remote_style` — the style a linked keyboard draws cannot be read from here. Leave `host_slots` at 0 and the card drives nothing but the keyboards listed here. In the visual editor this is one line per keyboard — `bedroom \| 2 \| Bed TV, Bed PC \| Bedroom \| style3`. Tapping the host name jumps a whole keyboard. |
 | `zoom` | `1` | Scales the whole remote — buttons, text and spacing together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, so `0.55` fits the full remote into roughly 8 grid rows, the shortest HA's height slider offers. Zooming past about `1.1` makes the remote wider than a 500px section, and the card scrolls sideways. |
 | `remote_style` | `auto` | Which layout to draw: `auto` follows the style the device has for the active host, or pin one of `default`, `style1`…`style5`, or `custom` to use your own. |
 | `remote_style_json` | — | The style to draw when `remote_style: custom`. Paste it from the web page's **Remote Style → Export**. |
@@ -2443,8 +2443,8 @@ Optional configuration:
 | `repeat_entity` | `sensor.<device>_repeat_buttons` | Text sensor carrying the active host's [Hold to repeat](#hold-to-repeat-per-host) config. Without it the card repeats volume and channel only, at 400/180 ms. |
 | `lcd_entity` | `sensor.<device>_lcd` | Text sensor carrying the values an [LCD panel](#lcd-panels) shows. Only needed if the style has one. |
 | `lcd_entities` | — | Map of panel key to Home Assistant entity, e.g. `temp: sensor.lounge_temperature`. Read from HA directly, so it reaches things the keyboard's node never sees — and wins over the device's value for the same key. |
-| `host_slots` | `0` | Number of host slots. Set to match your `host_slots` config to show a [host switcher](#host-switcher-on-the-cards) in the header. Needs at least `2` — `0` or `1` hides it. |
-| `host_names` | `[]` | List of custom names for each host slot (e.g., `["TV", "Phone"]`). Index 0 = slot 0. Falls back to `switch_host` button names from the ESP32, then "Host N". |
+| `host_slots` | `0` | Which hosts the switcher offers. A number is a count — `4` is the first four — and a string picks them out by the numbers the switcher shows, e.g. `'1-3, 5, 7-10'`, for a keyboard whose other slots don't belong on this card. Needs at least two hosts; `0` hides the switcher. See [Host switcher on the cards](#host-switcher-on-the-cards). |
+| `host_names` | `[]` | Names for the hosts the switcher shows, in the order it shows them (e.g., `["TV", "Phone"]`). With a count that is slot 0, slot 1 and so on; with a list like `'1,5'` the first name is host 1 and the second host 5. Falls back to `switch_host` button names from the ESP32, then "Host N". |
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |
 | `show_mac` | `true` | Show the active host's MAC address to the left of the switcher. |
 | `host_url` | Auto | Address of the ESP32 (e.g. `http://192.168.1.50`), used to read slot MACs. Auto-detected from the device's HA registry entry. |
@@ -2520,7 +2520,7 @@ All three Lovelace cards can show a host switcher in their header — prev/next 
 🖱  Mouse Control          AA:BB:CC:DD:EE:FF  ◀  Office PC  ▶
 ```
 
-Add `host_slots` to any card to enable it (it needs at least `2`; `0` or `1` hides it):
+Add `host_slots` to any card to enable it (it needs at least two hosts; `0` hides it):
 
 ```yaml
 type: custom:ble-mouse-card
@@ -2529,6 +2529,21 @@ host_slots: 4
 host_names: [TV, Phone, Laptop, Tablet]   # optional
 show_mac: true                            # optional, default true
 ```
+
+**Or name the hosts you want.** A number is a count, so `4` is the first four. A string picks hosts
+out by the numbers the switcher shows, so a keyboard with ten paired machines can put three of them
+on the kitchen dashboard and the rest nowhere:
+
+```yaml
+host_slots: '1-3, 5, 7-10'                # hosts 1, 2, 3, 5, 7, 8, 9 and 10
+host_names: [TV, Phone, Laptop, Study, Shed, Garage, Loft, Pi]
+```
+
+The names line up with the hosts shown, in that order — the first name belongs to host 1 and the
+fourth to host 5. Anything left unnamed falls back to the name the device reports for that host.
+Switching still reaches the device as its own slot number, so a host is the same host wherever it is
+listed, and [a linked keyboard's `peer_hosts`](#linking-a-second-keyboard) takes the same `slots`
+spec.
 
 **The cards stay in sync with each other.** Switch the host on the remote card and the mouse and keyboard cards follow — as do switches made from the [web control page](#web-control), a physical `switch_host:N` button, or a YAML action. There are two paths for this, and the cards use whichever is available:
 
