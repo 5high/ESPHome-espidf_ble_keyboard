@@ -1,4 +1,4 @@
-# ESP32 BLE HID Keyboard & Universal Remote for ESPHome
+# ESP32 BLE HID Keyboard & Remote for ESPHome
 
 This is a custom [ESPHome](https://esphome.io) component that turns an ESP32 into a Bluetooth Low Energy (BLE) HID keyboard and mouse that can switch between up to ten paired hosts. It serves its own web remote and ships Home Assistant dashboard cards. Any key on any host can also fire a Home Assistant action, such as an IR command, so one remote can mix Bluetooth keys and IR on the same page — and a host slot can have Bluetooth turned off entirely to be a pure IR remote, making it a universal remote as well. This component targets **ESP-IDF Bluedroid GATTS** (rather than NimBLE), chosen for the HID behavior and host compatibility validated in this project.
 
