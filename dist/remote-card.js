@@ -22,6 +22,12 @@
  *   type: custom:ble-remote-card
  *   device: bluetooth_keyboard    # your ESPHome device name
  *   # peer: bedroom               # drive a linked keyboard of this one instead
+ *   # peer_hosts:                 # add a linked keyboard's hosts to the switcher
+ *   #   - peer: bedroom
+ *   #     slots: 2
+ *   #     names: [Bed TV, Bed PC]
+ *   #     label: Bedroom
+ *   #     remote_style: style3   # what that host's remote looks like
  *   # Optional overrides:
  *   # name: Media Remote           # card title (auto from HA if omitted)
  *   # remote_style: auto           # auto | default | style1..style6 | a pasted style's id
@@ -174,7 +180,9 @@ class BleRemoteCard extends HTMLElement {
     // others without polling.
     // Not for a peer card: that sensor is this keyboard's active host, and the
     // card tracks the linked keyboard's own as it switches it.
-    if (this._config.host_slots > 1 && !this._config.peer) {
+    // The sensor is this keyboard's active host: only while that is what the
+    // card is driving.
+    if (this._config.host_slots > 1 && !this._peerName()) {
       const entity = this._config.active_host_entity
         || Object.keys(hass.states).find(eid =>
              eid.startsWith('sensor.') && eid.includes(this._config.device) && eid.endsWith('_active_host')
@@ -205,6 +213,11 @@ class BleRemoteCard extends HTMLElement {
       // called, how many it has and which style to draw are this card's own
       // settings: the sensors and the /hosts read describe `device`, not it.
       peer: config.peer || null,
+      // Linked keyboards whose hosts join this card's switcher, after this
+      // keyboard's own: [{peer, slots, names, label, remote_style}]. The arrows
+      // then step through every host of every keyboard, and whichever one the
+      // current host belongs to is where the buttons go.
+      peer_hosts: Array.isArray(config.peer_hosts) ? config.peer_hosts : [],
       name: config.name || null,
       show_numpad: config.show_numpad === true,
       show_apps: config.show_apps !== false,
@@ -295,7 +308,9 @@ class BleRemoteCard extends HTMLElement {
              ent.state !== 'unknown' && ent.state !== 'unavailable' ? ent.state : '';
     };
 
-    const rawHold = read(this._config.hold_entity);
+    // Both lists describe this keyboard's active host; a linked keyboard falls
+    // back to the card's own defaults instead of borrowing them.
+    const rawHold = this._peerName() ? '' : read(this._config.hold_entity);
     if (rawHold !== this._lastHold) {
       this._lastHold = rawHold;
       this._holdSet = rawHold ? rawHold.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -305,7 +320,7 @@ class BleRemoteCard extends HTMLElement {
     // "<delay>,<rate>,name,name". Empty means this host was never configured,
     // which is the cue to keep the card's own defaults rather than to repeat
     // nothing — a configured-but-empty host sends just "<delay>,<rate>".
-    const rawRepeat = read(this._config.repeat_entity);
+    const rawRepeat = this._peerName() ? '' : read(this._config.repeat_entity);
     if (rawRepeat !== this._lastRepeat) {
       this._lastRepeat = rawRepeat;
       if (!rawRepeat) {
@@ -361,7 +376,10 @@ class BleRemoteCard extends HTMLElement {
     // PAGE_ONLY are the web page's own keys: they move which keyboard that page
     // is driving, which means nothing on a dashboard. A style carrying them
     // draws everywhere, so they are taken out here rather than left dead.
-    const hide = (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []).concat(PAGE_ONLY);
+    // The hidden list belongs to this keyboard's active host, so while the card
+    // is driving a linked one nothing is hidden but the page-only keys.
+    const hide = (this._peerName() ? [] : raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [])
+      .concat(PAGE_ONLY);
     // visibility, not display: a hidden button keeps its slot, so removing OK
     // leaves a hole in the D-pad instead of the arrows sliding into it. An
     // invisible button takes no clicks either, which opacity would not give.
@@ -405,7 +423,9 @@ class BleRemoteCard extends HTMLElement {
     // return has to consider both consumers of the map.
     if (!spans.length && !this.shadowRoot.querySelector('[data-lit]')) return;
 
-    const raw = this._entityState(this._config.lcd_entity);
+    // The panel values are this keyboard's readings; a linked keyboard's own
+    // are not available here, so its panels keep their dashes.
+    const raw = this._peerName() ? '' : this._entityState(this._config.lcd_entity);
     const keys = Object.keys(this._config.lcd_entities);
     // The overrides' own states belong in the change key, or a panel fed
     // entirely from Home Assistant would never repaint. So does the active
@@ -698,29 +718,90 @@ class BleRemoteCard extends HTMLElement {
   // poll below — and _applyHidden() repaints this card's buttons for the new host.
 
   _setupHostSwitcher(shadow) {
-    if (this._config.host_slots < 2) return;
-    this._activeSlot = 0;
+    // Two hosts to move between is the bar's reason to exist — they can be one
+    // here and one on a linked keyboard.
+    if (this._hostChain().length < 2) return;
+    // The switcher starts on the chain's first host, which is this keyboard's
+    // unless it has none of its own.
+    const first = this._hostChain()[0];
+    this._activeSlot = first.slot;
+    this._target = { peer: first.peer, slot: first.slot, entry: first.entry };
     this._hostSlots = [];
 
     shadow.getElementById('host-switcher').style.display = '';
     this._hostNameEl = shadow.querySelector('.host-name');
     this._hostAddrEl = shadow.querySelector('.host-addr');
 
-    const step = (delta) => {
-      const n = this._config.host_slots;
-      this._switchHost((this._activeSlot + delta + n) % n);
-    };
     shadow.getElementById('host-prev').addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      step(-1);
+      this._stepHost(-1);
     });
     shadow.getElementById('host-next').addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      step(1);
+      this._stepHost(1);
     });
+    // Tapping the name moves a whole keyboard along, for when there are more
+    // hosts than anyone wants to step through.
+    if (this._config.peer_hosts.length) {
+      this._hostNameEl.style.cursor = 'pointer';
+      this._hostNameEl.title = 'Tap to switch keyboard';
+      this._hostNameEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this._stepHost(1, true);
+      });
+    }
 
     this._updateHostDisplay();
     this._startHostPolling();
+  }
+
+  // The switcher's hosts, in order: this keyboard's, then each linked
+  // keyboard's. One entry per host, so stepping is just walking this list.
+  _hostChain() {
+    const chain = [];
+    for (let i = 0; i < (this._config.host_slots || 0); i++) chain.push({ peer: null, slot: i, entry: null });
+    for (const k of this._config.peer_hosts) {
+      for (let i = 0; i < (k.slots || 0); i++) chain.push({ peer: k.peer || null, slot: i, entry: k });
+    }
+    return chain;
+  }
+
+  // Which keyboard the buttons drive: the one fixed in the config, else the one
+  // the current host belongs to.
+  _peerName() {
+    return this._config.peer || (this._target && this._target.peer) || null;
+  }
+
+  _chainIndex(chain) {
+    const t = this._target || { peer: null, slot: this._activeSlot || 0 };
+    const i = chain.findIndex(c => c.peer === t.peer && c.slot === t.slot);
+    return i < 0 ? 0 : i;
+  }
+
+  // One step along the chain, or — from a tap on the keyboard's name — to the
+  // first host of the next keyboard along.
+  _stepHost(delta, wholeKeyboard) {
+    const chain = this._hostChain();
+    if (chain.length < 2) return;
+    let i = this._chainIndex(chain);
+    if (wholeKeyboard) {
+      const from = chain[i].peer;
+      do { i = (i + 1) % chain.length; } while (chain[i].peer === from && chain[i].slot !== 0);
+    } else {
+      i = (i + delta + chain.length) % chain.length;
+    }
+    this._goToHost(chain[i]);
+  }
+
+  _goToHost(c) {
+    this._target = { peer: c.peer, slot: c.slot, entry: c.entry };
+    this._activeSlot = c.slot;
+    this._switchHost(c.slot);
+    // A linked keyboard's hosts can each want their own style, and nothing on
+    // this side can look it up: the entry says which, else the card's own.
+    this._renderStyle();
+    this._applyHidden(true);
+    this._applyHoldAndRepeat();   // those lists are this keyboard's active host's
   }
 
   _switchHost(slot) {
@@ -728,7 +809,7 @@ class BleRemoteCard extends HTMLElement {
     this._activeSlot = slot;
     // A linked keyboard switches its own host through the same action route as
     // its buttons; the service belongs to the keyboard this card points at.
-    if (this._config.peer) {
+    if (this._peerName()) {
       this._runAction(`switch_host:${slot}`);
     } else {
       const slug = this._config.device.replace(/-/g, '_');
@@ -774,9 +855,10 @@ class BleRemoteCard extends HTMLElement {
   }
 
   _pollHosts() {
-    // /hosts answers for the keyboard this card points at, which is not the one
-    // a peer card drives: its host names come from host_names instead.
-    if (!this._hass || this._config.host_slots < 2 || this._config.peer) return;
+    // /hosts answers for the keyboard this card points at; while a linked
+    // keyboard's host is the one selected, its names come from peer_hosts and
+    // this keyboard's answer would only fight the selection.
+    if (!this._hass || this._config.host_slots < 2 || this._peerName()) return;
     const baseUrl = this._hostBaseUrl();
     if (!baseUrl) {
       this._updateHostDisplay();
@@ -808,6 +890,15 @@ class BleRemoteCard extends HTMLElement {
 
   _updateHostDisplay() {
     if (!this._hostNameEl) return;
+    const t = this._target;
+    if (t && t.peer) {
+      const label = (t.entry && (t.entry.label || t.entry.peer)) || t.peer;
+      const names = (t.entry && t.entry.names) || [];
+      this._hostNameEl.textContent = `${label}: ${names[t.slot] || 'Host ' + (t.slot + 1)}`;
+      // /hosts is this keyboard's; it says nothing about that one's addresses.
+      this._hostAddrEl.style.display = 'none';
+      return;
+    }
     const names = this._config.host_names;
     const apiSlot = this._hostSlots.find(s => s.slot === this._activeSlot);
     this._hostNameEl.textContent = (names && names[this._activeSlot])
@@ -900,12 +991,18 @@ class BleRemoteCard extends HTMLElement {
     if (paste.error) return { style: null, error: paste.error };
 
     let id = cfg.remote_style;
-    // 'auto' follows the style sensor of the keyboard this card points at, which
-    // says nothing about a linked one. Name the style instead, or paste it.
-    if (cfg.peer && id === 'auto') {
-      return { style: RMT_BUILTIN.find(t => t.id === 'default'),
-               error: `This card drives ${cfg.peer}, so it cannot follow that keyboard's style. ` +
-                      'Set remote_style to the style it uses, or paste that style into remote_style_json.' };
+    // A host on a linked keyboard draws the style its entry names, and 'auto'
+    // has nothing to follow there: the style sensor is this keyboard's.
+    const onPeer = this._peerName();
+    if (onPeer) {
+      const named = (this._target && this._target.entry && this._target.entry.remote_style) ||
+                    (id !== 'auto' ? id : null);
+      if (!named) {
+        return { style: RMT_BUILTIN.find(t => t.id === 'default'),
+                 error: `This card drives ${onPeer}, so it cannot follow that keyboard's style. ` +
+                        'Name the style it uses — remote_style on the card, or on its peer_hosts entry.' };
+      }
+      id = named;
     }
     if (id === 'auto') {
       const ent = this._hass && this._hass.states[cfg.remote_style_entity];
@@ -1043,8 +1140,9 @@ class BleRemoteCard extends HTMLElement {
 
   _runAction(action) {
     if (!this._hass) return;
+    const peer = this._peerName();
     this._hass.callService('esphome', `${this._config.device}_run_action`,
-      { action: this._config.peer ? `peer:${this._config.peer}:${action}` : action });
+      { action: peer ? `peer:${peer}:${action}` : action });
   }
 
   // Natural pixel height of the card. Prefer measuring the rendered DOM —

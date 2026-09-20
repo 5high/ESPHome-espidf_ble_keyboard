@@ -1714,6 +1714,7 @@ Optional configuration:
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
 | `peer` | — | Drive a [linked keyboard](#linking-a-second-keyboard) of `device` instead: its name from that keyboard's `peers:`. Every press goes there through this one. Set `host_slots`, `host_names` and, on the remote card, `remote_style` yourself — the sensors and the direct read describe `device`, not the linked one. |
+| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots`, `names` and an optional `label`. Tapping the host name jumps a whole keyboard. |
 | `zoom` | `1` | Scales the whole card — touchpad, buttons and text together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, and everything scales by the same factor in both directions so the controls keep their shape. |
 | `sensitivity` | `1.5` | Base cursor speed multiplier. |
 | `mouse_acceleration` | `0.15` | Speed-based acceleration factor. Higher = more acceleration on fast swipes. |
@@ -2030,6 +2031,21 @@ The page then shows a bar of that keyboard's hosts below its own. Tap one and th
 - Give the address as an IP address or the keyboard's `.local` name.
 - A macro or button reaches it the same way, with [`peer:bedroom:<action>`](#action-reference); the preset lists in Macros and Host Actions offer the common ones. That switches the other keyboard, not the tab.
 - A Home Assistant card can drive a linked keyboard too: give it `peer: bedroom`. Its buttons and host arrows go there the same way, and what that keyboard's hosts are called and which style to draw are the card's own settings.
+- Or let one card cover both keyboards with `peer_hosts`, so its arrows step from this keyboard's hosts straight into the linked one's and back, and every press follows whichever host is selected:
+
+```yaml
+type: custom:ble-remote-card
+device: bluetooth_keyboard
+host_slots: 2
+peer_hosts:
+  - peer: bedroom
+    slots: 2
+    names: [Bed TV, Bed PC]
+    label: Bedroom
+    remote_style: style3      # remote card only: a linked keyboard's style can't be read from here
+```
+
+  The selected host shows as `Bedroom: Bed TV`, and tapping that name jumps to the next keyboard rather than stepping host by host.
 - To move the tab from the remote, give a style the `next_keyboard`, `prev_host_all` or `next_host_all` keys: the next keyboard on whatever host it is on, or one step through every host of every keyboard, in the order the bars show them.
 
 **Anyone who can use this keyboard's page can drive the linked one**, because its login is stored in this keyboard's firmware.
@@ -2317,6 +2333,7 @@ Optional configuration:
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
 | `peer` | — | Drive a [linked keyboard](#linking-a-second-keyboard) of `device` instead: its name from that keyboard's `peers:`. Every press goes there through this one. Set `host_slots`, `host_names` and, on the remote card, `remote_style` yourself — the sensors and the direct read describe `device`, not the linked one. |
+| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots`, `names` and an optional `label`. Tapping the host name jumps a whole keyboard. |
 | `zoom` | `1` | Scales the whole card — keys, labels and spacing together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, and everything scales by the same factor in both directions so the keys keep their shape. |
 | `show_fkeys` | `true` | Show the F1–F12 function key row. |
 | `show_paste` | `true` | Show the paste bar above the keys. Paste or type text there and press Send to type the whole thing at once; the **auto** checkbox types pasted text immediately. On HTTPS a clipboard button sends the clipboard in one tap. |
@@ -2414,6 +2431,7 @@ Optional configuration:
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
 | `peer` | — | Drive a [linked keyboard](#linking-a-second-keyboard) of `device` instead: its name from that keyboard's `peers:`. Every press goes there through this one. Set `host_slots`, `host_names` and, on the remote card, `remote_style` yourself — the sensors and the direct read describe `device`, not the linked one. |
+| `peer_hosts` | — | Add a [linked keyboard](#linking-a-second-keyboard)'s hosts to this card's switcher, after this keyboard's own, so the arrows step through both and each press follows whichever host is selected. Each entry takes `peer` (its name from `peers:`), `slots`, `names` and an optional `label`, plus `remote_style` — the style a linked keyboard draws cannot be read from here. Tapping the host name jumps a whole keyboard. |
 | `zoom` | `1` | Scales the whole remote — buttons, text and spacing together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, so `0.55` fits the full remote into roughly 8 grid rows, the shortest HA's height slider offers. Zooming past about `1.1` makes the remote wider than a 500px section, and the card scrolls sideways. |
 | `remote_style` | `auto` | Which layout to draw: `auto` follows the style the device has for the active host, or pin one of `default`, `style1`…`style5`, or `custom` to use your own. |
 | `remote_style_json` | — | The style to draw when `remote_style: custom`. Paste it from the web page's **Remote Style → Export**. |

@@ -18,6 +18,11 @@
  *   type: custom:ble-mouse-card
  *   device: bluetooth_keyboard    # your ESPHome device name
  *   # peer: bedroom               # drive a linked keyboard of this one instead
+ *   # peer_hosts:                 # add a linked keyboard's hosts to the switcher
+ *   #   - peer: bedroom
+ *   #     slots: 2
+ *   #     names: [Bed TV, Bed PC]
+ *   #     label: Bedroom
  *   # Optional overrides:
  *   # name: Mouse Control          # card title (default "Mouse Control")
  *   # sensitivity: 1.5             # movement multiplier (default 1.5)
@@ -69,7 +74,7 @@ class BleMouseCard extends HTMLElement {
     // this sensor on every switch_host() path — HA service, the device's own web
     // UI, a physical button — so every card following it stays in step with the
     // others without polling.
-    if (this._config && this._config.host_slots > 1 && !this._config.peer) {
+    if (this._config && this._config.host_slots > 1 && !this._peerName()) {
       const entity = this._config.active_host_entity
         || Object.keys(hass.states).find(eid =>
              eid.startsWith('sensor.') && eid.includes(this._config.device) && eid.endsWith('_active_host')
@@ -104,6 +109,11 @@ class BleMouseCard extends HTMLElement {
       // A linked keyboard of `device`, by the name its peers: gives it. The pad,
       // the buttons and the host arrows then drive it, through this keyboard.
       peer: config.peer || null,
+      // Linked keyboards whose hosts join this card's switcher, after this
+      // keyboard's own: [{peer, slots, names, label}]. The arrows then step
+      // through every host of every keyboard, and whichever one the current
+      // host belongs to is where this card's input goes.
+      peer_hosts: Array.isArray(config.peer_hosts) ? config.peer_hosts : [],
       active_host_entity: config.peer ? null : (config.active_host_entity || null),
       // /hosts and the active-host sensor describe this keyboard, not that one.
       show_mac: !config.peer && config.show_mac !== false,
@@ -406,7 +416,7 @@ class BleMouseCard extends HTMLElement {
     // A linked keyboard takes the same things as action strings, passed on by
     // the keyboard this card points at. Movement and scrolling that arrive
     // together are added up there, so a drag cannot outrun the link.
-    if (this._config.peer) {
+    if (this._peerName()) {
       const action =
         service === 'mouse_move' ? `mouse_move:${data.x}:${data.y}` :
         service === 'mouse_click' ? `mouse_click:${data.btn}` :
@@ -416,7 +426,7 @@ class BleMouseCard extends HTMLElement {
         service === 'switch_host' ? `switch_host:${data.slot}` : null;
       if (action === null) return;   // nothing else is sent to a linked keyboard
       this._hass.callService('esphome', `${slug}_run_action`,
-        { action: `peer:${this._config.peer}:${action}` });
+        { action: `peer:${this._peerName()}:${action}` });
       return;
     }
     this._hass.callService('esphome', `${slug}_${service}`, data);
@@ -429,18 +439,30 @@ class BleMouseCard extends HTMLElement {
   // poll below. Either is enough; the sensor just removes the lag.
 
   _setupHostSwitcher(shadow) {
-    if (this._config.host_slots < 2) return;
-    this._activeSlot = 0;
+    if (this._hostChain().length < 2) return;
+    // The switcher starts on the chain's first host, which is this keyboard's
+    // unless it has none of its own.
+    const first = this._hostChain()[0];
+    this._activeSlot = first.slot;
+    this._target = { peer: first.peer, slot: first.slot, entry: first.entry };
     this._hostSlots = [];
 
     shadow.getElementById('host-switcher').style.display = '';
     this._hostNameEl = shadow.querySelector('.host-name');
     this._hostAddrEl = shadow.querySelector('.host-addr');
 
-    const step = (delta) => {
-      const n = this._config.host_slots;
-      this._switchHost((this._activeSlot + delta + n) % n);
-    };
+    // Tapping the name moves a whole keyboard along, for when there are more
+    // hosts than anyone wants to step through.
+    if (this._config.peer_hosts.length) {
+      this._hostNameEl.style.cursor = 'pointer';
+      this._hostNameEl.title = 'Tap to switch keyboard';
+      this._hostNameEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this._stepHost(1, true);
+      });
+    }
+
+    const step = (delta) => this._stepHost(delta);
     shadow.getElementById('host-prev').addEventListener('pointerdown', (e) => {
       e.preventDefault();
       step(-1);
@@ -452,6 +474,58 @@ class BleMouseCard extends HTMLElement {
 
     this._updateHostDisplay();
     this._startHostPolling();
+  }
+
+
+  // The switcher's hosts, in order: this keyboard's, then each linked
+  // keyboard's. One entry per host, so stepping is just walking this list.
+  _hostChain() {
+    const chain = [];
+    for (let i = 0; i < (this._config.host_slots || 0); i++) chain.push({ peer: null, slot: i, entry: null });
+    for (const k of (this._config.peer_hosts || [])) {
+      for (let i = 0; i < (k.slots || 0); i++) chain.push({ peer: k.peer || null, slot: i, entry: k });
+    }
+    return chain;
+  }
+
+  // Which keyboard this card drives: the one fixed in the config, else the one
+  // the current host belongs to.
+  _peerName() {
+    return this._config.peer || (this._target && this._target.peer) || null;
+  }
+
+  _chainIndex(chain) {
+    const t = this._target || { peer: null, slot: this._activeSlot || 0 };
+    const i = chain.findIndex(c => c.peer === t.peer && c.slot === t.slot);
+    return i < 0 ? 0 : i;
+  }
+
+  // One step along the chain, or — from a tap on the keyboard's name — to the
+  // first host of the next keyboard along.
+  _stepHost(delta, wholeKeyboard) {
+    const chain = this._hostChain();
+    if (chain.length < 2) return;
+    let i = this._chainIndex(chain);
+    if (wholeKeyboard) {
+      const from = chain[i].peer;
+      do { i = (i + 1) % chain.length; } while (chain[i].peer === from && chain[i].slot !== 0);
+    } else {
+      i = (i + delta + chain.length) % chain.length;
+    }
+    const c = chain[i];
+    this._target = { peer: c.peer, slot: c.slot, entry: c.entry };
+    this._activeSlot = c.slot;
+    this._switchHost(c.slot);
+  }
+
+  // A linked keyboard's host is named by its peer_hosts entry, and this
+  // keyboard's /hosts says nothing about its address.
+  _peerHostLabel() {
+    const t = this._target;
+    if (!t || !t.peer) return null;
+    const label = (t.entry && (t.entry.label || t.entry.peer)) || t.peer;
+    const names = (t.entry && t.entry.names) || [];
+    return `${label}: ${names[t.slot] || 'Host ' + (t.slot + 1)}`;
   }
 
   _switchHost(slot) {
@@ -490,9 +564,10 @@ class BleMouseCard extends HTMLElement {
   }
 
   _pollHosts() {
-    // /hosts answers for the keyboard this card points at; a peer card takes its
-    // host names from host_names instead.
-    if (!this._hass || this._config.host_slots < 2 || this._config.peer) return;
+    // /hosts answers for the keyboard this card points at; while a linked
+    // keyboard's host is the one selected, its names come from peer_hosts and
+    // this keyboard's answer would only fight the selection.
+    if (!this._hass || this._config.host_slots < 2 || this._peerName()) return;
     const baseUrl = this._hostBaseUrl();
     if (!baseUrl) {
       this._updateHostDisplay();
@@ -519,6 +594,12 @@ class BleMouseCard extends HTMLElement {
 
   _updateHostDisplay() {
     if (!this._hostNameEl) return;
+    const peerLabel = this._peerHostLabel();
+    if (peerLabel !== null) {
+      this._hostNameEl.textContent = peerLabel;
+      this._hostAddrEl.style.display = 'none';
+      return;
+    }
     const names = this._config.host_names;
     const apiSlot = this._hostSlots.find(s => s.slot === this._activeSlot);
     this._hostNameEl.textContent = (names && names[this._activeSlot])
