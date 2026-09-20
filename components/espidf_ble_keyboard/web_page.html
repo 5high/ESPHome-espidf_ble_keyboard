@@ -870,10 +870,10 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <button class="hid-toggle" id="tpl-toggle">Remote Style &#9662;</button>
 <div class="hid-body" id="tpl-body">
 <div style="font-size:12px;color:var(--muted);margin:6px 0">Choose the remote layout this host gets &mdash; switch to the host and the remote re-skins to match it. The hidden, repeat and hold settings above still apply on top of whatever style is showing, and every action stays available to macros, buttons and Home Assistant either way. <strong>This tab</strong> keeps just this tab on one style whatever host is active &mdash; it adds <code>?style=</code> and the style's id to the address, so bookmark it or add it to a tablet's home screen to keep it there, while other tabs go on following the host. It can also show a host's <em>page</em> (<code>?host=</code>): that host's style and its Host Actions on every key, with any key that host leaves unset going to the active host as usual &mdash; so a slot that doesn't advertise becomes a tablet's own programmable remote.</div>
-<div class="macro-form" style="margin-top:0"><span class="tpl-lbl">This host</span><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><span class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in">Full remote</span><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste that into the Home Assistant remote card and they all join its style list">Export all</button></div>
+<div class="macro-form" style="margin-top:0"><span class="tpl-lbl">This host</span><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><span class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in">Full remote</span><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste it into the Home Assistant remote card, or into another keyboard's Import box to copy them all across">Export all</button></div>
 <div class="macro-form" style="margin-top:6px"><span class="tpl-lbl">This tab</span><div class="tpl-step"><button id="tpl-lock-prev" title="Previous style or host page for this tab">&minus;</button><span class="tpl-name" id="tpl-lock-name" title="What this tab keeps whatever host is active: a style, or a host's page with its Host Actions. Nothing is saved on the keyboard.">Follow the host</span><button id="tpl-lock-next" title="Next style or host page for this tab">+</button></div></div>
 <div id="tpl-custom"></div>
-<div class="tpl-help"><strong>Roll your own:</strong> Export a style, change its <code>id</code> and <code>name</code>, rearrange its <code>sections</code>, then Import. The remote card redraws as you type &mdash; nothing is saved until you press Import.
+<div class="tpl-help"><strong>Roll your own:</strong> Export a style, change its <code>id</code> and <code>name</code>, rearrange its <code>sections</code>, then Import. Import also takes a whole <strong>Export all</strong> list &mdash; one paste copies a set of styles to another keyboard. It adds and replaces by <code>id</code>, never deletes: a style the other keyboard has that the list does not stays where it is. The remote card redraws as you type &mdash; nothing is saved until you press Import.
 <dl>
 <dt><code>["row",…]</code></dt><dd>A row of round buttons. <code>"|"</code> spaces it out.</dd>
 <dt><code>["dpad"]</code></dt><dd>The arrow cluster.</dd>
@@ -888,7 +888,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
 A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm md lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
-<div class="macro-form"><textarea id="tpl-json" placeholder="Paste a style JSON here to import&hellip;" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="tpl-import">Import</button></div>
+<div class="macro-form"><textarea id="tpl-json" placeholder="Paste a style JSON here to import &mdash; or a whole Export all list&hellip;" rows="8" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><button id="tpl-import">Import</button></div>
 <div id="tpl-msg" style="font-size:11px;color:var(--muted)"></div>
 </div>
 </div>
@@ -3980,6 +3980,25 @@ function appendStep(el,val){
     });
   });
 
+  // What Import writes for one style, and the check that it can be written: the
+  // compact form the device stores. Says what is wrong with the style itself;
+  // where it goes is decided for the whole list at once below.
+  function tplCheck(t){
+    const why=validateTpl(t);
+    if(why)return {err:why};
+    const compact=JSON.stringify({id:t.id,name:t.name.trim(),theme:t.theme||{},sections:t.sections});
+    if(compact.length>RMT_CUSTOM_LEN)
+      return {err:'Too big: '+compact.length+' characters, limit '+RMT_CUSTOM_LEN+'.'};
+    return {compact:compact};
+  }
+
+  // One style or a whole Export all list — the list is what makes copying a set
+  // of styles to a second keyboard one paste instead of one per style.
+  //
+  // Every style is checked and given its slot before any of them is written, so
+  // a list that cannot fit or carries one bad style leaves the device alone
+  // rather than half-importing. What follows is a chain, never parallel: the
+  // device builds each upload on the heap the Bluetooth stack shares.
   if(tplImport)tplImport.addEventListener('click',()=>{
     const r=tplParse(tplJson.value);
     if(r.err){
@@ -3989,34 +4008,62 @@ function appendStep(el,val){
       if(typeof r.at==='number'){try{tplJson.focus();tplJson.setSelectionRange(r.at,r.at)}catch(e){}}
       return;
     }
-    const t=r.t;
-    const why=validateTpl(t);
-    if(why){tplNote(why,true);return}
-    const compact=JSON.stringify({id:t.id,name:t.name.trim(),theme:t.theme||{},sections:t.sections});
-    if(compact.length>RMT_CUSTOM_LEN){
-      tplNote('Too big: '+compact.length+' characters, limit '+RMT_CUSTOM_LEN+'.',true);return;
+    const list=Array.isArray(r.t)?r.t:[r.t];
+    if(!list.length){tplNote('Nothing to import.',true);return}
+    const many=list.length>1;
+    // Which style a message is about. A list is numbered as well as named,
+    // because its styles are not in front of you the way a single one is.
+    const which=i=>many?'Style '+(i+1)+' of '+list.length+' ("'+((list[i]&&list[i].id)||'?')+'"): ':'';
+    // Every style checked first, so a bad one is named as bad whatever else is
+    // wrong with the list — a full device would otherwise answer "no room" and
+    // say nothing about the typo underneath it.
+    const plans=[],ids=[];
+    for(let i=0;i<list.length;i++){
+      if(ids.indexOf(list[i]&&list[i].id)>=0){
+        tplNote('Two styles in the list have the id "'+list[i].id+'".',true);return;
+      }
+      const p=tplCheck(list[i]);
+      if(p.err){tplNote(which(i)+p.err,true);return}
+      plans.push(p);ids.push(list[i].id);
     }
-    // Same id = replace in place, so editing a style keeps its storage slot and
-    // every host pointing at it.
-    const existing=RMT_CUSTOM.find(c=>c.id===t.id);
-    let index=existing?existing.index:-1;
-    if(index<0){
-      const used=RMT_CUSTOM.map(c=>c.index);
-      for(let i=0;i<RMT_CUSTOM_MAX;i++)if(used.indexOf(i)<0){index=i;break}
+    // Then the slots, for the list as a whole: an id the device already holds
+    // keeps its own — so a host pointing at it still gets what it asked for —
+    // and the rest take free ones. Counted before anything is written, because
+    // running out half way through leaves a set of styles split across two
+    // keyboards with no way to tell which arrived.
+    const used=RMT_CUSTOM.map(c=>c.index),free=[];
+    for(let i=0;i<RMT_CUSTOM_MAX;i++)if(used.indexOf(i)<0)free.push(i);
+    let want=0;
+    plans.forEach((p,i)=>{
+      const existing=RMT_CUSTOM.find(c=>c.id===list[i].id);
+      p.index=existing?existing.index:(free[want++]);
+    });
+    if(want>free.length){
+      tplNote(many?'No room: '+want+' new style'+(want>1?'s':'')+', '+free.length+' free slot'+
+                   (free.length===1?'':'s')+' of '+RMT_CUSTOM_MAX+'. Delete one first.'
+                  :'No room — the device holds '+RMT_CUSTOM_MAX+' custom styles. Delete one first.',true);
+      return;
     }
-    if(index<0){tplNote('No room — the device holds '+RMT_CUSTOM_MAX+' custom styles. Delete one first.',true);return}
     tplNote('Uploading…');
-    let sentIcons=0;
-    // Icons first: the style saved after them draws with them straight away.
-    uploadCarriedIcons(t).then(n=>{sentIcons=n})
-      .then(()=>uploadTpl(index,compact))
-      .then(()=>refreshActiveTemplate())
+    let sentIcons=0,saved=0;
+    let chain=Promise.resolve();
+    list.forEach((t,i)=>{
+      // Icons first: the style saved after them draws with them straight away.
+      chain=chain.then(()=>uploadCarriedIcons(t)).then(n=>{sentIcons+=n})
+                 .then(()=>uploadTpl(plans[i].index,plans[i].compact)).then(()=>{saved++})
+                 .catch(e=>{throw new Error(which(i)+e.message)});
+    });
+    chain.then(()=>refreshActiveTemplate())
       // After the refresh, so the style it draws in the preview's place is the
       // one that was just saved rather than the one being replaced.
       .then(()=>{tplEndPreview();fillTplSel();renderCustomList();
-                 tplNote('Saved "'+t.name.trim()+'"'+(sentIcons?' and '+sentIcons+' icon'+(sentIcons>1?'s':''):'')+
-                         '. Pick it above to give it to a host.')})
-      .catch(e=>tplNote('Import failed: '+e.message,true));
+                 const icons=sentIcons?' and '+sentIcons+' icon'+(sentIcons>1?'s':''):'';
+                 tplNote(many?'Saved '+saved+' styles'+icons+'. Pick one above to give it to a host.'
+                             :'Saved "'+list[0].name.trim()+'"'+icons+'. Pick it above to give it to a host.')})
+      // A chain that stops part-way has already written what came before it, so
+      // the message says how far it got rather than just that it failed.
+      .catch(e=>tplNote(many&&saved?'Saved '+saved+' of '+list.length+' — stopped at '+e.message
+                                   :'Import failed: '+e.message,true));
   });
 
   // ── Editing aids ──
@@ -4053,9 +4100,14 @@ function appendStep(el,val){
     // drawing where it is. Blanking the remote on whichever keystroke lands
     // mid-word is worse than a stale preview and a line saying what is wrong.
     if(r.err){tplNote(r.err,true);return}
-    // Export all writes a list rather than a style. Not an error — just nothing
-    // to draw, and nothing to say about it either.
-    if(Array.isArray(r.t))return;
+    // Export all writes a list rather than a style: nothing to draw, but Import
+    // takes it, so the box says how many are in there rather than going quiet.
+    if(Array.isArray(r.t)){
+      tplEndPreview();
+      tplNote(r.t.length?r.t.length+' style'+(r.t.length>1?'s':'')+' — Import saves them all.'
+                        :'An empty list — nothing to import.',!r.t.length);
+      return;
+    }
     const why=validateTpl(r.t);
     if(why){tplNote(why,true);return}
     tplPreviewing=true;

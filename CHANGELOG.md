@@ -15,6 +15,10 @@ web control page shows the matching version badge.
   mouse drive it. For hosts one keyboard's Bluetooth can't reach. Macros reach it with
   `peer:<name>:<action>`, with presets for it, and new remote keys step through both keyboards'
   hosts.
+- **Import takes a whole Export all list.** Paste every custom style from one keyboard into another
+  keyboard's Remote Style box and one press saves them all, icons included — the way to give a linked
+  keyboard the same remotes. Styles are matched by id: known ones are replaced, new ones added,
+  nothing is deleted, and a list that would not fit is refused before anything is written.
 - **A dashboard card can cover both keyboards.** List a linked keyboard's hosts under `peer_hosts`
   and the card's arrows carry on from this keyboard's hosts into that one's, with every press
   following whichever host is selected. Tapping the host name jumps a whole keyboard at a time, and

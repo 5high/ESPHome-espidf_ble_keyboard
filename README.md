@@ -1119,6 +1119,8 @@ The [Media Remote Card](#media-remote-card-for-home-assistant) draws from the sa
 
 Press **Export** to drop the style currently shown into the box below as JSON, edit it, and press **Import**. Importing over an id that already exists replaces it; a new id adds a style. The device holds **6** custom styles of up to **1500 characters** each.
 
+**Import also takes a whole Export all list**, so a set of styles moves between keyboards in one paste — see [Copying styles to another keyboard](#copying-styles-to-another-keyboard). Every style in the list is checked, and given its slot, before any of them is written: one that would not render, or a list with nowhere to put its new styles, leaves the device untouched and says which style is the problem.
+
 The remote card **redraws as you type**, so the layout is visible before it is saved — the preview lives in the browser, and nothing reaches the device until you press Import. A trailing comma is forgiven; any other syntax error names the line it is on and puts the cursor there.
 
 ```json
@@ -2025,7 +2027,7 @@ The page then shows a bar of that keyboard's hosts below its own. Tap one and th
 
 - The Position Finder and Host Actions stay on this keyboard, and the linked one's settings stay on its own page.
 - Everything goes by way of this keyboard, so it is only as quick as the Wi-Fi between them: mouse movement is gathered up and sent a piece at a time rather than streamed.
-- Styles are not copied between keyboards. Export one on the linked keyboard's page and Import it here; until then that host draws the full remote, and its bar says which style is missing.
+- Styles are not copied between keyboards by the link itself, but **Export all** on one page and **Import** on the other copies the lot in one paste — see [Copying styles to another keyboard](#copying-styles-to-another-keyboard). Until a style is there, that host draws the full remote and its bar says which style is missing.
 - Both keyboards need firmware with this feature.
 - Give the address as an IP address or the keyboard's `.local` name.
 - A macro or button reaches it the same way, with [`peer:bedroom:<action>`](#action-reference); the preset lists in Macros and Host Actions offer the common ones. That switches the other keyboard, not the tab.
@@ -2464,7 +2466,20 @@ The style id is also on the device's `/hosts` response, which the card already p
 
 **Styles travel one way: web page → card.** Build a style on the device's web page, where it is stored and named. Then copy its JSON from **Remote Style → Export** into the card's paste box, and it **joins the card's style list** under the name you gave it — selectable in the dropdown beside the built-ins, and drawn automatically when `auto` sees the device report that host's style. The card never writes back; the device stays the one place a style is defined.
 
-**To bring several across at once, use Export all.** The plain **Export** button copies the one style the stepper is showing — that one is for editing. **Export all** copies *every* custom style on the device as a single JSON list, which is what the card's box wants:
+#### Copying styles to another keyboard
+
+Two keyboards, each with its own storage: a style made on one is not on the other. To copy the lot,
+press **Export all** on the first keyboard's page, copy the JSON out of the box, open the second
+keyboard's page, paste it into the same box and press **Import**.
+
+- Styles are matched by `id`: one the second keyboard already has is **replaced**, the rest are
+  **added**. Nothing is deleted — a style that keyboard has and the list does not stays where it is.
+- Icons travel with the styles, so the logos arrive too.
+- Nothing is written until every style in the list has been checked and given a slot, so a list that
+  cannot fit leaves that keyboard as it was.
+- Per-host assignments are not copied: which style a host uses is that keyboard's own setting.
+
+**To bring several across at once, use Export all.** The plain **Export** button copies the one style the stepper is showing — that one is for editing. **Export all** copies *every* custom style on the device as a single JSON list, which is what the card's box wants — and what another keyboard's **Import** takes:
 
 ```yaml
 remote_style_json: '[{"id":"lounge","name":"Lounge box","sections":[["dpad"],["media","play_pause","stop"]]},{"id":"study","name":"Study","sections":[["ring"],["row","volume_up","volume_down","mute"]]}]'
