@@ -17,12 +17,12 @@
  * Card YAML:
  *   type: custom:ble-mouse-card
  *   device: bluetooth_keyboard    # your ESPHome device name
- *   # peer: bedroom               # drive a linked keyboard of this one instead
  *   # peer_hosts:                 # add a linked keyboard's hosts to the switcher
  *   #   - peer: bedroom
  *   #     slots: 2
  *   #     names: [Bed TV, Bed PC]
  *   #     label: Bedroom
+ *   #                             # (with host_slots: 0 the card drives only these)
  *   # Optional overrides:
  *   # name: Mouse Control          # card title (default "Mouse Control")
  *   # sensitivity: 1.5             # movement multiplier (default 1.5)
@@ -106,20 +106,23 @@ class BleMouseCard extends HTMLElement {
       tap_to_click: config.tap_to_click !== false,
       host_slots: config.host_slots || 0,
       host_names: config.host_names || [],
-      // A linked keyboard of `device`, by the name its peers: gives it. The pad,
-      // the buttons and the host arrows then drive it, through this keyboard.
-      peer: config.peer || null,
-      // Linked keyboards whose hosts join this card's switcher, after this
-      // keyboard's own: [{peer, slots, names, label}]. The arrows then step
-      // through every host of every keyboard, and whichever one the current
-      // host belongs to is where this card's input goes.
+      // Linked keyboards whose hosts this card can drive, each entry
+      // [{peer, slots, names, label}]. Their hosts join the switcher after
+      // this keyboard's own, and whichever host is selected is where everything
+      // goes — as peer:<name>:<action>, through this keyboard. With
+      // host_slots: 0 the card drives nothing but the keyboards listed here.
       peer_hosts: Array.isArray(config.peer_hosts) ? config.peer_hosts : [],
-      active_host_entity: config.peer ? null : (config.active_host_entity || null),
-      // /hosts and the active-host sensor describe this keyboard, not that one.
-      show_mac: !config.peer && config.show_mac !== false,
+      active_host_entity: config.active_host_entity || null,
+      show_mac: config.show_mac !== false,
       host_url: config.host_url || null,
       zoom: this._parseZoom(config.zoom),
     };
+    // The switcher starts on the chain's first host. With no hosts of this
+    // keyboard's own that is a linked keyboard's, which is what lets a card
+    // drive one without a switcher to select it.
+    const first = this._hostChain()[0];
+    this._target = first ? { peer: first.peer, slot: first.slot, entry: first.entry } : null;
+    this._activeSlot = first ? first.slot : 0;
     // Read by the .zoom wrapper. Set on the host so it applies whether or not
     // the card has rendered yet — custom properties inherit into shadow DOM.
     this.style.setProperty('--mouse-zoom', this._config.zoom);
@@ -440,11 +443,6 @@ class BleMouseCard extends HTMLElement {
 
   _setupHostSwitcher(shadow) {
     if (this._hostChain().length < 2) return;
-    // The switcher starts on the chain's first host, which is this keyboard's
-    // unless it has none of its own.
-    const first = this._hostChain()[0];
-    this._activeSlot = first.slot;
-    this._target = { peer: first.peer, slot: first.slot, entry: first.entry };
     this._hostSlots = [];
 
     shadow.getElementById('host-switcher').style.display = '';
@@ -488,10 +486,9 @@ class BleMouseCard extends HTMLElement {
     return chain;
   }
 
-  // Which keyboard this card drives: the one fixed in the config, else the one
-  // the current host belongs to.
+  // Which keyboard this card drives: the one the selected host belongs to.
   _peerName() {
-    return this._config.peer || (this._target && this._target.peer) || null;
+    return (this._target && this._target.peer) || null;
   }
 
   _chainIndex(chain) {
@@ -871,9 +868,28 @@ customElements.define('ble-mouse-card', BleMouseCard);
  * and is converted back to a list on the way out (see setConfig / _emit).
  * ---------------------------------------------------------------------- */
 
+// peer_hosts is a YAML list of mappings, and an editor field is a box of text:
+// one linked keyboard per line, its fields in the order the YAML keys come in.
+//   bedroom | 2 | Bed TV, Bed PC | Bedroom
+// Trailing fields can be left off, and the host count fills itself in from the
+// names when it is missing.
+const peerHostsToText = (list) => (Array.isArray(list) ? list : []).map((k) =>
+  [k.peer || '', k.slots || 0, (k.names || []).join(', '), k.label || '']
+    .join(' | ').replace(/(\s*\|)+$/, '')).join('\n');
+
+const peerHostsFromText = (text) => String(text).split('\n').map((line) => {
+  const f = line.split('|').map((x) => x.trim());
+  if (!f[0]) return null;
+  const names = (f[2] || '').split(',').map((n) => n.trim()).filter(Boolean);
+  const slots = parseInt(f[1], 10);
+  const entry = { peer: f[0], slots: slots > 0 ? slots : (names.length || 1) };
+  if (names.length) entry.names = names;
+  if (f[3]) entry.label = f[3];
+  return entry;
+}).filter(Boolean);
+
 const MOUSE_EDITOR_SCHEMA = [
   { name: 'device', required: true, selector: { text: {} } },
-  { name: 'peer', selector: { text: {} } },
   { name: 'name', selector: { text: {} } },
   { name: 'zoom', selector: { number: { min: 0.25, max: 3, step: 0.05, mode: 'box' } } },
   { name: 'sensitivity', selector: { number: { min: 0.1, max: 10, step: 0.1, mode: 'box' } } },
@@ -883,6 +899,7 @@ const MOUSE_EDITOR_SCHEMA = [
   { name: 'tap_to_click', selector: { boolean: {} } },
   { name: 'host_slots', selector: { number: { min: 0, max: 10, step: 1, mode: 'box' } } },
   { name: 'host_names', selector: { text: {} } },
+  { name: 'peer_hosts', selector: { text: { multiline: true } } },
   { name: 'active_host_entity', selector: { entity: { domain: 'sensor' } } },
   { name: 'show_mac', selector: { boolean: {} } },
   { name: 'host_url', selector: { text: {} } },
@@ -890,7 +907,6 @@ const MOUSE_EDITOR_SCHEMA = [
 
 const MOUSE_EDITOR_LABELS = {
   device: 'ESPHome device name',
-  peer: 'Linked keyboard to drive (its peers: name, optional)',
   name: 'Card title (optional)',
   zoom: 'Zoom (1 = normal, 0.5 = half, 2 = double)',
   sensitivity: 'Pointer sensitivity',
@@ -900,6 +916,7 @@ const MOUSE_EDITOR_LABELS = {
   tap_to_click: 'Tap touchpad to click',
   host_slots: 'Host switcher (needs 2+; 0 = hide)',
   host_names: 'Host names, comma-separated (optional)',
+  peer_hosts: 'Linked keyboards, one per line: bedroom | 2 | Bed TV, Bed PC | Bedroom',
   active_host_entity: 'Active-host sensor (optional)',
   show_mac: 'Show host MAC address',
   host_url: 'Device URL (optional, auto-detected)',
@@ -923,6 +940,10 @@ class BleMouseCardEditor extends HTMLElement {
     if (Array.isArray(this._config.host_names)) {
       this._config.host_names = this._config.host_names.join(', ');
     }
+    // Same for peer_hosts, a list of mappings that edits as one line each.
+    if (Array.isArray(this._config.peer_hosts)) {
+      this._config.peer_hosts = peerHostsToText(this._config.peer_hosts);
+    }
     this._render();
   }
 
@@ -939,6 +960,12 @@ class BleMouseCardEditor extends HTMLElement {
       const names = out.host_names.split(',').map((n) => n.trim()).filter(Boolean);
       if (names.length) out.host_names = names;
       else delete out.host_names;
+    }
+    // peer_hosts edits as lines of text; hand the card its list back.
+    if (typeof out.peer_hosts === 'string') {
+      const list = peerHostsFromText(out.peer_hosts);
+      if (list.length) out.peer_hosts = list;
+      else delete out.peer_hosts;
     }
     this.dispatchEvent(new CustomEvent('config-changed', {
       detail: { config: out },
