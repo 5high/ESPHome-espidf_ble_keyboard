@@ -35,6 +35,14 @@ web control page shows the matching version badge.
   that cut off anything past about ten characters. Still one width for the whole set, so the arrows
   stay where your finger left them.
 
+### Fixed
+- **A host could be left waiting after a quick run through the hosts.** Stepping to another host
+  within two seconds of the last one carried the previous host's invitation timer into the new one,
+  which then stopped and restarted the advertising the new host was already answering — an Android
+  phone gives up on that and waits to be connected by hand. The keyboard also now notices when it is
+  meant to be connectable and is not advertising at all, and starts again instead of staying silent
+  until the next host switch.
+
 ## v1.11.0 — 2026-09-19
 
 ### Added

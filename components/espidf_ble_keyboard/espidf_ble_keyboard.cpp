@@ -171,6 +171,19 @@ static bool s_directed_adv_pending = false;
   static esp_bd_addr_t s_directed_addr = {};
 static esp_ble_addr_type_t s_directed_addr_type = BLE_ADDR_TYPE_PUBLIC;
 
+// Whether the controller is believed to be advertising, and when a cycle was
+// last asked for. Nothing retried a cycle that never got going: a start that
+// fails is logged and dropped, and advertising is only ever started from the
+// adv-data completion events, so one of those going missing leaves the keyboard
+// silent until the next host switch — which from the outside is indisting-
+// uishable from a host that simply has not come back.
+static std::atomic<bool> s_adv_running{false};
+static std::atomic<uint32_t> s_adv_attempt_ms{0};
+// Long enough that a slow stack is not talked over, short enough that a host
+// looking for this keyboard finds it before anyone gives up and reaches for the
+// phone's Bluetooth page.
+static constexpr uint32_t ADV_RETRY_MS = 10000;
+
 
 static void maybe_reset_bonds_after_security_config_change() {
     if (s_instance == nullptr) {
@@ -320,6 +333,15 @@ static void apply_security_params(bool use_static_passkey) {
 }
 
 static void do_start_advertising() {
+    // Each cycle owns this: set for a directed one, cleared for an undirected
+    // one. It used to be set where directed advertising began and cleared only
+    // by a connect or by its own 2 s timeout, so switching host again inside
+    // those two seconds carried it into the next slot's undirected cycle — and
+    // loop()'s timeout then stopped and restarted the advertising that slot's
+    // host was already answering. A phone that has its advertising pulled away
+    // mid-reconnect waits to be told to connect by hand.
+    s_directed_adv_active = s_directed_adv_pending;
+    s_adv_attempt_ms = millis();
     // A slot can be marked as never advertising — a remote page whose keys drive
     // Home Assistant rather than a connected host. Gated here rather than at each
     // caller: advertising starts from four places (services up at boot, after a
@@ -344,7 +366,6 @@ static void do_start_advertising() {
     // If directed advertising is requested, target the specific bonded host
     if (s_directed_adv_pending) {
         s_directed_adv_pending = false;
-        s_directed_adv_active = true;
         s_directed_adv_start_ms = millis();
         ESP_LOGI(TAG, "ADV: Directed advertising to %02X:%02X:%02X:%02X:%02X:%02X",
                  s_directed_addr[0], s_directed_addr[1], s_directed_addr[2],
@@ -413,10 +434,16 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             break;
         case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
             if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+                s_adv_running = true;
                 ESP_LOGI(TAG, "GAP: Advertising started");
             } else {
+                // Left false on purpose: loop()'s watchdog is what tries again.
+                s_adv_running = false;
                 ESP_LOGE(TAG, "GAP: Advertising start failed (%d)", param->adv_start_cmpl.status);
             }
+            break;
+        case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
+            s_adv_running = false;
             break;
         case ESP_GAP_BLE_SEC_REQ_EVT:
             esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
@@ -782,6 +809,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             break;
         case ESP_GATTS_CONNECT_EVT: {
             ESP_LOGI(TAG, "GATTS: Connected");
+            s_adv_running = false;   // the controller stops advertising on connect
             if (s_instance) {
                 s_instance->set_connected(true, param->connect.conn_id);
                 memcpy(s_instance->peer_addr_, param->connect.remote_bda, sizeof(esp_bd_addr_t));
@@ -2736,7 +2764,8 @@ void EspidfBleKeyboard::switch_host(uint8_t slot, bool from_action) {
     // Remembered whichever way the switch was asked for — a verb, a button, the
     // web page or Home Assistant — so switch_host:back always means "where it
     // was before this".
-    if (slot != active_slot_) previous_slot_ = (int8_t) active_slot_;
+    const bool same_slot = (slot == active_slot_);
+    if (!same_slot) previous_slot_ = (int8_t) active_slot_;
     active_slot_ = slot;
     save_host_slots_();
     if (active_host_sensor_ != nullptr)
@@ -2758,28 +2787,36 @@ void EspidfBleKeyboard::switch_host(uint8_t slot, bool from_action) {
     // Apply this host's saved goto calibration (if any).
     load_goto_scale_for_host(slot);
 
-    ESP_LOGI(TAG, "Switching to host slot %u", slot);
-
-    if (hosts_[slot].occupied && slot_broadcasts(slot)) {
-        // Check if stored address is a resolvable private address (RPA).
-        // RPA has bits [7:6] of first byte = 01. Android rotates these, so
-        // directed advertising to a stale RPA will always fail.
-        uint8_t addr_top = hosts_[slot].addr[0] >> 6;
-        if (addr_top == 0x01) {
-            ESP_LOGI(TAG, "Host slot %u has RPA address — using undirected advertising", slot);
-            // Skip directed, go straight to undirected so the phone can reconnect
-        } else {
-            // Static/public address — directed advertising is reliable
-            s_directed_adv_pending = true;
-            memcpy(s_directed_addr, hosts_[slot].addr, sizeof(esp_bd_addr_t));
-            s_directed_addr_type = hosts_[slot].addr_type;
-        }
+    // A resolvable private address — bits [7:6] of its first byte are 01 — is a
+    // phone's, and has rotated since it was stored, so directed advertising at
+    // it would never be answered. Everything else can be invited directly.
+    const bool rpa = hosts_[slot].occupied && (hosts_[slot].addr[0] >> 6) == 0x01;
+    if (hosts_[slot].occupied && slot_broadcasts(slot) && !rpa) {
+        s_directed_adv_pending = true;
+        memcpy(s_directed_addr, hosts_[slot].addr, sizeof(esp_bd_addr_t));
+        s_directed_addr_type = hosts_[slot].addr_type;
     }
-    // else: empty slot — undirected advertising (pairing mode)
+    // else: empty slot, or a phone — undirected advertising, and the host comes
+    // back in its own time.
+
+    // One line saying what this slot is and what is about to be done about it:
+    // when a host does not come back, whether it was ever invited and whether
+    // this keyboard still holds its pairing key is the whole question.
+    ESP_LOGI(TAG, "Switching to host slot %u (%s, bond %s) — %s advertising", slot,
+             !hosts_[slot].occupied ? "empty" : rpa ? "phone address, rotates" : "fixed address",
+             host_slot_bonded(slot) ? "yes" : "no",
+             !slot_broadcasts(slot) ? "no" : s_directed_adv_pending ? "directed" : "undirected");
 
     if (is_connected_) {
         // Disconnect current host; DISCONNECT_EVT will trigger advertising
         esp_ble_gatts_close(s_gatts_if, conn_id_);
+    } else if (same_slot && !s_directed_adv_pending && s_adv_running.load()) {
+        // Already advertising for this very slot, and an undirected cycle has
+        // nothing to re-aim. Switching to the host that is already selected —
+        // a card tapped twice, an automation firing again — would otherwise
+        // stop and restart the advertising that host may be part-way through
+        // answering.
+        ESP_LOGD(TAG, "ADV: already advertising for slot %u", slot);
     } else {
         // Not connected — stop current advertising and restart
         esp_ble_gap_stop_advertising();
@@ -3128,6 +3165,16 @@ void EspidfBleKeyboard::loop() {
             esp_ble_gap_stop_advertising();
             do_start_advertising();
         }
+    } else if (s_services_started >= 3 && !s_adv_running.load() && slot_broadcasts(active_slot_) &&
+               millis() - s_adv_attempt_ms.load() > ADV_RETRY_MS) {
+        // Meant to be connectable and not advertising: the start failed, or the
+        // completion event that would have started it never arrived. Nothing
+        // else tries again, and a silent keyboard looks exactly like a host that
+        // has not come back — so it is said out loud and tried again.
+        ESP_LOGW(TAG, "ADV: not advertising %ums after the last attempt — starting again",
+                 (unsigned) (millis() - s_adv_attempt_ms.load()));
+        esp_ble_gap_stop_advertising();
+        do_start_advertising();
     }
 
     // Stuck-key guard: a hold whose release never arrived (browser closed
