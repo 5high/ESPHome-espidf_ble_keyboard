@@ -14,7 +14,7 @@ web control page shows the matching version badge.
   bar of their own; tap one and that keyboard switches to it, and the remote, keyboard, paste box and
   mouse drive it. For hosts one keyboard's Bluetooth can't reach. Macros reach it with
   `peer:<name>:<action>`, with presets for it, and new remote keys step through both keyboards'
-  hosts.
+  hosts. A Home Assistant card drives one too, with `peer:` naming it.
 
 ### Changed
 - **The firmware is about 60 KB smaller.** The control page is stored without its comments and

@@ -15,6 +15,7 @@
  * Card YAML:
  *   type: custom:ble-keyboard-card
  *   device: bluetooth_keyboard    # your ESPHome device name
+ *   # peer: bedroom               # drive a linked keyboard of this one instead
  *   # Optional overrides:
  *   # name: My Keyboard            # card title (default "BLE Keyboard")
  *   # show_fkeys: true             # show F1-F12 row (default true)
@@ -472,7 +473,7 @@ class BleKeyboardCard extends HTMLElement {
     // this sensor on every switch_host() path — HA service, the device's own web
     // UI, a physical button — so every card following it stays in step with the
     // others without polling.
-    if (this._config && this._config.host_slots > 1) {
+    if (this._config && this._config.host_slots > 1 && !this._config.peer) {
       const entity = this._config.active_host_entity
         || Object.keys(hass.states).find(eid =>
              eid.startsWith('sensor.') && eid.includes(this._config.device) && eid.endsWith('_active_host')
@@ -497,14 +498,19 @@ class BleKeyboardCard extends HTMLElement {
     const layout = (config.layout || 'us').toLowerCase();
     this._config = {
       device: config.device,
+      // A linked keyboard of `device`, by the name its peers: gives it. Typing,
+      // held keys, pasted text and the host arrows then go there instead,
+      // through this keyboard, as peer:<name>:<action>.
+      peer: config.peer || null,
       name: config.name || null,
       show_fkeys: config.show_fkeys !== false,
       show_paste: config.show_paste !== false,
       layout: LAYOUTS[layout] ? layout : 'us',
       host_slots: config.host_slots || 0,
       host_names: config.host_names || [],
-      active_host_entity: config.active_host_entity || null,
-      show_mac: config.show_mac !== false,
+      active_host_entity: config.peer ? null : (config.active_host_entity || null),
+      // /hosts and the active-host sensor describe this keyboard, not that one.
+      show_mac: !config.peer && config.show_mac !== false,
       host_url: config.host_url || null,
       zoom: this._parseZoom(config.zoom),
     };
@@ -1112,6 +1118,29 @@ class BleKeyboardCard extends HTMLElement {
 
   _sendString(text) {
     if (!this._hass) return;
+    // A linked keyboard is typed on through its action verb. The device takes
+    // that one verbatim to the end of the string, so text carrying a '|' — a
+    // character this card can type — arrives whole.
+    //
+    // It crosses to that keyboard as a form-encoded request body, which has a
+    // budget of about a kilobyte, so long text goes in pieces measured the way
+    // that body encodes them. 35 ms apart: the far side drops an identical
+    // string repeated inside 30 ms, which repetitive text would trigger.
+    if (this._config.peer) {
+      const cost = (ch) => (ch === ' ' || /^[A-Za-z0-9*\-._]$/.test(ch)) ? 1 : 3 * new TextEncoder().encode(ch).length;
+      const parts = [];
+      let cur = '', len = 0;
+      for (const ch of text) {
+        const n = cost(ch);
+        if (len + n > 400 && cur) { parts.push(cur); cur = ''; len = 0; }
+        cur += ch;
+        len += n;
+      }
+      if (cur) parts.push(cur);
+      return parts.reduce((chain, part) => chain
+        .then(() => this._runAction('string:' + part))
+        .then(() => new Promise(r => setTimeout(r, 35))), Promise.resolve());
+    }
     // Returned so the paste bar can react to success/failure; key taps ignore it.
     return this._hass.callService('esphome', `${this._config.device}_send_string`, { keys: text });
   }
@@ -1208,6 +1237,10 @@ class BleKeyboardCard extends HTMLElement {
 
   _sendKey(modifier, keycode) {
     if (!this._hass) return;
+    if (this._config.peer) {
+      this._runAction(`combo:${modifier}:${keycode}`);
+      return;
+    }
     this._hass.callService('esphome', `${this._config.device}_send_key`, { modifier, keycode });
   }
 
@@ -1215,7 +1248,8 @@ class BleKeyboardCard extends HTMLElement {
   // dashboard on https, where a direct fetch to the device would be blocked.
   _runAction(action) {
     if (!this._hass) return Promise.resolve();
-    return this._hass.callService('esphome', `${this._config.device}_run_action`, { action });
+    return this._hass.callService('esphome', `${this._config.device}_run_action`,
+      { action: this._config.peer ? `peer:${this._config.peer}:${action}` : action });
   }
 
   // What a key sends, as the call that taps it and the action string that holds
@@ -1317,8 +1351,13 @@ class BleKeyboardCard extends HTMLElement {
   _switchHost(slot) {
     if (!this._hass) return;
     this._activeSlot = slot;
-    const slug = this._config.device.replace(/-/g, '_');
-    this._hass.callService('esphome', `${slug}_switch_host`, { slot });
+    // A linked keyboard switches its own host the same way its keys go there.
+    if (this._config.peer) {
+      this._runAction(`switch_host:${slot}`);
+    } else {
+      const slug = this._config.device.replace(/-/g, '_');
+      this._hass.callService('esphome', `${slug}_switch_host`, { slot });
+    }
     this._updateHostDisplay();
   }
 
@@ -1368,7 +1407,9 @@ class BleKeyboardCard extends HTMLElement {
   }
 
   _pollHosts() {
-    if (!this._hass || !this._config.host_slots) return;
+    // /hosts answers for the keyboard this card points at; a peer card takes its
+    // host names from host_names instead.
+    if (!this._hass || !this._config.host_slots || this._config.peer) return;
     const baseUrl = this._hostBaseUrl();
     if (!baseUrl) {
       this._updateHostDisplay();
@@ -1464,6 +1505,7 @@ customElements.define('ble-keyboard-card', BleKeyboardCard);
 
 const KB_EDITOR_SCHEMA = [
   { name: 'device', required: true, selector: { text: {} } },
+  { name: 'peer', selector: { text: {} } },
   { name: 'name', selector: { text: {} } },
   { name: 'zoom', selector: { number: { min: 0.25, max: 3, step: 0.05, mode: 'box' } } },
   { name: 'layout', selector: { select: { options: [
@@ -1483,6 +1525,7 @@ const KB_EDITOR_SCHEMA = [
 
 const KB_EDITOR_LABELS = {
   device: 'ESPHome device name',
+  peer: 'Linked keyboard to drive (its peers: name, optional)',
   name: 'Card title (optional)',
   zoom: 'Zoom (1 = normal, 0.5 = half, 2 = double)',
   layout: 'Keyboard layout',

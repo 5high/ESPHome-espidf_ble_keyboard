@@ -21,6 +21,7 @@
  * Card YAML:
  *   type: custom:ble-remote-card
  *   device: bluetooth_keyboard    # your ESPHome device name
+ *   # peer: bedroom               # drive a linked keyboard of this one instead
  *   # Optional overrides:
  *   # name: Media Remote           # card title (auto from HA if omitted)
  *   # remote_style: auto           # auto | default | style1..style6 | a pasted style's id
@@ -107,6 +108,10 @@ if (CARD_VER !== 'unversioned' && RMT_VER !== 'unversioned' && RMT_VER !== CARD_
     'One of them came from a cache — reload the dashboard with the cache cleared.');
 }
 
+// Keys the device's web page acts on itself — they move that page's tab between
+// linked keyboards. Nothing outside it can do that, so this card never draws them.
+const PAGE_ONLY = ['next_keyboard', 'prev_host_all', 'next_host_all'];
+
 /**
  * Parse the card's pasted-style box.
  *
@@ -167,7 +172,9 @@ class BleRemoteCard extends HTMLElement {
     // this sensor on every switch_host() path — HA service, the device's own web
     // UI, a physical button — so every card following it stays in step with the
     // others without polling.
-    if (this._config.host_slots > 1) {
+    // Not for a peer card: that sensor is this keyboard's active host, and the
+    // card tracks the linked keyboard's own as it switches it.
+    if (this._config.host_slots > 1 && !this._config.peer) {
       const entity = this._config.active_host_entity
         || Object.keys(hass.states).find(eid =>
              eid.startsWith('sensor.') && eid.includes(this._config.device) && eid.endsWith('_active_host')
@@ -192,24 +199,31 @@ class BleRemoteCard extends HTMLElement {
     this.setAttribute('data-version', CARD_VER);
     this._config = {
       device: config.device,
+      // A linked keyboard of `device`, by the name its peers: gives it. Every
+      // button and the host arrows then go there instead, through this
+      // keyboard, as peer:<name>:<action>. What that keyboard's hosts are
+      // called, how many it has and which style to draw are this card's own
+      // settings: the sensors and the /hosts read describe `device`, not it.
+      peer: config.peer || null,
       name: config.name || null,
       show_numpad: config.show_numpad === true,
       show_apps: config.show_apps !== false,
       show_color: config.show_color === true,
       // Optional text sensor carrying the active host's hidden buttons, so the
       // card mirrors the web remote's per-host hiding. Absent entity = show all.
-      hidden_entity: config.hidden_entity ||
+      hidden_entity: config.peer ? null : config.hidden_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_hidden_buttons`,
       // The other two per-host lists from Host Actions. Absent entity = the
       // card's own defaults: nothing holds, and volume/channel repeat.
-      hold_entity: config.hold_entity ||
+      hold_entity: config.peer ? null : config.hold_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_hold_buttons`,
-      repeat_entity: config.repeat_entity ||
+      repeat_entity: config.peer ? null : config.repeat_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_repeat_buttons`,
       host_slots: config.host_slots || 0,
       host_names: config.host_names || [],
-      active_host_entity: config.active_host_entity || null,
-      show_mac: config.show_mac !== false,
+      active_host_entity: config.peer ? null : (config.active_host_entity || null),
+      // No address for a peer card: /hosts describes this keyboard, not that one.
+      show_mac: !config.peer && config.show_mac !== false,
       host_url: config.host_url || null,
       zoom: this._parseZoom(config.zoom),
       // Which remote layout to draw. 'auto' mirrors whatever style the device
@@ -220,12 +234,12 @@ class BleRemoteCard extends HTMLElement {
       // The style id from the device, for 'auto'. Same reason the other
       // per-host settings travel as text sensors: a dashboard on https cannot
       // fetch the device's API, so /hosts alone is not enough.
-      remote_style_entity: config.remote_style_entity ||
+      remote_style_entity: config.peer ? null : config.remote_style_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_remote_style`,
       // The values an ["lcd",…] panel shows. Same reasoning as the lists above:
       // the device already formats them, and a text sensor is the only way they
       // reach a dashboard on https.
-      lcd_entity: config.lcd_entity ||
+      lcd_entity: config.peer ? null : config.lcd_entity ||
         `sensor.${config.device.replace(/-/g, '_')}_lcd`,
       // Per-key overrides, {key: entity_id}. These read Home Assistant directly,
       // so a panel can show something the keyboard's own node knows nothing
@@ -344,7 +358,10 @@ class BleRemoteCard extends HTMLElement {
     if (!force && raw === this._lastHidden) return;   // states stream constantly; only act on change
     this._lastHidden = raw;
 
-    const hide = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    // PAGE_ONLY are the web page's own keys: they move which keyboard that page
+    // is driving, which means nothing on a dashboard. A style carrying them
+    // draws everywhere, so they are taken out here rather than left dead.
+    const hide = (raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []).concat(PAGE_ONLY);
     // visibility, not display: a hidden button keeps its slot, so removing OK
     // leaves a hole in the D-pad instead of the arrows sliding into it. An
     // invisible button takes no clicks either, which opacity would not give.
@@ -709,8 +726,14 @@ class BleRemoteCard extends HTMLElement {
   _switchHost(slot) {
     if (!this._hass) return;
     this._activeSlot = slot;
-    const slug = this._config.device.replace(/-/g, '_');
-    this._hass.callService('esphome', `${slug}_switch_host`, { slot });
+    // A linked keyboard switches its own host through the same action route as
+    // its buttons; the service belongs to the keyboard this card points at.
+    if (this._config.peer) {
+      this._runAction(`switch_host:${slot}`);
+    } else {
+      const slug = this._config.device.replace(/-/g, '_');
+      this._hass.callService('esphome', `${slug}_switch_host`, { slot });
+    }
     this._updateHostDisplay();
   }
 
@@ -751,7 +774,9 @@ class BleRemoteCard extends HTMLElement {
   }
 
   _pollHosts() {
-    if (!this._hass || this._config.host_slots < 2) return;
+    // /hosts answers for the keyboard this card points at, which is not the one
+    // a peer card drives: its host names come from host_names instead.
+    if (!this._hass || this._config.host_slots < 2 || this._config.peer) return;
     const baseUrl = this._hostBaseUrl();
     if (!baseUrl) {
       this._updateHostDisplay();
@@ -875,6 +900,13 @@ class BleRemoteCard extends HTMLElement {
     if (paste.error) return { style: null, error: paste.error };
 
     let id = cfg.remote_style;
+    // 'auto' follows the style sensor of the keyboard this card points at, which
+    // says nothing about a linked one. Name the style instead, or paste it.
+    if (cfg.peer && id === 'auto') {
+      return { style: RMT_BUILTIN.find(t => t.id === 'default'),
+               error: `This card drives ${cfg.peer}, so it cannot follow that keyboard's style. ` +
+                      'Set remote_style to the style it uses, or paste that style into remote_style_json.' };
+    }
     if (id === 'auto') {
       const ent = this._hass && this._hass.states[cfg.remote_style_entity];
       const live = !!(ent && typeof ent.state === 'string' &&
@@ -1011,7 +1043,8 @@ class BleRemoteCard extends HTMLElement {
 
   _runAction(action) {
     if (!this._hass) return;
-    this._hass.callService('esphome', `${this._config.device}_run_action`, { action });
+    this._hass.callService('esphome', `${this._config.device}_run_action`,
+      { action: this._config.peer ? `peer:${this._config.peer}:${action}` : action });
   }
 
   // Natural pixel height of the card. Prefer measuring the rendered DOM —
@@ -1086,6 +1119,7 @@ function remoteEditorSchema(config) {
   const pasted = pastedStylesOf((config && config.remote_style_json) || '').styles;
   return [
     { name: 'device', required: true, selector: { text: {} } },
+    { name: 'peer', selector: { text: {} } },
     { name: 'name', selector: { text: {} } },
     { name: 'zoom', selector: { number: { min: 0.25, max: 3, step: 0.05, mode: 'box' } } },
     { name: 'remote_style', selector: { select: { mode: 'dropdown', options: [
@@ -1120,6 +1154,7 @@ function remoteEditorSchema(config) {
 
 const REMOTE_EDITOR_LABELS = {
   device: 'ESPHome device name',
+  peer: 'Linked keyboard to drive (its peers: name, optional)',
   name: 'Card title (optional)',
   zoom: 'Zoom (1 = normal, 0.5 = half, 2 = double)',
   remote_style: 'Remote style',

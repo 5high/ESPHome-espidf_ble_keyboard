@@ -4439,6 +4439,19 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     // before the '|' split, for the same reason: the split would otherwise cut a
     // branch into pieces and run its tail unconditionally.
     if (action.find("if:") == 0) { run_if_(action); return; }
+#ifdef USE_BLE_KB_PEERS
+    // Text typed on a linked keyboard runs to the end of the string, '|' and
+    // all: splitting it would chop the text and run its tail as an action here.
+    // Only this one peer form is taken before the split — `peer:x:a | peer:x:b`
+    // is still two steps, as every other verb's chain is.
+    if (action.rfind("peer:", 0) == 0) {
+        const size_t sep = action.find(':', 5);
+        if (sep != std::string::npos && action.compare(sep + 1, 7, "string:") == 0) {
+            run_peer_action_(action);
+            return;
+        }
+    }
+#endif
     // Multi-step actions: split on '|' and execute each step
     if (action.find('|') != std::string::npos) { run_steps_(action); return; }
     // Delay action for multi-step macros

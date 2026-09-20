@@ -667,6 +667,46 @@ bool EspidfBleKeyboard::coalesce_peer_presses_(std::string &job) {
   if (sep == std::string::npos || sep + 1 >= job.size())
     return false;
   const std::string key = job.substr(sep + 1);
+  // A Home Assistant card sends one action per movement, and a drag would fill
+  // the queue before any of them had gone. The run of them waiting behind this
+  // one is added up instead — stopping short of what a HID report carries, so
+  // nothing is lost and the rest stay queued. (The web page's own mouse never
+  // comes through here: peer_forward sums before it queues anything.)
+  const bool move = key.rfind("mouse_move:", 0) == 0;
+  if (move || key.rfind("mouse_scroll:", 0) == 0) {
+    int x = 0, y = 0;
+    if (move ? sscanf(key.c_str(), "mouse_move:%i:%i", &x, &y) != 2
+             : sscanf(key.c_str(), "mouse_scroll:%i", &x) != 1)
+      return false;
+    const std::string head = job.substr(0, sep + 1);
+    std::string *next = nullptr;
+    unsigned merged = 1;
+    while (xQueuePeek(action_queue_, &next, 0) == pdTRUE && next != nullptr && next->size() > head.size() &&
+           next->compare(0, head.size(), head) == 0) {
+      int nx = 0, ny = 0;
+      const char *rest = next->c_str() + head.size();
+      if (move ? sscanf(rest, "mouse_move:%i:%i", &nx, &ny) != 2 : sscanf(rest, "mouse_scroll:%i", &nx) != 1)
+        break;
+      if (x + nx > 127 || x + nx < -127 || y + ny > 127 || y + ny < -127)
+        break;  // a report cannot carry more; the next one takes it
+      if (xQueueReceive(action_queue_, &next, 0) != pdTRUE)
+        break;
+      delete next;
+      x += nx;
+      y += ny;
+      merged++;
+    }
+    if (merged == 1)
+      return false;
+    job = head;
+    if (move) {
+      job += "mouse_move:" + std::to_string(x) + ":" + std::to_string(y);
+    } else {
+      job += "mouse_scroll:" + std::to_string(x);
+    }
+    ESP_LOGD(TAG, "Peer %s merged into one request", job.c_str());
+    return true;
+  }
   if (key.find_first_of(":| ") != std::string::npos || key == "release" || key == "key_release")
     return false;
   const std::string first = job;

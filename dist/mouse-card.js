@@ -17,6 +17,7 @@
  * Card YAML:
  *   type: custom:ble-mouse-card
  *   device: bluetooth_keyboard    # your ESPHome device name
+ *   # peer: bedroom               # drive a linked keyboard of this one instead
  *   # Optional overrides:
  *   # name: Mouse Control          # card title (default "Mouse Control")
  *   # sensitivity: 1.5             # movement multiplier (default 1.5)
@@ -68,7 +69,7 @@ class BleMouseCard extends HTMLElement {
     // this sensor on every switch_host() path — HA service, the device's own web
     // UI, a physical button — so every card following it stays in step with the
     // others without polling.
-    if (this._config && this._config.host_slots > 1) {
+    if (this._config && this._config.host_slots > 1 && !this._config.peer) {
       const entity = this._config.active_host_entity
         || Object.keys(hass.states).find(eid =>
              eid.startsWith('sensor.') && eid.includes(this._config.device) && eid.endsWith('_active_host')
@@ -100,8 +101,12 @@ class BleMouseCard extends HTMLElement {
       tap_to_click: config.tap_to_click !== false,
       host_slots: config.host_slots || 0,
       host_names: config.host_names || [],
-      active_host_entity: config.active_host_entity || null,
-      show_mac: config.show_mac !== false,
+      // A linked keyboard of `device`, by the name its peers: gives it. The pad,
+      // the buttons and the host arrows then drive it, through this keyboard.
+      peer: config.peer || null,
+      active_host_entity: config.peer ? null : (config.active_host_entity || null),
+      // /hosts and the active-host sensor describe this keyboard, not that one.
+      show_mac: !config.peer && config.show_mac !== false,
       host_url: config.host_url || null,
       zoom: this._parseZoom(config.zoom),
     };
@@ -398,6 +403,22 @@ class BleMouseCard extends HTMLElement {
   _callService(service, data) {
     if (!this._hass) return;
     const slug = this._config.device.replace(/-/g, '_');
+    // A linked keyboard takes the same things as action strings, passed on by
+    // the keyboard this card points at. Movement and scrolling that arrive
+    // together are added up there, so a drag cannot outrun the link.
+    if (this._config.peer) {
+      const action =
+        service === 'mouse_move' ? `mouse_move:${data.x}:${data.y}` :
+        service === 'mouse_click' ? `mouse_click:${data.btn}` :
+        service === 'mouse_hold' ? `mouse_hold:${data.btn}` :
+        service === 'mouse_release' ? 'mouse_release' :
+        service === 'mouse_scroll' ? `mouse_scroll:${data.amount}` :
+        service === 'switch_host' ? `switch_host:${data.slot}` : null;
+      if (action === null) return;   // nothing else is sent to a linked keyboard
+      this._hass.callService('esphome', `${slug}_run_action`,
+        { action: `peer:${this._config.peer}:${action}` });
+      return;
+    }
     this._hass.callService('esphome', `${slug}_${service}`, data);
   }
 
@@ -469,7 +490,9 @@ class BleMouseCard extends HTMLElement {
   }
 
   _pollHosts() {
-    if (!this._hass || this._config.host_slots < 2) return;
+    // /hosts answers for the keyboard this card points at; a peer card takes its
+    // host names from host_names instead.
+    if (!this._hass || this._config.host_slots < 2 || this._config.peer) return;
     const baseUrl = this._hostBaseUrl();
     if (!baseUrl) {
       this._updateHostDisplay();
@@ -769,6 +792,7 @@ customElements.define('ble-mouse-card', BleMouseCard);
 
 const MOUSE_EDITOR_SCHEMA = [
   { name: 'device', required: true, selector: { text: {} } },
+  { name: 'peer', selector: { text: {} } },
   { name: 'name', selector: { text: {} } },
   { name: 'zoom', selector: { number: { min: 0.25, max: 3, step: 0.05, mode: 'box' } } },
   { name: 'sensitivity', selector: { number: { min: 0.1, max: 10, step: 0.1, mode: 'box' } } },
@@ -785,6 +809,7 @@ const MOUSE_EDITOR_SCHEMA = [
 
 const MOUSE_EDITOR_LABELS = {
   device: 'ESPHome device name',
+  peer: 'Linked keyboard to drive (its peers: name, optional)',
   name: 'Card title (optional)',
   zoom: 'Zoom (1 = normal, 0.5 = half, 2 = double)',
   sensitivity: 'Pointer sensitivity',

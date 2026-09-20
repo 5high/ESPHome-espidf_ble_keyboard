@@ -1713,6 +1713,7 @@ Optional configuration:
 | Option | Default | Description |
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
+| `peer` | — | Drive a [linked keyboard](#linking-a-second-keyboard) of `device` instead: its name from that keyboard's `peers:`. Every press goes there through this one. Set `host_slots`, `host_names` and, on the remote card, `remote_style` yourself — the sensors and the direct read describe `device`, not the linked one. |
 | `zoom` | `1` | Scales the whole card — touchpad, buttons and text together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, and everything scales by the same factor in both directions so the controls keep their shape. |
 | `sensitivity` | `1.5` | Base cursor speed multiplier. |
 | `mouse_acceleration` | `0.15` | Speed-based acceleration factor. Higher = more acceleration on fast swipes. |
@@ -2028,6 +2029,7 @@ The page then shows a bar of that keyboard's hosts below its own. Tap one and th
 - Both keyboards need firmware with this feature.
 - Give the address as an IP address or the keyboard's `.local` name.
 - A macro or button reaches it the same way, with [`peer:bedroom:<action>`](#action-reference); the preset lists in Macros and Host Actions offer the common ones. That switches the other keyboard, not the tab.
+- A Home Assistant card can drive a linked keyboard too: give it `peer: bedroom`. Its buttons and host arrows go there the same way, and what that keyboard's hosts are called and which style to draw are the card's own settings.
 - To move the tab from the remote, give a style the `next_keyboard`, `prev_host_all` or `next_host_all` keys: the next keyboard on whatever host it is on, or one step through every host of every keyboard, in the order the bars show them.
 
 **Anyone who can use this keyboard's page can drive the linked one**, because its login is stored in this keyboard's firmware.
@@ -2314,6 +2316,7 @@ Optional configuration:
 | Option | Default | Description |
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
+| `peer` | — | Drive a [linked keyboard](#linking-a-second-keyboard) of `device` instead: its name from that keyboard's `peers:`. Every press goes there through this one. Set `host_slots`, `host_names` and, on the remote card, `remote_style` yourself — the sensors and the direct read describe `device`, not the linked one. |
 | `zoom` | `1` | Scales the whole card — keys, labels and spacing together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, and everything scales by the same factor in both directions so the keys keep their shape. |
 | `show_fkeys` | `true` | Show the F1–F12 function key row. |
 | `show_paste` | `true` | Show the paste bar above the keys. Paste or type text there and press Send to type the whole thing at once; the **auto** checkbox types pasted text immediately. On HTTPS a clipboard button sends the clipboard in one tap. |
@@ -2410,6 +2413,7 @@ Optional configuration:
 | Option | Default | Description |
 |---|---|---|
 | `name` | Auto from HA | Card title. Auto-detected from HA device registry if omitted. |
+| `peer` | — | Drive a [linked keyboard](#linking-a-second-keyboard) of `device` instead: its name from that keyboard's `peers:`. Every press goes there through this one. Set `host_slots`, `host_names` and, on the remote card, `remote_style` yourself — the sensors and the direct read describe `device`, not the linked one. |
 | `zoom` | `1` | Scales the whole remote — buttons, text and spacing together. `0.25`–`3`; values outside that are clamped. The card's height follows the zoom, so `0.55` fits the full remote into roughly 8 grid rows, the shortest HA's height slider offers. Zooming past about `1.1` makes the remote wider than a 500px section, and the card scrolls sideways. |
 | `remote_style` | `auto` | Which layout to draw: `auto` follows the style the device has for the active host, or pin one of `default`, `style1`…`style5`, or `custom` to use your own. |
 | `remote_style_json` | — | The style to draw when `remote_style: custom`. Paste it from the web page's **Remote Style → Export**. |
