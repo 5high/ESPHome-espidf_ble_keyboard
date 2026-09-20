@@ -107,6 +107,7 @@ class BleMouseCard extends HTMLElement {
         const val = parseInt(hass.states[entity].state, 10);
         if (!isNaN(val) && val !== this._activeSlot) {
           this._activeSlot = val;
+          this._syncTargetToActive();
           this._updateHostDisplay();
         }
       }
@@ -528,6 +529,18 @@ class BleMouseCard extends HTMLElement {
     return (this._target && this._target.peer) || null;
   }
 
+  // This keyboard's own host can change without the card: another card, the web
+  // page, a physical button. The switcher has to step from where the keyboard
+  // really is, so its position follows the active slot — otherwise the first
+  // press after an outside switch only asks for the host it is already on, and
+  // reads as a press that did nothing. A slot this card does not list leaves the
+  // position alone: stepping carries on from the last host it showed.
+  _syncTargetToActive() {
+    if (this._peerName()) return;
+    const c = this._hostChain().find(x => !x.peer && x.slot === this._activeSlot);
+    if (c) this._target = { peer: null, slot: c.slot, entry: null, name: c.name };
+  }
+
   _chainIndex(chain) {
     const t = this._target || { peer: null, slot: this._activeSlot || 0 };
     const i = chain.findIndex(c => c.peer === t.peer && c.slot === t.slot);
@@ -656,6 +669,7 @@ class BleMouseCard extends HTMLElement {
         // absent, otherwise an in-flight response can undo a fresh switch.
         if (!this._hasActiveHostEntity && typeof data.active === 'number') {
           this._activeSlot = data.active;
+          this._syncTargetToActive();
         }
         this._hostSlots = data.slots || [];
         this._hostDataAvailable = true;
