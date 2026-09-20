@@ -25,6 +25,9 @@ web control page shows the matching version badge.
   indentation.
 - **Loading the web page is easier on the keyboard's memory.** It asks for its styles, button list
   and logos one at a time instead of all at once.
+- **The host switcher on a card sizes itself to its longest host name**, instead of a fixed width
+  that cut off anything past about ten characters. Still one width for the whole set, so the arrows
+  stay where your finger left them.
 
 ## v1.11.0 — 2026-09-19
 

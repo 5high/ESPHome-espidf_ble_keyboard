@@ -446,6 +446,7 @@ class BleMouseCard extends HTMLElement {
     this._hostSlots = [];
 
     shadow.getElementById('host-switcher').style.display = '';
+    this._hostInfoEl = shadow.querySelector('.host-info');
     this._hostNameEl = shadow.querySelector('.host-name');
     this._hostAddrEl = shadow.querySelector('.host-addr');
 
@@ -525,6 +526,50 @@ class BleMouseCard extends HTMLElement {
     return `${label}: ${names[t.slot] || 'Host ' + (t.slot + 1)}`;
   }
 
+  // Every name the switcher can show, so the field can be sized to the longest
+  // of them rather than to a guess. A linked keyboard's hosts carry its name as
+  // well as their own, which no 84px field was ever going to hold.
+  _hostLabels() {
+    const names = this._config.host_names || [];
+    const out = [];
+    for (let i = 0; i < (this._config.host_slots || 0); i++) {
+      const api = this._hostSlots.find(s => s.slot === i);
+      out.push(names[i] || (api && api.name) || 'Host ' + (i + 1));
+    }
+    for (const k of this._config.peer_hosts) {
+      const label = k.label || k.peer || '';
+      for (let i = 0; i < (k.slots || 0); i++) {
+        out.push(`${label}: ${(k.names || [])[i] || 'Host ' + (i + 1)}`);
+      }
+    }
+    return out;
+  }
+
+  // Widen the name field to fit the longest of them, measured rather than
+  // estimated: the element is the one that will draw it, so its own scrollWidth
+  // is the answer whatever the theme's font. Sized once for the whole set, not
+  // per host — the arrows must not move as the name changes, or stepping walks
+  // the button out from under your finger. Capped so a silly name cannot eat
+  // the header.
+  _fitHostInfo() {
+    if (!this._hostNameEl || !this._hostInfoEl) return;
+    const labels = this._hostLabels();
+    const key = labels.join('\u0001');
+    if (key === this._hostFitKey) return;
+    const keep = this._hostNameEl.textContent;
+    let w = 0;
+    for (const t of labels) {
+      this._hostNameEl.textContent = t;
+      w = Math.max(w, this._hostNameEl.scrollWidth);
+    }
+    this._hostNameEl.textContent = keep;
+    if (!w) return;   // not laid out yet; measured again on the next repaint
+    this._hostFitKey = key;
+    const px = Math.min(Math.max(w + 4, 84), 200);
+    this._hostInfoEl.style.width = `${px}px`;
+    this._hostInfoEl.style.flexBasis = `${px}px`;
+  }
+
   _switchHost(slot) {
     if (!this._hass) return;
     this._activeSlot = slot;
@@ -591,6 +636,7 @@ class BleMouseCard extends HTMLElement {
 
   _updateHostDisplay() {
     if (!this._hostNameEl) return;
+    this._fitHostInfo();
     const peerLabel = this._peerHostLabel();
     if (peerLabel !== null) {
       this._hostNameEl.textContent = peerLabel;
