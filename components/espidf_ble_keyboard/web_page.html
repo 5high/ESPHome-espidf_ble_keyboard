@@ -159,7 +159,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .macro-form .tpl-step button{width:30px;height:30px;padding:0;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:17px;font-weight:700}
 .macro-form .tpl-step button:active{background:var(--active);color:#fff;opacity:1}
 .tpl-lbl{min-width:68px;font-size:12px;color:var(--muted)}
-.tpl-name{min-width:132px;text-align:center;font-size:12px;color:var(--fg);padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tpl-step .tpl-name{min-width:132px;max-width:200px;text-align:center;font-size:12px;color:var(--fg);padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* The style box is the one field on this page that holds code, so it is given
    code's affordances: a monospace stack, so a section lines up under the one
    above it, and a tab stop narrow enough that two levels of nesting still fit a
@@ -870,8 +870,8 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <button class="hid-toggle" id="tpl-toggle">Remote Style &#9662;</button>
 <div class="hid-body" id="tpl-body">
 <div style="font-size:12px;color:var(--muted);margin:6px 0">Choose the remote layout this host gets &mdash; switch to the host and the remote re-skins to match it. The hidden, repeat and hold settings above still apply on top of whatever style is showing, and every action stays available to macros, buttons and Home Assistant either way. <strong>This tab</strong> keeps just this tab on one style whatever host is active &mdash; it adds <code>?style=</code> and the style's id to the address, so bookmark it or add it to a tablet's home screen to keep it there, while other tabs go on following the host. It can also show a host's <em>page</em> (<code>?host=</code>): that host's style and its Host Actions on every key, with any key that host leaves unset going to the active host as usual &mdash; so a slot that doesn't advertise becomes a tablet's own programmable remote.</div>
-<div class="macro-form" style="margin-top:0"><span class="tpl-lbl">This host</span><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><span class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in">Full remote</span><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste it into the Home Assistant remote card, or into another keyboard's Import box to copy them all across">Export all</button></div>
-<div class="macro-form" style="margin-top:6px"><span class="tpl-lbl">This tab</span><div class="tpl-step"><button id="tpl-lock-prev" title="Previous style or host page for this tab">&minus;</button><span class="tpl-name" id="tpl-lock-name" title="What this tab keeps whatever host is active: a style, or a host's page with its Host Actions. Nothing is saved on the keyboard.">Follow the host</span><button id="tpl-lock-next" title="Next style or host page for this tab">+</button></div></div>
+<div class="macro-form" style="margin-top:0"><span class="tpl-lbl">This host</span><div class="tpl-step"><button id="tpl-prev" title="Previous style">&minus;</button><select class="tpl-name" id="tpl-name" title="The style this host's remote is drawn in &mdash; open it for the whole list, or step with &minus; and +"></select><button id="tpl-next" title="Next style">+</button></div><button id="tpl-export" class="cancel" title="Copy the shown style into the box below as JSON — edit it, give it a new id, and Import it back as your own">Export</button><button id="tpl-export-all" class="cancel" title="Copy every custom style into the box below as one JSON list — paste it into the Home Assistant remote card, or into another keyboard's Import box to copy them all across">Export all</button></div>
+<div class="macro-form" style="margin-top:6px"><span class="tpl-lbl">This tab</span><div class="tpl-step"><button id="tpl-lock-prev" title="Previous style or host page for this tab">&minus;</button><select class="tpl-name" id="tpl-lock-name" title="What this tab keeps whatever host is active: a style, or a host's page with its Host Actions. Open it for the whole list. Nothing is saved on the keyboard."></select><button id="tpl-lock-next" title="Next style or host page for this tab">+</button></div></div>
 <div id="tpl-custom"></div>
 <div class="tpl-help"><strong>Roll your own:</strong> Export a style, change its <code>id</code> and <code>name</code>, rearrange its <code>sections</code>, then Import. Import also takes a whole <strong>Export all</strong> list &mdash; one paste copies a set of styles to another keyboard. It adds and replaces by <code>id</code>, never deletes: a style the other keyboard has that the list does not stays where it is. The remote card redraws as you type &mdash; nothing is saved until you press Import.
 <dl>
@@ -3378,10 +3378,22 @@ function appendStep(el,val){
   let tplOpts=[],tplIdx=0;              // the styles to step through, and where we are
   function tplNote(m,err){if(tplMsg){tplMsg.textContent=m||'';tplMsg.style.color=err?'#c44':'var(--muted)'}}
 
+  // Both steppers show their choice in a dropdown, so the whole list can be
+  // read at once instead of stepped through blind. Rebuilt on every change:
+  // these lists grow and shrink as styles are imported and hosts appear.
+  // `extra` is a state that is not one of the choices — a linked keyboard, or an
+  // address naming a style this device hasn't got — which still has to show.
+  function fillStep(el,names,idx,extra){
+    if(!el)return;
+    el.textContent='';
+    if(extra){const o=document.createElement('option');o.value='-1';o.textContent=extra;el.appendChild(o)}
+    names.forEach((n,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=n;el.appendChild(o)});
+    el.value=extra?'-1':String(idx);
+  }
+  const tplLabels=()=>tplOpts.map(t=>t.name+(t.custom?' (custom)':''));
+
   function showTpl(){
-    if(!tplName)return;
-    const t=tplOpts[tplIdx];
-    tplName.textContent=t?t.name+(t.custom?' (custom)':''):'—';
+    fillStep(tplName,tplLabels(),tplIdx,tplOpts.length?'':'—');
   }
 
   // Rebuilt whenever the list can have changed — a style imported or deleted
@@ -3428,24 +3440,29 @@ function appendStep(el,val){
       .concat(Object.keys(slotTpl).map(Number).sort((a,b)=>a-b)
         .map(s=>({kind:'host',value:s,name:(slotNames[s]||('Host '+(s+1)))+' page'})))
       .concat(allTemplates().map(t=>({kind:'style',value:t.id,name:t.name+(t.custom?' (custom)':'')})));
+    const names=lockOpts.map(o=>o.name);
     const h=hostLock(),k=styleLock(),p=peerLock();
     // Driving a linked keyboard is chosen from the host bar, not here; stepping
-    // from it starts the list over on this keyboard.
-    if(p!==null){lockIdx=-1;if(lockName)lockName.textContent=p+' (linked keyboard)';return}
+    // or picking from it starts the list over on this keyboard.
+    if(p!==null){lockIdx=-1;fillStep(lockName,names,-1,p+' (linked keyboard)');return}
     lockIdx=lockOpts.findIndex(o=>h!==null?(o.kind==='host'&&o.value===h)
                                           :(k?(o.kind==='style'&&o.value===k):o.kind===''));
-    if(!lockName)return;
     // An address naming a style or a slot this device doesn't have says so, in
     // the address's own terms. The remote falls back meanwhile — the full remote
     // for a style, the active host for a slot.
-    if(lockIdx<0){lockIdx=0;lockName.textContent=(h!==null?'?host='+h:k)+' (not found)';return}
-    lockName.textContent=lockOpts[lockIdx].name;
+    if(lockIdx<0){lockIdx=0;fillStep(lockName,names,0,(h!==null?'?host='+h:k)+' (not found)');return}
+    fillStep(lockName,names,lockIdx);
   }
   function stepLock(d){
     if(!lockOpts.length)return;
+    goLock((lockIdx+d+lockOpts.length)%lockOpts.length);
+  }
+  // Applying one choice, wherever it came from — a step or the dropdown.
+  function goLock(i){
+    const o=lockOpts[i];
+    if(!o)return;
     tplEndPreview();
-    lockIdx=(lockIdx+d+lockOpts.length)%lockOpts.length;
-    const o=lockOpts[lockIdx];
+    lockIdx=i;
     setTabLock(o.kind,o.value);
     fillLockSel();
     // A kept style stands in for whatever is asked, so this draws it; a page
@@ -3465,16 +3482,22 @@ function appendStep(el,val){
   window.onTabLockChanged=fillLockSel;
   if(lockPrev)lockPrev.addEventListener('click',()=>stepLock(-1));
   if(lockNext)lockNext.addEventListener('click',()=>stepLock(1));
+  if(lockName)lockName.addEventListener('change',()=>{const i=Number(lockName.value);if(i>=0)goLock(i)});
 
   // Steps to the next or previous style and saves it in one press. Wraps, so
   // + always leads somewhere and the end of the list is one press from the
   // start — with only a handful of styles that beats a button that goes dead.
   function stepTpl(d){
     if(!tplOpts.length)return;
+    goTpl((tplIdx+d+tplOpts.length)%tplOpts.length);
+  }
+  // Saving one style, wherever the choice came from — a step or the dropdown.
+  function goTpl(i){
+    if(!tplOpts[i])return;
     // Whatever is in the box is not what this host is getting, so the preview
-    // goes back to the real style before the step draws over it.
+    // goes back to the real style before the choice draws over it.
     tplEndPreview();
-    tplIdx=(tplIdx+d+tplOpts.length)%tplOpts.length;
+    tplIdx=i;
     showTpl();
     const id=tplOpts[tplIdx].id;
     // Stored empty for the default: an unset slot and one explicitly set back
@@ -3507,6 +3530,7 @@ function appendStep(el,val){
   }
   if(tplPrev)tplPrev.addEventListener('click',()=>stepTpl(-1));
   if(tplNext)tplNext.addEventListener('click',()=>stepTpl(1));
+  if(tplName)tplName.addEventListener('change',()=>{const i=Number(tplName.value);if(i>=0)goTpl(i)});
 
   function renderCustomList(){
     if(!tplCustom)return;

@@ -29,6 +29,8 @@ web control page shows the matching version badge.
   indentation.
 - **Loading the web page is easier on the keyboard's memory.** It asks for its styles, button list
   and logos one at a time instead of all at once.
+- **Remote Style's two rows are dropdowns.** This host and This tab still step with − and +, but the
+  name between them opens the whole list, so a style can be picked directly instead of stepped to.
 - **The host switcher on a card sizes itself to its longest host name**, instead of a fixed width
   that cut off anything past about ten characters. Still one width for the whole set, so the arrows
   stay where your finger left them.
