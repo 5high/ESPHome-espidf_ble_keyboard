@@ -995,6 +995,27 @@ function oneAtATime(fn){
   return p;
 }
 function apiGetHeavy(pathAndQuery){return oneAtATime(()=>apiGetJSON(pathAndQuery))}
+// One /hosts read, shared by everything that wants it at the same moment: the
+// host bar, the remote's style, the style card and Host Actions all ask on a
+// page load, and the device builds each reply whole — a couple of KB at a time,
+// on a heap the load is already squeezing. `fresh` is for the read straight
+// after a host switch, which must not come from here.
+let HOSTS_P=null,HOSTS_AT=0;
+function hostsText(fresh){
+  const now=Date.now();
+  if(!fresh&&HOSTS_P&&now-HOSTS_AT<800)return HOSTS_P;
+  HOSTS_AT=now;
+  HOSTS_P=fetch('/api/ble_keyboard/hosts').then(r=>{
+    // A 409 is the device short of memory for this reply just now, not a device
+    // that has gone away: every caller keeps what it has and asks again later.
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.text();
+  });
+  const p=HOSTS_P;
+  p.catch(()=>{if(HOSTS_P===p)HOSTS_P=null});
+  return p;
+}
+function hostsJSON(fresh){return hostsText(fresh).then(t=>JSON.parse(t))}
 function apiGetJSON(pathAndQuery,tries){
   tries=tries||0;
   return fetch('/api/ble_keyboard/'+pathAndQuery).then(r=>{
@@ -1332,7 +1353,10 @@ function showOffline(text){
 }
 let LOCAL_NAME='';
 function pollStatus(){
-  fetch('/api/ble_keyboard/status').then(r=>r.json()).then(d=>{
+  // null on a 409 — short of memory for the reply, not a device that has gone
+  // away, so the badge stays as it is until the next tick.
+  fetch('/api/ble_keyboard/status').then(r=>r.ok?r.json():null).then(d=>{
+    if(!d)return;
     LOCAL_NAME=d.device_name||'';
     // Hide the ha_action preset when the YAML opt-in is off, so nobody
     // composes an action that would only log a warning. By class and on every
@@ -1879,7 +1903,7 @@ function refreshActiveTemplate(force){
     .then(()=>{
       // A linked keyboard's style comes from its cached state, not from /hosts.
       if(peerLock()!==null){if(window.applyPeerTarget)window.applyPeerTarget(force!==false);return}
-      return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
+      return hostsJSON().then(d=>{
         const a=(d.slots||[]).find(s=>s.slot===drawSlot(d));
         if(window.applyTemplate)window.applyTemplate((a&&a.tpl)||'default',force!==false);
       });
@@ -2312,8 +2336,12 @@ function hostBtn(s,active){
 (function(){
   const bar=document.getElementById('host-bar');
   let lastHostsRaw=null,lastMissing='';
-  function loadHosts(){
-    fetch('/api/ble_keyboard/hosts').then(r=>r.text()).then(txt=>{
+  // `force` skips the shared read's brief cache — for the read straight after a
+  // host switch, which must see the new slot.
+  function loadHosts(force){
+    // A 409 is the device short of memory for this reply just now; the catch
+    // below leaves the bar as it is and the next poll asks again.
+    hostsText(force===true).then(txt=>{
       if(txt===lastHostsRaw)return;
       lastHostsRaw=txt;
       const d=JSON.parse(txt);
@@ -2440,7 +2468,7 @@ function hostBtn(s,active){
     if(window.applyTemplate)window.applyTemplate(s.tpl||'default');
     if(window.onRemoteFitNow)window.onRemoteFitNow();
     apiPost('switch_host',{slot:s.slot})
-      .then(loadHosts).catch(()=>{});
+      .then(()=>loadHosts(true)).catch(()=>{});
   }
   window.pickLocalHost=pickLocal;
   pollEvery(loadHosts,5000);
@@ -2449,7 +2477,7 @@ function hostBtn(s,active){
   window.reloadHosts=loadHosts;
   // The remote moved between keyboards: redraw the bar and, back on this one,
   // re-apply its style and lists even though its hosts are unchanged.
-  window.reloadHostsNow=function(){lastHostsRaw=null;loadHosts()};
+  window.reloadHostsNow=function(){lastHostsRaw=null;loadHosts(true)};
   // The other window says the hosts moved: read them now rather than waiting for
   // the next poll. lastHostsRaw makes this free when nothing actually changed.
   window.addEventListener('storage',e=>{if(e.key==='blekb_rmt_hosts')loadHosts()});
@@ -2961,7 +2989,7 @@ function appendStep(el,val){
   });
 
   function loadSlots(){
-    return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
+    return hostsJSON().then(d=>{
       // The slot the remote is drawn for — what this card follows, and what the
       // style stepper compares against before redrawing the remote live.
       if(slot===null)slot=styleSlot(d);
@@ -4043,7 +4071,7 @@ function appendStep(el,val){
   });
 
   function loadTpl(){
-    return fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(d=>{
+    return hostsJSON().then(d=>{
       slotTpl={};
       (d.slots||[]).forEach(s=>{slotTpl[s.slot]=s.tpl||'';slotNames[s.slot]=s.name||('Host '+(s.slot+1))});
       activeSlot=styleSlot(d);
@@ -4341,7 +4369,7 @@ function appendStep(el,val){
     // reporting success.
     let slots=[];
     // Fetch current state first so we know what to clear.
-    fetch('/api/ble_keyboard/hosts').then(r=>r.json()).then(h=>{
+    hostsJSON().then(h=>{
       slots=(h.slots||[]).map(s=>s.slot).filter(s=>typeof s==='number');
       if(!slots.length)throw new Error('the device reported no host slots');
       return apiGetHeavy('buttons');

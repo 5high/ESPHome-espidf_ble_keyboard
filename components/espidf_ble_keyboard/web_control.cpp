@@ -690,8 +690,11 @@ class BleKbWebHandler : public AsyncWebHandler {
 
     // GET-only endpoints (read state)
     if (path == "status") {
+      const size_t want = status_json_size(kb_);
+      if (heap_short(want, "Status", ""))
+        return;
       std::string json;
-      json.reserve(status_json_size(kb_));  // one allocation instead of the five doublings this would take
+      json.reserve(want);  // one allocation instead of the five doublings this would take
       append_status_json(json, kb_);
       send_response(200, "application/json", json);
       return;
@@ -860,8 +863,15 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "hosts") {
+      // Guarded like the big replies: a page load can leave the heap with no
+      // block this size, and the failed reserve aborts — which is what crashed
+      // the keyboard on a refresh on 2026-09-20. The page keeps the bar it has
+      // and asks again on its next poll.
+      const size_t want = hosts_json_size(kb_);
+      if (heap_short(want, "Hosts", ""))
+        return;
       std::string json;
-      json.reserve(hosts_json_size(kb_));
+      json.reserve(want);
       append_hosts_json(json, kb_);
       send_response(200, "application/json", json);
       return;

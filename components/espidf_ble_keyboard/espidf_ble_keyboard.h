@@ -1179,7 +1179,7 @@ class EspidfBleKeyboard : public Component
   std::atomic<uint32_t> page_load_ms_{0};
   bool peer_cache_live_{false};
   bool peer_starved_{false};  // reads paused for want of memory; logged on each change
-  static const uint32_t PEER_QUIET_MS = 2000;          // no reads this soon after a page-load request
+  static const uint32_t PEER_QUIET_MS = 1500;          // no reads this soon after a page-load request
   static const size_t PEER_READ_MIN_BLOCK = 8192;      // a read holds a client, a socket and the reply
   static const size_t PEER_READ_MIN_FREE = 16384;
   static const size_t PEER_PRESS_MIN_BLOCK = 4096;
