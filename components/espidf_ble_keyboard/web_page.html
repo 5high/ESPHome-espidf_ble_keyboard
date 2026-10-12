@@ -744,6 +744,28 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 #media-card>h2{flex-wrap:wrap}
 .rmt-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
 .rmt-head .macro-edit-btn{margin-left:0}
+/* The keyboard the remote's keyboard and typing keys open, under the remote and
+   inside its card. Never named .rmt-: tools/gen-remote-styles.mjs lifts those
+   rules into the Home Assistant card, which draws a keyboard of its own. */
+.rkb{margin:10px auto 0}
+.rkb[hidden],.rkb[data-mode=keys] .rkb-type,.rkb[data-mode=type] .rkb-keys{display:none}
+.rkb-keys .row:last-child{margin-bottom:0}
+/* 16px text: a phone zooms the whole page in on a box with anything smaller. As
+   wide as what holds it, and size="1" so it never asks a window for more. */
+.rkb-type{display:block;width:100%;max-width:320px;margin:0 auto;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:16px;font-family:inherit}
+.rkb-type:focus{outline:none;border-color:var(--active)}
+/* The hint smaller than what is typed, so it fits a box as narrow as most
+   remotes; a box narrower still ends it with an ellipsis rather than mid-word.
+   Only the hint: typed text stays 16px for the phone's sake. */
+.rkb-type{text-overflow:ellipsis}
+.rkb-type::placeholder{font-size:14px}
+/* Something typed that did not reach the keyboard. */
+.rkb-type.tw-bad{border-color:#e53935}
+/* In a window of its own the keys stay off its edges. The width that makes them
+   square, more than the remote's, is asked of the window by fitSize rather than
+   set here: a window that can't give it — a phone's, or one a scrollbar has
+   narrowed — then gets keys a little narrower instead of a column cut off. */
+.popout .rkb{margin-top:8px;padding:0 4px 4px;box-sizing:border-box}
 </style></head><body>
 
 <div id="zoomport"><div id="zoomsizer">
@@ -757,7 +779,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <!-- Carries the release tag, and `-dev` while main is ahead of the last one. Drop
      the suffix when tagging; append a letter (v1.7.0-dev-b) to tell two dev builds
      apart when chasing a "my edit didn't reach the device" problem. -->
-<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.16.0</span>
+<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.17.0-dev</span>
 </div>
 <div class="toolbar-right">
 <div class="section-toggles" id="toggle-bar">
@@ -852,6 +874,9 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
      here follow whichever machine is selected. The markup this replaced is now
      the `default` entry in RMT_TEMPLATES, which reproduces it exactly. -->
 <div id="rmt-body" class="rmt-body"></div>
+<!-- What the remote's keyboard and typing keys open. Inside the card, so it goes
+     wherever the remote goes, popped out included. -->
+<div id="rmt-kbd" class="rkb" hidden><div class="rkb-keys"></div><input class="rkb-type" type="text" size="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="enter" placeholder="Type &mdash; it goes straight to the host" aria-label="Type to the host"></div>
 </div>
 
 <div class="card" id="btns-card">
@@ -1704,7 +1729,9 @@ host_next:'<path d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6zM13 6l-1.41 1.41L
 host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>',
 kb_next:'<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>',
 all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1.41zM4 6v12H2V6h2z"/>',
-all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>'};
+all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>',
+kb_show:'<path d="M20 7v10H4V7h16m0-2H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/>',
+text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>'};
 // Every action the remote can show. t=title, i=icon id, x=text label,
 // c=extra classes, r=repeats by default, g=group in the Host Actions grids.
 const RMT_BTNS={
@@ -1801,9 +1828,17 @@ last_host:{t:'Last Host',i:'host_last',g:9},
 // nothing.
 next_keyboard:{t:'Next Keyboard',i:'kb_next',g:9},
 prev_host_all:{t:'Prev Host (all)',i:'all_prev',g:9},
-next_host_all:{t:'Next Host (all)',i:'all_next',g:9}};
+next_host_all:{t:'Next Host (all)',i:'all_next',g:9},
+// Keys that open a keyboard under the remote: the on-screen keys, or a box the
+// phone's or PC's own keyboard types into. The remote acts on them itself —
+// here and on the Home Assistant card — and never sends them, and the keyboard
+// opens wherever the remote is, popped out included.
+keyboard:{t:'Keyboard',i:'kb_show',g:10},
+typing:{t:'Typing box',i:'text_in',g:10}};
 // The keys above that the page acts on itself.
-const RMT_PAGE_KEYS=['next_keyboard','prev_host_all','next_host_all'];
+const RMT_PAGE_KEYS=['next_keyboard','prev_host_all','next_host_all','keyboard','typing'];
+// Of those, the two that open the keyboard panel under the remote.
+const RMT_KB_KEYS=['keyboard','typing'];
 const RMT_KINDS=['row','dpad','ring','pot','slider','strip','rocker','media','apps','grid','lcd','side','-'];
 // A theme may only set these, and each maps to a custom property the .rmt-*
 // rules already read. An imported template therefore cannot inject CSS: keys
@@ -2410,6 +2445,149 @@ function knobWire(root,send){
   root.addEventListener('contextmenu',e=>{
     if(e.target.closest&&e.target.closest('.rmt-knob-ring,.rmt-slider-track,.rmt-slider-mk'))e.preventDefault();
   });
+}
+// The box the remote's typing key opens — this page's and the Lovelace card's,
+// wired once onto its input. Whatever the box receives goes to the host as it
+// happens, from a phone's own keyboard, a PC's or a paste. Each change is
+// compared with what the box held before, so letters arrive as text, a deletion
+// as that many Backspaces and an autocorrected word as both — which keeps the
+// host's line what the box shows, as long as the host's cursor is at its end.
+// Keys with no text of their own (Enter, Tab, Esc, the arrows, Delete, F1-F12)
+// and Ctrl or Win shortcuts are sent as keys. send.text(s,again) types s, and may
+// answer 'busy' for a keyboard still typing what it has; `again` marks the same
+// piece asked for once more. send.key(mod,kc) taps a key. Both return promises
+// and go one at a time, in order, so a key never overtakes text typed before it.
+// Returns reset(), which empties the box without sending anything.
+function typeWire(input,send){
+  // HID usages. Named keys by name; the rest by where the key is (code), which is
+  // what a usage numbers anyway, so a shortcut needs no layout.
+  const SPECIAL={Enter:0x28,Escape:0x29,Backspace:0x2A,Tab:0x2B,Insert:0x49,Home:0x4A,PageUp:0x4B,
+    Delete:0x4C,End:0x4D,PageDown:0x4E,ArrowRight:0x4F,ArrowLeft:0x50,ArrowDown:0x51,ArrowUp:0x52};
+  const CODES={Space:0x2C,Minus:0x2D,Equal:0x2E,BracketLeft:0x2F,BracketRight:0x30,Backslash:0x31,
+    Semicolon:0x33,Quote:0x34,Backquote:0x35,Comma:0x36,Period:0x37,Slash:0x38,IntlBackslash:0x64};
+  const usage=e=>{
+    if(SPECIAL[e.key])return SPECIAL[e.key];
+    const f=/^F([1-9]|1[0-2])$/.exec(e.key);if(f)return 0x39+(+f[1]);
+    let m=/^Key([A-Z])$/.exec(e.code||'');if(m)return 0x04+m[1].charCodeAt(0)-65;
+    m=/^Digit([0-9])$/.exec(e.code||'');if(m)return m[1]==='0'?0x27:0x1D+(+m[1]);
+    return CODES[e.code]||0;
+  };
+  // What a character costs in a form-encoded body, so each piece of text stays
+  // well inside what the keyboard takes in one request.
+  const cost=ch=>ch===' '||/^[A-Za-z0-9*\-._]$/.test(ch)?1:3*new TextEncoder().encode(ch).length;
+  // What the box held last time — all of it already on its way to the host.
+  let last='',composing=false;
+  input.value='';
+  const q=[];let running=false,waits=0,badT=null;
+  function flag(){
+    input.classList.add('tw-bad');
+    clearTimeout(badT);badT=setTimeout(()=>input.classList.remove('tw-bad'),1500);
+  }
+  // Text typed while earlier text is still going joins it, so fast typing goes
+  // in a few requests rather than one per letter.
+  function push(op){
+    const t=q[q.length-1];
+    if(op.s!==undefined&&t&&t.s!==undefined)t.s+=op.s;
+    else q.push(op);
+    if(!running)next();
+  }
+  function next(){
+    const op=q[0];
+    if(!op){running=false;return}
+    running=true;
+    let part=null,p;
+    if(op.s!==undefined){
+      let n=0;part='';
+      for(const ch of op.s){if(n+cost(ch)>400&&part)break;part+=ch;n+=cost(ch)}
+      p=send.text(part,waits>0);
+    }else p=send.key(op.m,op.k);
+    const done=()=>{
+      // Whatever joined the text while this piece was out stays queued behind it.
+      if(part!==null&&op.s.length>part.length)op.s=op.s.slice(part.length);
+      else q.shift();
+      // 35ms apart: the keyboard drops an identical string or key repeated within
+      // 30ms, which the same letter typed twice would otherwise risk.
+      setTimeout(next,35);
+    };
+    Promise.resolve(p).then(r=>{
+      // Still typing what it has. The same piece again shortly, for up to half a
+      // minute, as the paste bar waits.
+      if(r==='busy'&&++waits<=100){setTimeout(next,300);return}
+      if(r==='busy')flag();
+      waits=0;done();
+    },()=>{waits=0;flag();done()});
+  }
+  input.addEventListener('compositionstart',()=>{composing=true});
+  input.addEventListener('compositionend',()=>{composing=false});
+  input.addEventListener('input',()=>{
+    const v=input.value;
+    let i=0;const n=Math.min(v.length,last.length);
+    while(i<n&&v.charCodeAt(i)===last.charCodeAt(i))i++;
+    // Never between the two halves of an emoji: the host deletes characters.
+    if(i>0&&/[\uD800-\uDBFF]/.test(last[i-1]))i--;
+    const del=Array.from(last.slice(i)).length;
+    for(let k=0;k<del;k++)push({m:0,k:0x2A});
+    if(i<v.length)push({s:v.slice(i)});
+    last=v;
+    // The host has the whole line, so a long one only needs its end on show.
+    // Not mid-word on a phone: replacing the text would end what its keyboard is
+    // composing.
+    if(!composing&&v.length>200){input.value=Array.from(v).slice(-100).join('');last=input.value}
+  });
+  input.addEventListener('keydown',e=>{
+    // An input method at work types through the box, Enter included — there it
+    // picks a word rather than ending a line. So does a key still to be combined
+    // with the next one (Dead).
+    if(e.isComposing||e.keyCode===229||e.key==='Dead'||e.key==='Process')return;
+    const altGr=!!(e.getModifierState&&e.getModifierState('AltGraph'));
+    // Paste is the one shortcut the box keeps: what it pastes is typed.
+    if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.code==='KeyV')return;
+    if(e.shiftKey&&e.key==='Insert')return;
+    let kc;
+    if(e.key.length===1){
+      // A character types through the box, unless Ctrl or Win makes it a
+      // shortcut. AltGr reads as Ctrl+Alt on Windows and still types (@ on a
+      // German keyboard), so it stays text.
+      if(!(e.ctrlKey||e.metaKey)||altGr)return;
+      kc=usage(e);
+    }else if(e.key==='Backspace'){
+      // With text in the box the deletion is seen as it happens. An empty box
+      // has nothing to delete, so its Backspace goes from here.
+      if(input.value)return;
+      kc=0x2A;
+    }else kc=usage(e);
+    if(!kc)return;
+    e.preventDefault();
+    push({m:(e.ctrlKey&&!altGr?1:0)|(e.shiftKey?2:0)|(e.altKey&&!altGr?4:0)|(e.metaKey?8:0),k:kc});
+    // A line ends with Enter, and a field with Tab: the box starts again.
+    if(kc===0x28||kc===0x2B){input.value='';last=''}
+  });
+  return {reset(){input.value='';last='';input.classList.remove('tw-bad')}};
+}
+// How wide a keyboard's rows have to be for every ordinary key (flex 1) to be at
+// least as wide as it is tall. Each key keeps its own padding and border, and
+// the rest of the row is shared out by flex-grow; so a row needs those fixed
+// parts, its gaps, and enough share for a 1 to make up a key's height. The
+// widest row decides. Read in the rows' own window — the keys under a
+// popped-out remote are in another document — and returned in CSS pixels.
+function keysSquareWidth(rows){
+  let w=0;
+  for(const r of rows){
+    const win=r.ownerDocument.defaultView||window;
+    const ks=[...r.children];
+    if(!ks.length)continue;
+    let units=0,h=0,fixed=0,f1=Infinity;
+    for(const k of ks){
+      const s=win.getComputedStyle(k),n=p=>parseFloat(s[p])||0;
+      const f=n('paddingLeft')+n('paddingRight')+n('borderLeftWidth')+n('borderRightWidth');
+      units+=n('flexGrow')||1;fixed+=f;f1=Math.min(f1,f);
+      // The whole key, border to border, whichever box its height describes.
+      h=Math.max(h,n('height')+(s.boxSizing==='border-box'?0:
+        n('paddingTop')+n('paddingBottom')+n('borderTopWidth')+n('borderBottomWidth')));
+    }
+    w=Math.max(w,fixed+units*Math.max(0,h-f1)+(parseFloat(win.getComputedStyle(r).columnGap)||0)*(ks.length-1));
+  }
+  return Math.ceil(w);
 }
 // Built-in styles. `default` reproduces the fixed markup the remote had before
 // styles existed, so a host that never picks one sees no change at all. The
@@ -4306,7 +4484,7 @@ function insertStep(el,val){
                                           group:RMT_BTNS[a].g,rpt:!!RMT_BTNS[a].r}));
   }
   const GROUP_NAMES=['Power &amp; navigation','D-pad','Volume, channel &amp; brightness','Media','Colours','Apps',
-                     'TV keys','Numbers','Spare (set an override to use)','Hosts'];
+                     'TV keys','Numbers','Spare (set an override to use)','Hosts','Keyboard'];
 
   // Shared by all three per-host panels: same button list, same grouping — only
   // what a tick means differs, so the caller supplies that as a predicate.
@@ -7018,15 +7196,15 @@ let currentLayout='us';
 let shift=false,capsLock=false,ctrl=false,alt=false,win=false,rshift=false,altgr=false,shiftLock=false;
 const modBtns={shift:[],ctrl:[],alt:[],win:[],rshift:[],altgr:[]};
 const charKeys=[];
-let capsBtn=null;
-
-let kbListenersBound=false;
-function buildKeyboard(){
-  const kb=document.getElementById('kb-rows');
+// The Caps Lock key of each keyboard drawn — see KB_ROOTS.
+const capsBtns=[];
+// Every element the key rows are drawn into: the Keyboard card's, and the panel
+// the remote's keyboard key opens, from the first time it does. One keyboard
+// drawn twice: one set of modifiers, so a Shift tapped on either lights both,
+// and a layout change redraws them all.
+const KB_ROOTS=[];
+function drawKeys(kb){
   kb.innerHTML='';
-  charKeys.length=0;
-  Object.keys(modBtns).forEach(m=>modBtns[m].length=0);
-  capsBtn=null;
   const rows=(LAYOUTS[currentLayout]||LAYOUTS.us).ROWS;
   rows.forEach((row,ri)=>{
     const rd=document.createElement('div');
@@ -7042,29 +7220,49 @@ function buildKeyboard(){
       if(k.al)b.dataset.al=k.al;
       if(k.t==='c'&&k.sl)charKeys.push({btn:b,def:k});
       if(k.t==='m'&&modBtns[k.mod])modBtns[k.mod].push(b);
-      if(k.t==='caps'){capsBtn=b;if(capsLock)b.classList.add('caps')}
+      if(k.t==='caps')capsBtns.push(b);
       rd.appendChild(b);
     });
     kb.appendChild(rd);
   });
+}
+// The lit modifiers, Shift lock, Caps Lock and the shifted labels, on every
+// keyboard drawn.
+function markKeys(){
   Object.keys(modBtns).forEach(m=>{
     const on=({shift,ctrl,alt,win,rshift,altgr})[m];
-    if(on)modBtns[m].forEach(b=>b.classList.add('active'));
+    modBtns[m].forEach(b=>b.classList.toggle('active',!!on));
   });
-  if(shiftLock){
-    modBtns.shift.forEach(b=>b.classList.add('shift-lock'));
-    modBtns.rshift.forEach(b=>b.classList.add('shift-lock'));
-  }
+  modBtns.shift.concat(modBtns.rshift).forEach(b=>b.classList.toggle('shift-lock',shiftLock));
+  capsBtns.forEach(b=>b.classList.toggle('caps',capsLock));
   updateLabels();
-  if(kbListenersBound)return;
-  kbListenersBound=true;
+}
+function buildKeyboard(){
+  charKeys.length=0;
+  Object.keys(modBtns).forEach(m=>modBtns[m].length=0);
+  capsBtns.length=0;
+  KB_ROOTS.forEach(drawKeys);
+  markKeys();
+}
+// The keyboard drawn into one more element, and wired as the first one is.
+// `pip`: this one can sit in a picture-in-picture window — see the blur below.
+function addKeyboardRoot(kb,pip){
+  if(KB_ROOTS.indexOf(kb)>=0)return;
+  KB_ROOTS.push(kb);
+  drawKeys(kb);
+  markKeys();
+  bindKeys(kb,pip);
+}
+function bindKeys(kb,pip){
   // L-Enter visual sync: pressing either half highlights both halves + bridge.
+  // Its partner is looked up in this keyboard's own rows, never the document's:
+  // the remote's panel can be in a picture-in-picture window's document.
   function setKeyP(el,on){
     if(!el)return;
     el.classList.toggle('p',on);
     let partner=null;
-    if(el.classList.contains('kb-l-top'))partner=document.querySelector('#kb-rows .k.kb-l-bot');
-    else if(el.classList.contains('kb-l-bot'))partner=document.querySelector('#kb-rows .k.kb-l-top');
+    if(el.classList.contains('kb-l-top'))partner=kb.querySelector('.k.kb-l-bot');
+    else if(el.classList.contains('kb-l-bot'))partner=kb.querySelector('.k.kb-l-top');
     if(partner)partner.classList.toggle('p',on);
   }
   let sx,sy,ok,ab,sLockT=null,sLockFired=false;
@@ -7249,14 +7447,15 @@ function buildKeyboard(){
   // A key still down when the page stops being looked at would type into
   // whatever the host does next, for as long as it takes someone to notice.
   // Free when nothing is held, so none of these can disturb a remote hold.
-  window.addEventListener('blur',endKeyHold);
+  // Except blur for a keyboard in a picture-in-picture window, as for the
+  // remote's own keys: pressing one there blurs this page, and that blur would
+  // cut short the hold the press is about to become.
+  window.addEventListener('blur',()=>{
+    if(pip&&window.documentPictureInPicture&&documentPictureInPicture.window)return;
+    endKeyHold();
+  });
   window.addEventListener('pagehide',endKeyHold);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)endKeyHold()});
-  // Once, on the way in: a previous session that was closed mid-press can have
-  // left a key down on the device, and that key is dead — a re-hold is a no-op
-  // and even a tap of it is dropped from the report — until something lifts it.
-  // Reloading the page is the first thing anyone tries, so make it the cure.
-  apiPost('release').catch(()=>{});
 }
 
 function toggleMod(mod){
@@ -7285,7 +7484,7 @@ let capsTapAt=0;
 window.syncHostCaps=function(on){
   if((on!==true&&on!==false)||on===capsLock||Date.now()-capsTapAt<2000)return;
   capsLock=on;
-  if(capsBtn)capsBtn.classList.toggle('caps',capsLock);
+  capsBtns.forEach(b=>b.classList.toggle('caps',capsLock));
   updateLabels();
 };
 
@@ -7335,7 +7534,7 @@ function onKey(k){
   if(k.t==='caps'){
     capsLock=!capsLock;
     capsTapAt=Date.now();
-    if(capsBtn)capsBtn.classList.toggle('caps',capsLock);
+    capsBtns.forEach(b=>b.classList.toggle('caps',capsLock));
     api('key',{modifier:0,keycode:0x39});
     updateLabels();return;
   }
@@ -7344,7 +7543,12 @@ function onKey(k){
   clearStickyMods();
 }
 
-buildKeyboard();
+addKeyboardRoot(document.getElementById('kb-rows'));
+// Once, on the way in: a previous session that was closed mid-press can have
+// left a key down on the device, and that key is dead — a re-hold is a no-op
+// and even a tap of it is dropped from the report — until something lifts it.
+// Reloading the page is the first thing anyone tries, so make it the cure.
+apiPost('release').catch(()=>{});
 
 // ── Layout selector ──
 (function(){
@@ -7616,7 +7820,9 @@ buildKeyboard();
   // until that first fetch lands the page falls back to its own data-repeat
   // markup, so holding works from the moment the page is usable.
   let rptSet=null,rptDelay=400,rptRate=180;
-  const repeats=(el,a)=>rptSet?rptSet.indexOf(a)>=0:el.hasAttribute('data-repeat');
+  // Never the keyboard keys, whatever a host ticked: held, they would open and
+  // shut the panel over and over.
+  const repeats=(el,a)=>RMT_KB_KEYS.indexOf(a)<0&&(rptSet?rptSet.indexOf(a)>=0:el.hasAttribute('data-repeat'));
   // Hold-to-send set for the active host. Empty until applyHold() lands — there
   // is no markup default for this one, because holding a key is never something
   // to start doing on a host that didn't ask for it.
@@ -7687,8 +7893,13 @@ buildKeyboard();
     const h=hostLock();return h===null?a:'host_action:'+h+':'+a;
   }
   function press(a){
-    // A key that moves this tab between keyboards is acted on here and never sent.
-    if(RMT_PAGE_KEYS.indexOf(a)>=0){if(window.pageKey)window.pageKey(a);return}
+    // A key that moves this tab between keyboards, or opens the keyboard under
+    // the remote, is acted on here and never sent.
+    if(RMT_PAGE_KEYS.indexOf(a)>=0){
+      if(RMT_KB_KEYS.indexOf(a)>=0)kbdToggle(a);
+      else if(window.pageKey)window.pageKey(a);
+      return;
+    }
     return api('press',{action:onPage(a)});
   }
   // A knob's run of n steps. One is an ordinary press; more go as one repeat:,
@@ -7703,6 +7914,69 @@ buildKeyboard();
     return api('press',{action:peerLock()!==null||hostLock()===null?onPage(run+a):run+onPage(a)});
   }
   knobWire(card,knobSend);
+
+  // ── Keyboard panel ──
+  // What the keyboard and typing keys open under the remote: the Keyboard card's
+  // keys drawn a second time, or a box a phone's or PC's own keyboard types into.
+  // It sits in the remote's card, so it goes wherever the remote goes, and a
+  // window sized around the remote grows to hold it — fitSize counts it.
+  const kbd=document.getElementById('rmt-kbd');
+  const kbdKeys=kbd&&kbd.querySelector('.rkb-keys');
+  const kbdBox=kbd&&kbd.querySelector('.rkb-type');
+  let kbdTw=null;
+  // Opens a key's panel, switches to it from the other one, or shuts it. Runs
+  // inside the press, which is the one moment an always-on-top window may be
+  // resized, and when a phone will bring up its keyboard for the box.
+  function kbdToggle(a){
+    if(!kbd)return;
+    const mode=a==='typing'?'type':'keys';
+    if(!kbd.hidden&&kbd.dataset.mode===mode){kbdClose();kbdFit();return}
+    kbd.dataset.mode=mode;
+    kbd.hidden=false;
+    if(mode==='keys'){
+      kbdLeaveBox();
+      addKeyboardRoot(kbdKeys,true);
+    }else{
+      // Through api(), as the Keyboard card's keys go: a tab driving a linked
+      // keyboard types there, and a macro being recorded writes it down. A piece
+      // asked for again, after the keyboard said it was busy, is not recorded
+      // twice.
+      if(!kbdTw)kbdTw=typeWire(kbdBox,{
+        text:(s,again)=>(again?apiPost('string',{keys:s}):api('string',{keys:s})).then(r=>
+          r&&r.status===409?'busy':r&&r.ok?true:Promise.reject(new Error('not typed'))),
+        key:(m,k)=>api('key',{modifier:m,keycode:k}).then(r=>
+          r&&r.ok?true:Promise.reject(new Error('not sent'))),
+      });
+      kbdBox.focus();
+    }
+    kbdFit();
+  }
+  function kbdClose(){
+    if(!kbd||kbd.hidden)return;
+    kbd.hidden=true;
+    kbdLeaveBox();
+  }
+  // Emptied, and let go of, so the next key pressed on the PC goes where it
+  // would have gone before the box was opened.
+  function kbdLeaveBox(){
+    if(kbdTw)kbdTw.reset();
+    if(kbdBox.ownerDocument.activeElement===kbdBox)kbdBox.blur();
+  }
+  // Both, as a host switch does: now, for an always-on-top window this press
+  // may still resize, and debounced, for the pop-up window that sizes itself.
+  function kbdFit(){
+    if(window.onRemoteFitNow)window.onRemoteFitNow();
+    if(window.onRemoteResize)window.onRemoteResize();
+  }
+  // A redraw, or this host's hidden list, can take away the key that shuts the
+  // panel. It shuts with it rather than stay open with nothing to close it.
+  function kbdCheck(){
+    if(!kbd||kbd.hidden)return;
+    const a=kbd.dataset.mode==='type'?'typing':'keyboard';
+    if(![...body.querySelectorAll('.rmt-btn[data-action="'+a+'"]')].some(b=>b.style.visibility!=='hidden')){
+      kbdClose();kbdFit();
+    }
+  }
   // `fired` is what keeps hold and tap from both counting: once the hold timer
   // has sent anything, pointerup must NOT send its usual press on release.
   {let sx,sy,ok,ab,fired=false,downAt=0;
@@ -7957,6 +8231,9 @@ buildKeyboard();
       // around the remote has to be measured against THIS layout, not the one
       // before the host's hidden buttons were taken out of it.
       if(window.onRemoteResize)window.onRemoteResize();
+      // Every redraw comes through here too, forced, so this is where an open
+      // keyboard finds out whether the key that shuts it is still drawn.
+      kbdCheck();
   }
 
   // ── Per-host remote style ──
@@ -8595,7 +8872,29 @@ buildKeyboard();
     const nat=el.getBoundingClientRect();
     el.style.width=prev;
     const r=nat.width>0?nat:el.getBoundingClientRect();
-    const w=r.width;
+    let w=r.width,kh=0;
+    // The keyboard panel under the remote, while it is open. The keys want the
+    // width that makes them square (keysSquareWidth), more than most remotes are
+    // wide, so they are laid out once at that floor to measure it in the same
+    // on-screen pixels as the remote. The typing box takes whatever width the
+    // remote has. The height runs from the remote's bottom edge to the panel's,
+    // so the gap between them counts as drawn.
+    const kp=el.parentNode&&el.parentNode.querySelector('.rkb:not([hidden])');
+    if(kp){
+      if(kp.dataset.mode==='keys'){
+        const pv=kp.style.width,pm=kp.style.minWidth,ps=getComputedStyle(kp);
+        // Their height taken with room for every label on one line: squeezed into
+        // a narrow window first, a label wraps and its key stands taller than the
+        // square it is about to be given.
+        kp.style.width='2000px';
+        const sq=keysSquareWidth(kp.querySelectorAll('.rkb-keys .row'));
+        kp.style.width='max-content';
+        kp.style.minWidth=(sq+(parseFloat(ps.paddingLeft)||0)+(parseFloat(ps.paddingRight)||0))+'px';
+        w=Math.max(w,kp.getBoundingClientRect().width);
+        kp.style.width=pv;kp.style.minWidth=pm;
+      }
+      kh=Math.max(0,kp.getBoundingClientRect().bottom-el.getBoundingClientRect().bottom);
+    }
     const maxH=((window.screen&&screen.availHeight)||900)-80;
     // rw/rh are the measurements before clamping — what the remote actually is,
     // which is what a scale-to-fit has to divide by. The clamped pair is only what
@@ -8629,8 +8928,8 @@ buildKeyboard();
     // clips — invisibly, since what it clips is the edge of the remote's own
     // background. rw below stays exact; only the request is rounded.
     return {w:Math.max(100,Math.min(900,Math.floor(w))),
-            h:Math.max(100,Math.min(maxH,Math.ceil(r.height)+xv+2)),
-            rw:w,rh:r.height+xv};
+            h:Math.max(100,Math.min(maxH,Math.ceil(r.height+kh)+xv+2)),
+            rw:w,rh:r.height+kh+xv};
   }
 
   // ── Inside the pop-up window ──
@@ -8711,6 +9010,9 @@ buildKeyboard();
     if(window.ResizeObserver){
       const rb=document.getElementById('rmt-body');
       if(rb){rmtRO=new ResizeObserver(()=>window.onRemoteResize());rmtRO.observe(rb)}
+      // The keyboard under it as well, which fitSize counts.
+      const kp=document.getElementById('rmt-kbd');
+      if(rmtRO&&kp)rmtRO.observe(kp);
     }
     localStorage.setItem(KEY,'1');   // and again after a reload of this window
     // The heartbeat. Every two seconds, so four of them can be missed before the
@@ -9112,9 +9414,9 @@ buildKeyboard();
           // real style and its hidden buttons each arrive on their own fetch, well
           // after this window was opened and fitted to whatever was drawn first.
           if(window.ResizeObserver){
-            const rb=card.querySelector('#rmt-body');
+            const rb=card.querySelector('#rmt-body'),kp=card.querySelector('#rmt-kbd');
             if(rb){pipRO=new ResizeObserver(()=>{if(window.onRemoteResize)window.onRemoteResize()});
-                   pipRO.observe(rb)}
+                   pipRO.observe(rb);if(kp)pipRO.observe(kp)}
           }
           return;
         }catch(e){

@@ -92,6 +92,10 @@ const PARTS = [
   ['function knobSettle(', () => balanced('function knobSettle(')],
   ['function knobLevel(', () => balanced('function knobLevel(')],
   ['function knobWire(', () => balanced('function knobWire(')],
+  // The typing key's box, so it sends exactly the same on both surfaces.
+  ['function typeWire(', () => balanced('function typeWire(')],
+  // And the width that makes the keyboard key's keys square, for a pop-out.
+  ['function keysSquareWidth(', () => balanced('function keysSquareWidth(')],
   ['function esc(', () => balanced('function esc(')],
   // Before validateTpl, which calls it — and the card's renderer calls it too,
   // which is the whole point of it being here rather than inline in the importer.
@@ -109,7 +113,7 @@ const js = PARTS.map(([, take]) => take()).join('\n\n');
 const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS', 'RMT_KEY_H',
   'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_LCD_LABELLED', 'lcdLabel', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
   'RMT_ICON_NAME', 'RMT_ICON_LEN', 'RMT_ICON_MAX', 'RMT_ICONS', 'iconBad', 'useIcons', 'iconNames',
-  'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl', 'knobWire', 'knobLevel'];
+  'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl', 'knobWire', 'knobLevel', 'typeWire', 'keysSquareWidth'];
 const defined = new Set([...js.matchAll(/(?:^|\n)\s*(?:const|function)\s+([A-Za-z_$][\w$]*)/g)]
   .map(m => m[1]));
 for (const name of EXPORTS) {

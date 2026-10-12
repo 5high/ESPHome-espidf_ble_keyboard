@@ -595,6 +595,7 @@ espidf_ble_keyboard:
 | `"caps_lock:on"` / `"caps_lock:off"` / `"caps_lock:toggle"` | Set the host's Caps Lock. On and off tap it only when the host reports it the other way, then wait for the host to confirm; a host that has never reported it is left alone. |
 | `"prev_host"` / `"next_host"` / `"last_host"` | Remote keys for `switch_host:prev`, `switch_host:next` and `switch_host:back` below. |
 | `"next_keyboard"` / `"prev_host_all"` / `"next_host_all"` | Web page remote only: move the tab to the next [linked keyboard](#linking-a-second-keyboard), or step through every host of every linked keyboard. Anywhere else they do nothing. |
+| `"keyboard"` / `"typing"` | Remote keys, on the web page and the Home Assistant remote card: open the on-screen keyboard under the remote, or a box your phone's or PC's own keyboard types into. See [Typing from the remote](#typing-from-the-remote). Anywhere else they do nothing. |
 | `"spare1"` … `"spare32"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
 | `"left_click"` | Mouse left click. |
 | `"right_click"` | Mouse right click. |
@@ -1278,7 +1279,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, for a `lit:` button `lit_bg`, `lit_fg`, and `level` for the track of a [level pot](#pots) or a [slider](#sliders) — green unless set. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -2199,6 +2200,7 @@ when you aren't using it.
 - **Remove buttons per host** — untick the remote buttons a host doesn't need; they disappear for that host only — see [Removing remote buttons per host](#removing-remote-buttons-per-host)
 - **Section toggles** — show/hide Keyboard, Mouse, Remote, and Buttons sections individually (state saved in browser)
 - **Pop out the remote** — **Pop out** in the Remote heading moves the remote into a window of its own, so it stays in reach while you scroll the page or work in another app; **Pin back** returns it to where it was. See [Popping the remote out](#popping-the-remote-out)
+- **A keyboard on the remote** — a style's `keyboard` and `typing` keys open the on-screen keys or a box your phone's or PC's own keyboard types into, under the remote and in its pop-out. See [Typing from the remote](#typing-from-the-remote)
 - **Remote shapes stand on their own once popped out** — a style that draws its own remote body (Style 1, 2, 4, 5 and most imported ones) loses the card from behind it in the popped-out window, so what floats there is the remote's shape, shadow and taper rather than a slab inside a slab. In the page it keeps its card, like the sections around it. Styles that draw no body of their own keep theirs everywhere
 - **Zoom controls** — resize keyboard and mouse with +/- buttons in 5% steps (50%–200%), zoom level saved in browser
 - **Light/dark theme** — toggle between dark and light mode, preference saved in browser
@@ -2232,6 +2234,17 @@ The same remote-only view is at `http://<device>/ble_keyboard#remote` — bookma
 - **Let the operating system pin it** — works on any address and browser. On Windows, PowerToys' **Always on Top**: focus the window and press `Win+Ctrl+T`. Most Linux desktops offer it in the title-bar menu; macOS needs a third-party tool.
 
 If the browser refuses the on-top window for any other reason, the remote opens as an ordinary window and the placeholder shows why.
+
+### Typing from the remote
+
+Two keys open a keyboard under the remote. Add them to a style like any other key; the builder lists them under **Keyboard**.
+
+- **`keyboard`** shows the on-screen keys: the Keyboard card's, in its layout, sharing its Shift and Caps.
+- **`typing`** opens a box with the cursor in it, so a phone brings up its own keyboard and a PC types with the real one. Each change goes to the host as you make it: letters as text, deletions and autocorrect's swaps as Backspaces and the new text, so they land right while the host's cursor is at the end of what you typed. Enter, Tab, Esc, the arrows, F1–F12 and Ctrl or Win shortcuts go as keys, and a paste is typed. Enter starts the box again.
+
+Press the key again to close it, or the other key to switch. The keyboard goes with the remote when it pops out, and the window grows to hold it — wide enough for square keys, about 580px — and shrinks back when it closes. It types wherever the remote's keys go, a [linked keyboard](#linking-a-second-keyboard) included. The keys themselves send nothing, so in a macro or a Host Action they do nothing.
+
+The [Home Assistant remote card](#media-remote-card-for-home-assistant) has both keys too, in its pop-out as well. Set its `keyboard_layout` to the device's layout for the on-screen keys.
 
 ### Linking a second keyboard
 
@@ -2729,6 +2742,7 @@ show_host_switcher: true      # false hides the switcher, still following the ho
 popout: on_top                # pop-out button: on_top, window or false (default: on_top)
 popout_border: false          # the card around the popped-out remote (default: false)
 popout_header: true           # the name and host switcher line in the pop-out (default: true)
+keyboard_layout: us           # on-screen keys a style's keyboard key opens: us, uk, de or be (default: us)
 ```
 
 Optional configuration:
@@ -2758,6 +2772,7 @@ Optional configuration:
 | `popout` | `on_top` | The pop-out button in the card's header, on desktop browsers. `on_top` opens the remote in a window that stays above the others where the browser can make one, and an ordinary window where it can't; `window` always opens an ordinary one; `false` removes the button. See [Popping the card out](#popping-the-card-out). |
 | `popout_border` | `false` | The card around the popped-out remote — its border, name and host switcher. Off, the window holds the remote and nothing else, as the device page's pop-out does; but while the host switcher shows, the border comes with it, since the name and switcher sit on the card. |
 | `popout_header` | `true` | The line with the card's name and host switcher, in the pop-out window. Off leaves it out there — and so leaves the border to `popout_border` alone — while the card left on the dashboard keeps its switcher, so the host can still be changed there. |
+| `keyboard_layout` | `us` | The layout of the on-screen keys a style's `keyboard` key opens: `us`, `uk`, `de` or `be`. Set it to the device's, as on the keyboard card. See [Typing from the remote](#typing-from-the-remote). |
 
 #### Remote styles on the card
 
@@ -2827,6 +2842,7 @@ Features:
 - **Per-host remapping** — every button is a named action, so any of them can do something different on each paired host.
 - **Host switcher** — optional prev/next buttons in the header to change the active BLE host, with its name and MAC address. Switching here also repaints the card's [per-host hidden buttons](#removing-remote-buttons-per-host). See [Host switcher on the cards](#host-switcher-on-the-cards).
 - **Pop-out** — the remote in a window of its own on a desktop browser, on top of other windows where the browser allows. See [Popping the card out](#popping-the-card-out).
+- **Keyboard keys** — a style's `keyboard` and `typing` keys open the on-screen keys or a typing box under the remote, in the pop-out too. See [Typing from the remote](#typing-from-the-remote).
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 
 <img src="docs/remote_ha_card.png" height="560" alt="Remote HA card, full remote"> <img src="docs/remote_style6.png" height="560" alt="Remote in Style 6, with logo keys and a screen">

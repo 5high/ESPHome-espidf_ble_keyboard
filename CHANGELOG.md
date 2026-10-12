@@ -4,6 +4,14 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
+## Unreleased
+
+### Added
+- **Keys that bring up a keyboard on the remote.** One opens the on-screen keys under the remote; the
+  other opens a box that a phone's or PC's own keyboard types into, each letter reaching the host as it
+  is typed. They come with the remote into its pop-out, which grows to hold them, on the device page
+  and the Home Assistant remote card. The card gains a setting for the keys' layout.
+
 ## v1.16.0 — 2026-10-09
 
 ### Added

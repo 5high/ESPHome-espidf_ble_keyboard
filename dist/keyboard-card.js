@@ -610,6 +610,24 @@ class BleKeyboardCard extends HTMLElement {
         display: block;
         height: 100%;
       }
+      /* Drawn inside the remote card, under the remote its keyboard key belongs
+         to: the keys alone, on that card's background, with no card or header of
+         their own. The header stays in the DOM, so Caps Lock still follows the
+         host. */
+      :host([embedded]) {
+        height: auto;
+      }
+      :host([embedded]) .card {
+        background: none;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+        height: auto;
+        overflow: visible;
+      }
+      :host([embedded]) .header {
+        display: none;
+      }
       .card {
         background: var(--ha-card-background, var(--card-background-color, #fff));
         border-radius: var(--ha-card-border-radius, 12px);
@@ -1461,6 +1479,9 @@ class BleKeyboardCard extends HTMLElement {
 
   // Which keyboard this card drives: the one the selected host belongs to.
   _peerName() {
+    // Embedded in the remote card, it types wherever that card's keys go, which
+    // that card alone knows.
+    if (this._peerSource) return this._peerSource();
     return (this._target && this._target.peer) || null;
   }
 

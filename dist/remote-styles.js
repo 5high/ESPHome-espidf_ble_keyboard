@@ -46,7 +46,9 @@ host_next:'<path d="M6.41 6L5 7.41 9.58 12 5 16.59 6.41 18l6-6zM13 6l-1.41 1.41L
 host_last:'<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>',
 kb_next:'<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>',
 all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1.41zM4 6v12H2V6h2z"/>',
-all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>'};
+all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>',
+kb_show:'<path d="M20 7v10H4V7h16m0-2H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/>',
+text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>'};
 
 const RMT_BTNS={
 remote_power:{t:'Power',i:'power',c:'power',g:0},
@@ -142,7 +144,13 @@ last_host:{t:'Last Host',i:'host_last',g:9},
 // nothing.
 next_keyboard:{t:'Next Keyboard',i:'kb_next',g:9},
 prev_host_all:{t:'Prev Host (all)',i:'all_prev',g:9},
-next_host_all:{t:'Next Host (all)',i:'all_next',g:9}};
+next_host_all:{t:'Next Host (all)',i:'all_next',g:9},
+// Keys that open a keyboard under the remote: the on-screen keys, or a box the
+// phone's or PC's own keyboard types into. The remote acts on them itself —
+// here and on the Home Assistant card — and never sends them, and the keyboard
+// opens wherever the remote is, popped out included.
+keyboard:{t:'Keyboard',i:'kb_show',g:10},
+typing:{t:'Typing box',i:'text_in',g:10}};
 
 const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb-pad',
 maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',
@@ -767,6 +775,133 @@ function knobWire(root,send){
   root.addEventListener('contextmenu',e=>{
     if(e.target.closest&&e.target.closest('.rmt-knob-ring,.rmt-slider-track,.rmt-slider-mk'))e.preventDefault();
   });
+}
+
+function typeWire(input,send){
+  // HID usages. Named keys by name; the rest by where the key is (code), which is
+  // what a usage numbers anyway, so a shortcut needs no layout.
+  const SPECIAL={Enter:0x28,Escape:0x29,Backspace:0x2A,Tab:0x2B,Insert:0x49,Home:0x4A,PageUp:0x4B,
+    Delete:0x4C,End:0x4D,PageDown:0x4E,ArrowRight:0x4F,ArrowLeft:0x50,ArrowDown:0x51,ArrowUp:0x52};
+  const CODES={Space:0x2C,Minus:0x2D,Equal:0x2E,BracketLeft:0x2F,BracketRight:0x30,Backslash:0x31,
+    Semicolon:0x33,Quote:0x34,Backquote:0x35,Comma:0x36,Period:0x37,Slash:0x38,IntlBackslash:0x64};
+  const usage=e=>{
+    if(SPECIAL[e.key])return SPECIAL[e.key];
+    const f=/^F([1-9]|1[0-2])$/.exec(e.key);if(f)return 0x39+(+f[1]);
+    let m=/^Key([A-Z])$/.exec(e.code||'');if(m)return 0x04+m[1].charCodeAt(0)-65;
+    m=/^Digit([0-9])$/.exec(e.code||'');if(m)return m[1]==='0'?0x27:0x1D+(+m[1]);
+    return CODES[e.code]||0;
+  };
+  // What a character costs in a form-encoded body, so each piece of text stays
+  // well inside what the keyboard takes in one request.
+  const cost=ch=>ch===' '||/^[A-Za-z0-9*\-._]$/.test(ch)?1:3*new TextEncoder().encode(ch).length;
+  // What the box held last time — all of it already on its way to the host.
+  let last='',composing=false;
+  input.value='';
+  const q=[];let running=false,waits=0,badT=null;
+  function flag(){
+    input.classList.add('tw-bad');
+    clearTimeout(badT);badT=setTimeout(()=>input.classList.remove('tw-bad'),1500);
+  }
+  // Text typed while earlier text is still going joins it, so fast typing goes
+  // in a few requests rather than one per letter.
+  function push(op){
+    const t=q[q.length-1];
+    if(op.s!==undefined&&t&&t.s!==undefined)t.s+=op.s;
+    else q.push(op);
+    if(!running)next();
+  }
+  function next(){
+    const op=q[0];
+    if(!op){running=false;return}
+    running=true;
+    let part=null,p;
+    if(op.s!==undefined){
+      let n=0;part='';
+      for(const ch of op.s){if(n+cost(ch)>400&&part)break;part+=ch;n+=cost(ch)}
+      p=send.text(part,waits>0);
+    }else p=send.key(op.m,op.k);
+    const done=()=>{
+      // Whatever joined the text while this piece was out stays queued behind it.
+      if(part!==null&&op.s.length>part.length)op.s=op.s.slice(part.length);
+      else q.shift();
+      // 35ms apart: the keyboard drops an identical string or key repeated within
+      // 30ms, which the same letter typed twice would otherwise risk.
+      setTimeout(next,35);
+    };
+    Promise.resolve(p).then(r=>{
+      // Still typing what it has. The same piece again shortly, for up to half a
+      // minute, as the paste bar waits.
+      if(r==='busy'&&++waits<=100){setTimeout(next,300);return}
+      if(r==='busy')flag();
+      waits=0;done();
+    },()=>{waits=0;flag();done()});
+  }
+  input.addEventListener('compositionstart',()=>{composing=true});
+  input.addEventListener('compositionend',()=>{composing=false});
+  input.addEventListener('input',()=>{
+    const v=input.value;
+    let i=0;const n=Math.min(v.length,last.length);
+    while(i<n&&v.charCodeAt(i)===last.charCodeAt(i))i++;
+    // Never between the two halves of an emoji: the host deletes characters.
+    if(i>0&&/[\uD800-\uDBFF]/.test(last[i-1]))i--;
+    const del=Array.from(last.slice(i)).length;
+    for(let k=0;k<del;k++)push({m:0,k:0x2A});
+    if(i<v.length)push({s:v.slice(i)});
+    last=v;
+    // The host has the whole line, so a long one only needs its end on show.
+    // Not mid-word on a phone: replacing the text would end what its keyboard is
+    // composing.
+    if(!composing&&v.length>200){input.value=Array.from(v).slice(-100).join('');last=input.value}
+  });
+  input.addEventListener('keydown',e=>{
+    // An input method at work types through the box, Enter included — there it
+    // picks a word rather than ending a line. So does a key still to be combined
+    // with the next one (Dead).
+    if(e.isComposing||e.keyCode===229||e.key==='Dead'||e.key==='Process')return;
+    const altGr=!!(e.getModifierState&&e.getModifierState('AltGraph'));
+    // Paste is the one shortcut the box keeps: what it pastes is typed.
+    if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.code==='KeyV')return;
+    if(e.shiftKey&&e.key==='Insert')return;
+    let kc;
+    if(e.key.length===1){
+      // A character types through the box, unless Ctrl or Win makes it a
+      // shortcut. AltGr reads as Ctrl+Alt on Windows and still types (@ on a
+      // German keyboard), so it stays text.
+      if(!(e.ctrlKey||e.metaKey)||altGr)return;
+      kc=usage(e);
+    }else if(e.key==='Backspace'){
+      // With text in the box the deletion is seen as it happens. An empty box
+      // has nothing to delete, so its Backspace goes from here.
+      if(input.value)return;
+      kc=0x2A;
+    }else kc=usage(e);
+    if(!kc)return;
+    e.preventDefault();
+    push({m:(e.ctrlKey&&!altGr?1:0)|(e.shiftKey?2:0)|(e.altKey&&!altGr?4:0)|(e.metaKey?8:0),k:kc});
+    // A line ends with Enter, and a field with Tab: the box starts again.
+    if(kc===0x28||kc===0x2B){input.value='';last=''}
+  });
+  return {reset(){input.value='';last='';input.classList.remove('tw-bad')}};
+}
+
+function keysSquareWidth(rows){
+  let w=0;
+  for(const r of rows){
+    const win=r.ownerDocument.defaultView||window;
+    const ks=[...r.children];
+    if(!ks.length)continue;
+    let units=0,h=0,fixed=0,f1=Infinity;
+    for(const k of ks){
+      const s=win.getComputedStyle(k),n=p=>parseFloat(s[p])||0;
+      const f=n('paddingLeft')+n('paddingRight')+n('borderLeftWidth')+n('borderRightWidth');
+      units+=n('flexGrow')||1;fixed+=f;f1=Math.min(f1,f);
+      // The whole key, border to border, whichever box its height describes.
+      h=Math.max(h,n('height')+(s.boxSizing==='border-box'?0:
+        n('paddingTop')+n('paddingBottom')+n('borderTopWidth')+n('borderBottomWidth')));
+    }
+    w=Math.max(w,fixed+units*Math.max(0,h-f1)+(parseFloat(win.getComputedStyle(r).columnGap)||0)*(ks.length-1));
+  }
+  return Math.ceil(w);
 }
 
 function esc(s){
@@ -1814,4 +1949,4 @@ export const RMT_CSS = `
 .rmt-head .macro-edit-btn{margin-left:0}
 `;
 
-export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_KEY_H, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl, knobWire, knobLevel };
+export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_KEY_H, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl, knobWire, knobLevel, typeWire, keysSquareWidth };
