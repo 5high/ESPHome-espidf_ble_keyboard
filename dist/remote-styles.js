@@ -928,7 +928,7 @@ function btnHtml(item,inner){
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='',ic='',hgt=0,ih=0;
+    let cls='',css='',lit='',ic='',hgt=0,ih=0,sz=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -938,6 +938,12 @@ function btnHtml(item,inner){
         if(/^h:\d{2,3}$/.test(tok)){
           const n=Number(tok.slice(2));
           if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])hgt=n;
+          continue;
+        }
+        // s:<px> — the same care, for the key's size.
+        if(/^s:\d{2,3}$/.test(tok)){
+          const n=Number(tok.slice(2));
+          if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])sz=n;
           continue;
         }
         // ih:<px> — the same care, for the icon's height.
@@ -965,6 +971,8 @@ function btnHtml(item,inner){
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
+    // A custom property the .rmt-px rules read, which also size its icon.
+    if(sz){cls+=' rmt-px';css+=(css?';':'')+'--rb-px:'+sz+'px'}
     // Last, so a colour token written after it cannot replace it.
     if(hgt)css+=(css?';':'')+'height:'+hgt+'px';
     // A custom property the .rmt-ih rules read, so every key size and shape
@@ -1326,6 +1334,13 @@ function validateTpl(t){
             return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
           continue;
         }
+        // s:<px> — the key's size, a whole number within RMT_KEY_H.
+        if(tok.indexOf('s:')===0){
+          const n=/^s:\d{2,3}$/.test(tok)?Number(tok.slice(2)):NaN;
+          if(!(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1]))
+            return 's: sets a size of '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels, e.g. s:50 — "'+tok+'"';
+          continue;
+        }
         // h:<px> — the key's height, a whole number within RMT_KEY_H.
         if(tok.indexOf('h:')===0){
           const n=/^h:\d{2,3}$/.test(tok)?Number(tok.slice(2)):NaN;
@@ -1341,7 +1356,7 @@ function validateTpl(t){
           continue;
         }
         if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px>, ih:<px> or '+RMT_OPTS.join(', ');
+          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, s:<px>, h:<px>, ih:<px> or '+RMT_OPTS.join(', ');
       }
       return '';
     };
@@ -1925,6 +1940,8 @@ export const RMT_CSS = `
 .rmt-btn.lg{width:56px;height:56px}
 .rmt-btn.xl{width:64px;height:64px;font-size:13px}
 .rmt-btn.xl svg{width:26px;height:26px}
+.rmt-btn.rmt-px{width:var(--rb-px);height:var(--rb-px)}
+.rmt-btn.rmt-px svg{width:calc(var(--rb-px)*5/12);height:calc(var(--rb-px)*5/12)}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
 .rmt-btn.fill{flex:1 1 0;width:auto;min-width:0;padding:0 8px;overflow:hidden;text-align:center;line-height:1.2}
@@ -1935,6 +1952,7 @@ export const RMT_CSS = `
 .rmt-btn.sm svg.rmt-ico{height:16px}
 .rmt-btn.md svg.rmt-ico{height:18px}
 .rmt-btn.xl svg.rmt-ico{height:26px}
+.rmt-btn.rmt-px svg.rmt-ico{width:auto;height:calc(var(--rb-px)*5/12)}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.fill svg.rmt-ico{max-width:80%}
 .rmt-btn.rmt-ih svg{width:var(--rb-ih);height:var(--rb-ih);max-height:100%}

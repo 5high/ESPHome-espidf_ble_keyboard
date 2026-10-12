@@ -631,6 +631,11 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.lg{width:56px;height:56px}
 .rmt-btn.xl{width:64px;height:64px;font-size:13px}
 .rmt-btn.xl svg{width:26px;height:26px}
+/* s:<px> — a size of the key's own instead of one of the four, its icon in
+   proportion (20 on 48, as a normal key's). With the size rules, so wide and fill
+   still replace its width, and h:<px>, inline, still sets another height. */
+.rmt-btn.rmt-px{width:var(--rb-px);height:var(--rb-px)}
+.rmt-btn.rmt-px svg{width:calc(var(--rb-px)*5/12);height:calc(var(--rb-px)*5/12)}
 .rmt-btn.wide{width:auto;min-width:56px;padding:0 14px;border-radius:22px}
 .rmt-btn.sq{border-radius:10px}
 /* A key that shares its row's width equally with the other fill keys in it, so
@@ -658,6 +663,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .rmt-btn.sm svg.rmt-ico{height:16px}
 .rmt-btn.md svg.rmt-ico{height:18px}
 .rmt-btn.xl svg.rmt-ico{height:26px}
+.rmt-btn.rmt-px svg.rmt-ico{width:auto;height:calc(var(--rb-px)*5/12)}
 .rmt-btn.wide svg.rmt-ico,.rmt-btn.app svg.rmt-ico{max-width:120px;height:18px}
 .rmt-btn.fill svg.rmt-ico{max-width:80%}
 /* ih:<px> — the icon's height set on the key, after every size rule above so it
@@ -1150,7 +1156,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
-A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm md lg xl wide sq squircle</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
+A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm md lg xl wide sq squircle</code>, <code>s:50</code> for a size in pixels instead of <code>sm</code>&ndash;<code>xl</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
 </div>
 </div>
 <div class="hid-panel" id="ico-panel">
@@ -1883,10 +1889,10 @@ function themeValueBad(k,v){
 // renderer applies them and the importer validates them, and they must agree —
 // keeping them in one place is what stops the two drifting apart.
 const RMT_OPTS=['light','sm','md','lg','xl','wide','sq','squircle','fill'];
-// h:<px> sets a key's height, the one number a button option carries. The
-// bounds are what the renderer and the importer both test, so a style that
-// passed import cannot draw a key taller than this: past 160 a single key
-// outgrows any remote, and under 24 its label no longer fits.
+// h:<px> sets a key's height, and s:<px> its size — width and height alike, in
+// place of sm/md/lg/xl. The bounds are what the renderer and the importer both
+// test, so a style that passed import cannot draw a key bigger than this: past
+// 160 a single key outgrows any remote, and under 24 its label no longer fits.
 const RMT_KEY_H=[24,160];
 // ih:<px> sets the height of the icon on a key, apart from the key's own size:
 // some logos are drawn with room around them and read small at the size keys
@@ -5095,6 +5101,13 @@ function insertStep(el,val){
             return 'icon: needs a name of 1-15 characters, a-z, 0-9 or _ — "'+tok+'"';
           continue;
         }
+        // s:<px> — the key's size, a whole number within RMT_KEY_H.
+        if(tok.indexOf('s:')===0){
+          const n=/^s:\d{2,3}$/.test(tok)?Number(tok.slice(2)):NaN;
+          if(!(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1]))
+            return 's: sets a size of '+RMT_KEY_H[0]+'-'+RMT_KEY_H[1]+' pixels, e.g. s:50 — "'+tok+'"';
+          continue;
+        }
         // h:<px> — the key's height, a whole number within RMT_KEY_H.
         if(tok.indexOf('h:')===0){
           const n=/^h:\d{2,3}$/.test(tok)?Number(tok.slice(2)):NaN;
@@ -5110,7 +5123,7 @@ function insertStep(el,val){
           continue;
         }
         if(!RMT_HEX.test(tok)&&RMT_OPTS.indexOf(tok)<0)
-          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, h:<px>, ih:<px> or '+RMT_OPTS.join(', ');
+          return 'Unknown button option "'+tok+'" — use a #hex colour, lit:<source>, icon:<name>, s:<px>, h:<px>, ih:<px> or '+RMT_OPTS.join(', ');
       }
       return '';
     };
@@ -6449,11 +6462,12 @@ function insertStep(el,val){
   // token the fields have no place for — a second colour, say — is kept as it is,
   // and still comes last, so it still wins as it did.
   function sbOpts(str){
-    const r={icon:'',size:'',shape:'',width:'',light:false,colour:'',h:'',ih:'',lit:'',litc:'',rest:[]};
+    const r={icon:'',size:'',px:'',shape:'',width:'',light:false,colour:'',h:'',ih:'',lit:'',litc:'',rest:[]};
     for(const tok of String(str||'').split(/\s+/)){
       if(!tok)continue;
       if(tok.indexOf('icon:')===0&&!r.icon)r.icon=tok.slice(5);
       else if(tok.indexOf('lit:')===0&&!r.lit){const b=tok.split(':');r.lit=b[1]||'';r.litc=b[2]||''}
+      else if(/^s:\d+$/.test(tok)&&!r.px)r.px=tok.slice(2);
       else if(/^h:\d+$/.test(tok)&&!r.h)r.h=tok.slice(2);
       else if(/^ih:\d+$/.test(tok)&&!r.ih)r.ih=tok.slice(3);
       else if(RMT_HEX.test(tok)&&!r.colour)r.colour=tok;
@@ -6465,15 +6479,21 @@ function insertStep(el,val){
     }
     return r;
   }
-  const sbOptsOut=r=>[r.icon&&'icon:'+r.icon,r.size,r.shape,r.width,r.light&&'light',r.colour,r.h&&'h:'+r.h,
+  // The four sizes in pixels, as the .rmt-btn size rules draw them.
+  const SB_SIZE_PX={sm:36,md:42,lg:56,xl:64};
+  const sbOptsOut=r=>[r.icon&&'icon:'+r.icon,r.size,r.px&&'s:'+r.px,r.shape,r.width,r.light&&'light',r.colour,r.h&&'h:'+r.h,
     r.ih&&'ih:'+r.ih,r.lit&&'lit:'+r.lit+(r.litc?':'+r.litc:'')].concat(r.rest).filter(Boolean).join(' ');
   // How a key looks, as fields. put(fn) runs fn on the parsed options and writes
   // them back; a grid's options for every key use the same fields.
   function sbLook(o,put,fp){
     return [
       sbText('Icon',fp+'ic',o.icon,v=>put(r=>{r.icon=v.trim()}),{list:'sb-icons',max:15,w:'90px',ph:'none'}),
-      sbSelect('Size',fp+'sz',o.size,[['','normal (48)'],['sm','sm (36)'],['md','md (42)'],['lg','lg (56)'],
-                                      ['xl','xl (64)']],v=>put(r=>{r.size=v})),
+      // One of the four sizes, or px and a number: a key carries one or the other.
+      // px starts from the size the key had, so switching changes nothing yet.
+      sbSelect('Size',fp+'sz',o.px?'px':o.size,[['','normal (48)'],['sm','sm (36)'],['md','md (42)'],['lg','lg (56)'],
+                                      ['xl','xl (64)'],['px','px — your own']],
+               v=>put(r=>{if(v==='px'){r.px=r.px||String(SB_SIZE_PX[r.size]||48);r.size=''}else{r.size=v;r.px=''}})),
+      o.px?sbNum('',fp+'px',o.px,RMT_KEY_H,null,v=>put(r=>{r.px=v===undefined?'':String(v)}),'px'):null,
       sbSelect('Shape',fp+'sh',o.shape,[['','round'],['sq','sq — squarer'],['squircle','squircle — app tile']],
                v=>put(r=>{r.shape=v})),
       sbSelect('Width',fp+'wd',o.width,[['','its own'],['wide','wide — a pill'],['fill','fill — shares the row']],
@@ -8264,7 +8284,7 @@ apiPost('release').catch(()=>{});
     const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
     const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
-    let cls='',css='',lit='',ic='',hgt=0,ih=0;
+    let cls='',css='',lit='',ic='',hgt=0,ih=0,sz=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
         if(!tok)continue;
@@ -8274,6 +8294,12 @@ apiPost('release').catch(()=>{});
         if(/^h:\d{2,3}$/.test(tok)){
           const n=Number(tok.slice(2));
           if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])hgt=n;
+          continue;
+        }
+        // s:<px> — the same care, for the key's size.
+        if(/^s:\d{2,3}$/.test(tok)){
+          const n=Number(tok.slice(2));
+          if(n>=RMT_KEY_H[0]&&n<=RMT_KEY_H[1])sz=n;
           continue;
         }
         // ih:<px> — the same care, for the icon's height.
@@ -8301,6 +8327,8 @@ apiPost('release').catch(()=>{});
         else if(RMT_OPTS.indexOf(tok)>=0)cls+=' '+tok;
       }
     }
+    // A custom property the .rmt-px rules read, which also size its icon.
+    if(sz){cls+=' rmt-px';css+=(css?';':'')+'--rb-px:'+sz+'px'}
     // Last, so a colour token written after it cannot replace it.
     if(hgt)css+=(css?';':'')+'height:'+hgt+'px';
     // A custom property the .rmt-ih rules read, so every key size and shape

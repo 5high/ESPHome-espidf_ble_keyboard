@@ -11,6 +11,8 @@ web control page shows the matching version badge.
   other opens a box that a phone's or PC's own keyboard types into, each letter reaching the host as it
   is typed. They come with the remote into its pop-out, which grows to hold them, on the device page
   and the Home Assistant remote card. The card gains a setting for the keys' layout.
+- **Keys of any size.** A remote style can give a key its size in pixels instead of one of the four
+  sizes, its icon scaled to match; the builder offers it beside them.
 
 ### Changed
 - **Room for 32 macros**, up from 16. Copying macros to a linked keyboard checks the room that

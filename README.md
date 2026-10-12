@@ -1260,6 +1260,7 @@ The remote card **redraws as you type**, so the layout is visible before it is s
 | `#rrggbb` | the button's own colour |
 | `light` | an inverted key — light face, dark glyph, as remotes use for Home and app buttons |
 | `sm` / `md` / `lg` / `xl` | 36 / 42 / 56 / 64 px instead of the usual 48 |
+| `s:<px>` | a size of your own instead, 24–160 px — width and height alike, the icon in proportion: `s:50`. A key takes one or the other; in the builder it is **px** under Size. With `h:<px>` it sets the width alone: `s:60 h:36` is a 60 × 36 key |
 | `wide` | an auto-width pill |
 | `sq` | square-ish corners |
 | `squircle` | an app tile — a rounded square whose corners flow into its sides, as TV launchers draw apps. Pairs with a size: `"lg squircle"` |
