@@ -836,6 +836,9 @@ class BleKbWebHandler : public AsyncWebHandler {
       append_hold_json(json, kb_, slot);
       json += ",\"macros\":";
       append_macro_digest(json, kb_);
+      // How many it can hold, which a copy checks for room against. Firmware
+      // without it held 16.
+      json += ",\"macro_max\":" + std::to_string(EspidfBleKeyboard::MAX_MACROS);
       json += "}";
       send_response(200, "application/json", json);
       return;

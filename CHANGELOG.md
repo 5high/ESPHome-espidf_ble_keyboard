@@ -12,6 +12,10 @@ web control page shows the matching version badge.
   is typed. They come with the remote into its pop-out, which grows to hold them, on the device page
   and the Home Assistant remote card. The card gains a setting for the keys' layout.
 
+### Changed
+- **Room for 32 macros**, up from 16. Copying macros to a linked keyboard checks the room that
+  keyboard actually has, so one on older firmware is still counted as holding 16.
+
 ## v1.16.0 — 2026-10-09
 
 ### Added

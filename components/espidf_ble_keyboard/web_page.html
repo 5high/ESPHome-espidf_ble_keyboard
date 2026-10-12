@@ -3779,7 +3779,9 @@ function insertStep(el,val){
   // and afterwards to see each one arrive, since the writes are only queued here.
   const mcBar=document.getElementById('mc-copy'),mcKbs=document.getElementById('mc-copy-kbs');
   const mcGo=document.getElementById('mc-copy-go'),mcNote=document.getElementById('mc-copy-note');
-  const MC_MAX=16;   // MAX_MACROS, in espidf_ble_keyboard.h — keep in step
+  // How many a keyboard holds: its /state says (MAX_MACROS); firmware too old to
+  // say held 16.
+  const mcMax=st=>Number.isInteger(st.macro_max)?st.macro_max:16;
   let mcItems=[],mcPicked=new Set(),mcTo=new Set(),mcKey='',mcBusy=false;
   const kbLabel=peerLabel;
   function mcMsg(m,err){mcNote.textContent=m||'';mcNote.style.color=err?'#c44':'var(--muted)'}
@@ -3847,7 +3849,7 @@ function insertStep(el,val){
       if(!p.ok||!st)stop.push(kbLabel(n)+" isn't answering");
       else if(!Array.isArray(st.macros))stop.push(kbLabel(n)+' needs newer firmware to take macros');
       else{
-        const h=new Map(st.macros.map(m=>[m[0],m[1]])),room=MC_MAX-h.size;
+        const h=new Map(st.macros.map(m=>[m[0],m[1]])),room=mcMax(st)-h.size;
         if(items.filter(it=>!h.has(it.name)).length>room)stop.push(kbLabel(n)+' has room for '+room+' more');
         have[n]=h;
       }

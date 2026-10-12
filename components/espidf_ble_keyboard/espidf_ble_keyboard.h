@@ -302,7 +302,10 @@ class EspidfBleKeyboard : public Component
   const std::vector<ButtonInfo> &get_buttons() const { return buttons_; }
 
   // User-editable macros (NVS-persisted, web-editable)
-  static const uint8_t MAX_MACROS = 16;
+  // 32 since v1.17.0; 16 before. Each is at most ~300 B of heap (31-char name,
+  // 255-char action), so a full set of long ones costs ~9 KB on a device whose
+  // free heap dips to ~23 KB — the reason it is not higher.
+  static const uint8_t MAX_MACROS = 32;
   const std::vector<ButtonInfo> &get_macros() const { return macros_; }
   /// Goes up each time Host Actions, an on-connect action or the macros are
   /// saved, whoever saved them. /status carries it, so an open page reads those

@@ -2263,7 +2263,7 @@ espidf_ble_keyboard:
 The page then shows a bar of that keyboard's hosts below its own. Tap one and that keyboard switches to it, and the remote, keyboard, paste box and mouse all drive it — the remote in that host's style with its hidden, hold and repeat lists. Macros do too: tapped on that tab, a macro runs on this keyboard and its keys go to the linked one. Tap one of this keyboard's hosts to come back. The choice belongs to the tab (`?peer=bedroom` in the address), so one tab can drive the bedroom while another drives the lounge.
 
 - The Position Finder, Buttons and Host Actions stay on this keyboard, and the linked one's settings stay on its own page.
-- Macros can be copied to it. In the Macros card's edit mode, tick the macros and the keyboard, as Host Actions are copied to other hosts. A different macro of the same name over there is replaced, after asking. Before copying it also says when a macro calls one the other keyboard won't have, or when that keyboard is full (16). Afterwards it says which copies didn't arrive.
+- Macros can be copied to it. In the Macros card's edit mode, tick the macros and the keyboard, as Host Actions are copied to other hosts. A different macro of the same name over there is replaced, after asking. Before copying it also says when a macro calls one the other keyboard won't have, or when that keyboard is full (32, or 16 on firmware before v1.17.0). Afterwards it says which copies didn't arrive.
 - Host Actions can be copied to its hosts the same way: they're listed after this keyboard's own in the Host Actions copy, as `Bedroom KB: Bed TV`. The other keyboard's Host Actions are read through this one first, so replacing one still asks first and shows what it replaces. They're read again afterwards to check they arrived. Only this keyboard needs firmware with this; copying macros needs it on both.
 - Everything goes by way of this keyboard, so it is only as quick as the Wi-Fi between them: mouse movement is gathered up and sent a piece at a time rather than streamed.
 - Styles are not copied between keyboards by the link itself, but **Export all** on one page and **Import** on the other copies the lot in one paste — see [Copying styles to another keyboard](#copying-styles-to-another-keyboard). Until a style is there, that host draws the full remote and its bar says which style is missing.
@@ -2913,7 +2913,7 @@ It stops being optional when the poll can't run — when Home Assistant is serve
 
 ## Web Macros
 
-When `web_control: true` is enabled, macros can be created, edited, and deleted directly from the web UI at `/ble_keyboard` — no reflash needed. Macros are stored in NVS flash and persist across reboots. Up to 16 macros are supported.
+When `web_control: true` is enabled, macros can be created, edited, and deleted directly from the web UI at `/ble_keyboard` — no reflash needed. Macros are stored in NVS flash and persist across reboots. Up to 32 macros are supported (16 before v1.17.0).
 
 The web UI provides:
 - **Add form** with name, action textarea, and a preset dropdown (media, system, clipboard, consumer HID, text, delays). Your YAML-defined `espidf_ble_keyboard` buttons also appear here under a **Buttons** group — pick one to reuse its action. The Host Actions card shares this dropdown and additionally lists your saved macros under a **Macros** group, so an override can reuse a macro's actions.
