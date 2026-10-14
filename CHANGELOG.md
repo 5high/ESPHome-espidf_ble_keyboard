@@ -18,6 +18,10 @@ web control page shows the matching version badge.
 - **Room for 32 macros**, up from 16. Copying macros to a linked keyboard checks the room that
   keyboard actually has, so one on older firmware is still counted as holding 16.
 
+### Fixed
+- **A linked keyboard that is switched off no longer slows this keyboard's buttons.** While a page
+  was open, each check on whether it was back held presses up for two or three seconds.
+
 ## v1.16.0 — 2026-10-09
 
 ### Added

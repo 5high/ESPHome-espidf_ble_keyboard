@@ -35,6 +35,10 @@
 #include "web_control.h"
 #endif
 
+#ifdef USE_BLE_KB_PEERS
+struct mdns_search_once_s;  // a linked keyboard's .local lookup, from mdns.h
+#endif
+
 
 namespace esphome {
 namespace espidf_ble_keyboard {
@@ -1338,6 +1342,7 @@ class EspidfBleKeyboard : public Component
     uint16_t port{80};
     uint32_t ip{0};        // network order; 0 until a .local name has been looked up
     bool by_name{false};   // a .local name, looked up again if its address stops answering
+    mdns_search_once_s *lookup{nullptr};  // a lookup still running; the next request takes its answer
     // The login it last asked for, answered up front on every request after.
     enum : uint8_t { AUTH_NONE, AUTH_BASIC, AUTH_DIGEST } auth{AUTH_NONE};
     std::string realm, nonce, opaque;
@@ -1377,14 +1382,18 @@ class EspidfBleKeyboard : public Component
   static const uint32_t PEER_INTEREST_MS = 15000;
   static const uint32_t PEER_READ_KEEP_MS = 15000;  // a peer_read reply is given again for this long
   static const uint32_t PEER_SLOW_MS = 700;
+  static const uint32_t PEER_YIELD_CHECK_MS = 25;  // how often a read looks for a press to give way to
   static const size_t PEER_MAX_REPLY = 6144;
   static const size_t PEER_MAX_CHAIN = 240;
-  // BUSY is its 409: short of memory for the reply just now, not gone.
-  enum PeerResult : uint8_t { PEER_OK, PEER_BUSY, PEER_NO_REPLY, PEER_UNREACHABLE };
+  // BUSY is its 409: short of memory for the reply just now, not gone. YIELDED
+  // is a read that stopped for a queued press before sending anything: no
+  // answer either way.
+  enum PeerResult : uint8_t { PEER_OK, PEER_BUSY, PEER_NO_REPLY, PEER_UNREACHABLE, PEER_YIELDED };
   PeerResult peer_request_(Peer &p, bool post, const char *path, const std::string &body, std::string *out);
   PeerResult peer_exchange_(Peer &p, bool post, const char *path, const std::string &body, std::string *out,
                             int &status, std::string &challenge);
-  bool peer_resolve_(Peer &p);
+  PeerResult peer_resolve_(Peer &p, bool yield);
+  bool action_waiting_() const { return action_queue_ != nullptr && uxQueueMessagesWaiting(action_queue_) > 0; }
   void peer_auth_append_(Peer &p, const char *method, const char *path, std::string &out);
   bool peer_take_challenge_(Peer &p, const std::string &challenge);
   void run_peer_action_(const std::string &action);

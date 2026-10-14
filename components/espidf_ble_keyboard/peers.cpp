@@ -5,8 +5,10 @@
 // Everything that talks to a peer runs on the action task. Presses go out in
 // the order they were queued, so a macro's delay: still means what it says, and
 // the cache is refreshed only on that task's quiet ticks and only while a page
-// is asking for it. The web task never waits on the network: /peers takes a
-// reference to the cache under peer_mutex_ and sends it from there, uncopied.
+// is asking for it. A refresh still finding or reaching its keyboard stops the
+// moment a press is queued, so one that is switched off holds no press up. The
+// web task never waits on the network: /peers takes a reference to the cache
+// under peer_mutex_ and sends it from there, uncopied.
 //
 // The HTTP here is a few hundred lines on plain sockets rather than ESP-IDF's
 // esp_http_client, which linked its TLS stack and a DNS resolver for requests
@@ -197,26 +199,58 @@ void EspidfBleKeyboard::note_page_load() {
 }
 
 // The peer's address: given, or found over mDNS for a .local name and kept until
-// a connection to it fails.
-bool EspidfBleKeyboard::peer_resolve_(Peer &p) {
+// a connection to it fails. A read waiting on the lookup stops for a press like
+// it does on a connection, and the lookup carries on: the next request takes its
+// answer rather than asking again and waiting the whole time over.
+EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_resolve_(Peer &p, bool yield) {
   if (p.ip != 0)
-    return true;
+    return PEER_OK;
 #ifdef USE_MDNS
-  const size_t dot = p.host.find('.');
-  const std::string label = p.host.substr(0, dot);
-  esp_ip4_addr_t addr{};
-  if (mdns_query_a(label.c_str(), PEER_MDNS_TIMEOUT_MS, &addr) == ESP_OK && addr.addr != 0) {
-    p.ip = addr.addr;
-    const auto *b = reinterpret_cast<const uint8_t *>(&addr.addr);  // network order
+  if (p.lookup == nullptr) {
+    const std::string label = p.host.substr(0, p.host.find('.'));
+    p.lookup = mdns_query_async_new(label.c_str(), nullptr, nullptr, MDNS_TYPE_A, PEER_MDNS_TIMEOUT_MS, 1, nullptr);
+  }
+  // The lookup ends itself at its timeout; the margin is for one that never says so.
+  const uint32_t start = millis(), limit = PEER_MDNS_TIMEOUT_MS + 500;
+  mdns_result_t *found = nullptr;
+  bool done = false;
+  while (p.lookup != nullptr && !done) {
+    if (yield && action_waiting_())
+      return PEER_YIELDED;
+    const uint32_t spent = millis() - start;
+    if (spent >= limit)
+      break;
+    uint32_t slice = limit - spent;
+    if (yield && slice > PEER_YIELD_CHECK_MS)
+      slice = PEER_YIELD_CHECK_MS;
+    done = mdns_query_async_get_results(p.lookup, slice, &found, nullptr);
+  }
+  if (done) {
+    // The first IPv4 address, as mdns_query_a would take it.
+    for (const mdns_result_t *r = found; r != nullptr && p.ip == 0; r = r->next) {
+      for (const mdns_ip_addr_t *a = r->addr; a != nullptr; a = a->next) {
+        if (a->addr.type == ESP_IPADDR_TYPE_V4 && a->addr.u_addr.ip4.addr != 0) {
+          p.ip = a->addr.u_addr.ip4.addr;
+          break;
+        }
+      }
+    }
+    if (found != nullptr)
+      mdns_query_results_free(found);
+    mdns_query_async_delete(p.lookup);  // frees the lookup, not its results
+  }
+  p.lookup = nullptr;  // finished, or never will: the next request asks afresh
+  if (p.ip != 0) {
+    const auto *b = reinterpret_cast<const uint8_t *>(&p.ip);  // network order
     ESP_LOGI(TAG, "Peer %s is at %u.%u.%u.%u", p.name.c_str(), b[0], b[1], b[2], b[3]);
-    return true;
+    return PEER_OK;
   }
   ESP_LOGW(TAG, "Peer %s: nothing answered for %s", p.name.c_str(), p.host.c_str());
 #else
   ESP_LOGW(TAG, "Peer %s: %s needs mDNS, which this config has turned off — give its address instead",
            p.name.c_str(), p.host.c_str());
 #endif
-  return false;
+  return PEER_UNREACHABLE;
 }
 
 // The Authorization header for the next request, from the challenge the peer
@@ -317,14 +351,33 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_exchange_(Peer &p, bool po
   if (r < 0 && errno != EINPROGRESS)
     return PEER_UNREACHABLE;
   if (r < 0) {
-    fd_set wr;
-    FD_ZERO(&wr);
-    FD_SET(fd, &wr);
-    struct timeval ctv = tv;
+    // A read waits in short slices and stops the moment a press is queued. It
+    // has sent nothing yet, so stopping costs nothing, and a keyboard that is
+    // off would otherwise hold that press for the whole timeout. A press is the
+    // queued job itself, and waits it out.
+    const bool yield = !post;
+    const uint32_t start = millis();
+    int ready = 0;
+    while (ready == 0) {
+      if (yield && action_waiting_())
+        return PEER_YIELDED;
+      const uint32_t spent = millis() - start;
+      if (spent >= timeout)
+        return PEER_UNREACHABLE;
+      uint32_t slice = timeout - spent;
+      if (yield && slice > PEER_YIELD_CHECK_MS)
+        slice = PEER_YIELD_CHECK_MS;
+      fd_set wr;
+      FD_ZERO(&wr);
+      FD_SET(fd, &wr);
+      struct timeval ctv;
+      ctv.tv_sec = slice / 1000;
+      ctv.tv_usec = (slice % 1000) * 1000;
+      ready = lwip_select(fd + 1, nullptr, &wr, nullptr, &ctv);
+    }
     int err = 0;
     socklen_t len = sizeof(err);
-    if (lwip_select(fd + 1, nullptr, &wr, nullptr, &ctv) <= 0 ||
-        lwip_getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0)
+    if (ready < 0 || lwip_getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0)
       return PEER_UNREACHABLE;
   }
   lwip_fcntl(fd, F_SETFL, flags);
@@ -429,12 +482,14 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_exchange_(Peer &p, bool po
 // the challenge, and every request after that answers it up front.
 EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_request_(Peer &p, bool post, const char *path,
                                                                const std::string &body, std::string *out) {
-  if (!peer_resolve_(p))
-    return PEER_UNREACHABLE;
+  // Only a read gives way to a press: every GET is refresh_peers_ reading the
+  // peer, and every POST is the queued job itself.
   const uint32_t start = millis();
+  PeerResult r = peer_resolve_(p, !post);
+  if (r == PEER_UNREACHABLE)
+    return r;
   int status = 0;
-  PeerResult r = PEER_NO_REPLY;
-  for (int attempt = 0; attempt < 2; attempt++) {
+  for (int attempt = 0; r == PEER_OK && attempt < 2; attempt++) {
     std::string challenge;
     if (out != nullptr)
       out->clear();
@@ -443,6 +498,11 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_request_(Peer &p, bool pos
       break;
   }
   const uint32_t took = millis() - start;
+  // Stopped for a press: it held nothing up, and is no answer either way.
+  if (r == PEER_YIELDED) {
+    ESP_LOGD(TAG, "Peer %s: GET %s gave way to a press after %u ms", p.name.c_str(), path, (unsigned) took);
+    return r;
+  }
   // Normal is well under this; a slower answer is what fills the action queue.
   if (took > PEER_SLOW_MS)
     ESP_LOGW(TAG, "Peer %s: %s %s took %u ms", p.name.c_str(), post ? "POST" : "GET", path, (unsigned) took);
@@ -897,8 +957,9 @@ bool EspidfBleKeyboard::coalesce_peer_presses_(std::string &job) {
   return merged > 1;
 }
 
-// On the action task's quiet ticks. One peer per tick, so a press queued behind
-// a refresh waits on one request at most.
+// On the action task's quiet ticks, one peer per tick. A press queued meanwhile
+// stops a read still finding or reaching its keyboard, and otherwise waits on
+// that one request at most.
 void EspidfBleKeyboard::refresh_peers_() {
   const uint32_t now = millis();
   const uint32_t interest = peer_interest_ms_.load();
@@ -980,6 +1041,8 @@ void EspidfBleKeyboard::refresh_peers_() {
     std::string body;
     body.reserve(2048);
     const PeerResult r = peer_request_(p, false, path.c_str(), std::string(), &body);
+    if (r == PEER_YIELDED)
+      return;  // still wanted: read on a later quiet tick
     const bool ok = r == PEER_OK && body.size() >= 2 && body.front() == '{' && body.back() == '}';
     // peer_request_ has logged what went wrong with the request itself; this
     // says it was the page's read that failed, and catches a reply that is not
@@ -1014,6 +1077,12 @@ void EspidfBleKeyboard::refresh_peers_() {
     std::string body;
     body.reserve(p.state ? p.state->size() + 128 : 2048);
     const PeerResult r = peer_request_(p, false, "/api/ble_keyboard/state", std::string(), &body);
+    if (r == PEER_YIELDED) {
+      // Not an answer either way. Asked again once things are quiet, rather
+      // than in the next gap between presses.
+      p.next_due_ms = (millis() + PEER_QUIET_MS) | 1;
+      return;
+    }
     // Embedded as-is in /peers, so anything that is not one JSON object is
     // treated as no answer rather than passed on to break the page.
     const bool ok = r == PEER_OK && body.size() >= 2 && body.front() == '{' && body.back() == '}';
