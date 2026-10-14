@@ -240,6 +240,10 @@ button:
     keyboard_id: my_keyboard
     name: "Sleep PC"
     action: "sleep"
+  - platform: espidf_ble_keyboard
+    keyboard_id: my_keyboard
+    name: "Do Not Disturb"
+    action: "do_not_disturb"
 
   - platform: espidf_ble_keyboard
     keyboard_id: my_keyboard

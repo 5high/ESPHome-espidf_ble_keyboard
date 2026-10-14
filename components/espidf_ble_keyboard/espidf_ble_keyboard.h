@@ -160,6 +160,7 @@ class EspidfBleKeyboard : public Component
   void send_volume_up();
   void send_volume_down();
   void send_mute();
+  void send_do_not_disturb();
   void send_mouse_click_start(uint8_t buttons);
   void send_mouse_click_release();
   void send_mouse_click(uint8_t buttons);
@@ -1449,6 +1450,7 @@ class EspidfBleKeyboard : public Component
   uint8_t caps_corrected_(uint8_t modifier, bool letter) const;
   void send_battery_notify_();
   void send_mouse_report_(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
+  void send_system_(uint8_t usage);
 
   // Non-blocking string typing state machine (driven from loop())
   // Keystrokes are pre-resolved (UTF-8 decoded + layout-mapped) at enqueue time,

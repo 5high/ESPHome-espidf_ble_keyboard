@@ -170,7 +170,7 @@ action: "consumer:0x0223"   # Browser Home
 | Brightness Up | `0x006F` | Increase display brightness |
 | Brightness Down | `0x0070` | Decrease display brightness |
 
-> **Note:** For `sleep` and `shutdown`, use the dedicated named actions instead — they use the more reliable Generic Desktop HID page (`0x81`/`0x82`).
+> **Note:** For `sleep` and `shutdown`, use the dedicated named actions instead — they use the more reliable Generic Desktop HID page (`0x81`/`0x82`). `do_not_disturb` sends System Do Not Disturb (`0x9B`) on the same page.
 
 ---
 

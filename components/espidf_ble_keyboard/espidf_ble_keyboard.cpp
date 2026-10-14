@@ -4192,16 +4192,32 @@ void EspidfBleKeyboard::send_ctrl_alt_del() {
     send_kb_report_(0, 0);
 }
 
-void EspidfBleKeyboard::send_sleep() {
-    if (!is_connected_) return;
-    uint8_t report[1] = {0x82};  // System Sleep
+// One tap on the System Control report (ID 3): a Generic Desktop usage, then
+// the release.
+void EspidfBleKeyboard::send_system_(uint8_t usage) {
+    uint8_t report[1] = {usage};
     esp_ble_gatts_send_indicate(s_gatts_if, conn_id_, s_system_report_handle, 1, report, false);
     esp_ble_gatts_set_attr_value(s_system_report_handle, 1, report);
     vTaskDelay(pdMS_TO_TICKS(50));
     uint8_t release[1] = {0};
     esp_ble_gatts_send_indicate(s_gatts_if, conn_id_, s_system_report_handle, 1, release, false);
     esp_ble_gatts_set_attr_value(s_system_report_handle, 1, release);
+}
+
+void EspidfBleKeyboard::send_sleep() {
+    if (!is_connected_) return;
+    send_system_(0x82);  // System Sleep
     ESP_LOGI(TAG, "System Sleep sent");
+}
+
+// System Do Not Disturb (HUTRR94). The System Control report already spans
+// every Generic Desktop usage up to 0xFF, so this needs no new report map and
+// no host has to re-pair. Android 16 reads it as its Do Not Disturb key and
+// toggles DND; a host that doesn't know the usage ignores it.
+void EspidfBleKeyboard::send_do_not_disturb() {
+    if (!is_connected_) return;
+    send_system_(0x9B);
+    ESP_LOGI(TAG, "System Do Not Disturb sent");
 }
 
 void EspidfBleKeyboard::send_shutdown() {
@@ -4351,13 +4367,7 @@ void EspidfBleKeyboard::release_held() {
 
 void EspidfBleKeyboard::send_power() {
     if (!is_connected_) return;
-    uint8_t report[1] = {0x81};  // System Power Down
-    esp_ble_gatts_send_indicate(s_gatts_if, conn_id_, s_system_report_handle, 1, report, false);
-    esp_ble_gatts_set_attr_value(s_system_report_handle, 1, report);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    uint8_t release[1] = {0};
-    esp_ble_gatts_send_indicate(s_gatts_if, conn_id_, s_system_report_handle, 1, release, false);
-    esp_ble_gatts_set_attr_value(s_system_report_handle, 1, release);
+    send_system_(0x81);  // System Power Down
     ESP_LOGI(TAG, "System Power Down sent");
 }
 
@@ -5549,6 +5559,7 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     else if (action == "volume_up")    send_volume_up();
     else if (action == "volume_down")  send_volume_down();
     else if (action == "mute")         send_mute();
+    else if (action == "do_not_disturb") send_do_not_disturb();
     // Remote keys for the same thing as switch_host:next|prev|back — bare names,
     // so a style can place them and a host can remap them.
     else if (action == "next_host")    cycle_host_(1);

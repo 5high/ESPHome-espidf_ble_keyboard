@@ -317,7 +317,7 @@ binary_sensor:
 * **web_allow_framing** (Optional, bool): Allow other sites to show the page inside a frame — a Webpage card pointing at the device's address, for instance. Defaults to `false`, because a framed page is still on its own origin: every same-origin check the device makes is satisfied while the click that triggered it belongs to whoever built the frame. Turn it on only for a dashboard you run yourself. Not needed when Home Assistant serves the page itself — see [Setting up a keyboard from outside the house](#setting-up-a-keyboard-from-outside-the-house).
 * **peers** (Optional, list): Other keyboards running this component that this one's web page can drive over Wi-Fi — see [Linking a second keyboard](#linking-a-second-keyboard). Up to 4, each with a `name` (1–15 of `a-z`, `0-9`, `_`), a `url` (`http://<IP address>[:port]` or `http://<name>.local`, no path) and, when that keyboard's `web_server:` has a login, its `username` and `password`. Needs `web_control: true`.
 * **api_services** (Optional, bool): Auto-register all documented Home Assistant services (`run_action`, `run_macro`, `send_string`, `send_key`, `send_consumer`, `mouse_move`, `mouse_scroll`, `mouse_click`, `mouse_hold`, `mouse_release`, `mouse_abs`, `set_battery_level`, `switch_host`, `forget_host`) directly from the component — no `api: services:` yaml needed, and the HA cards work out of the box. Requires the `api:` component. Defaults to `false`. **Don't combine with the manual `api: services:` snippets below** — you'd register the same service names twice; delete the manual copies when enabling this. See [Home Assistant services](#home-assistant-services).
-* **ha_action** (Optional, bool): Allow the `ha_action:` prefix to fire Home Assistant actions from the device — how a remote key reaches things BLE can't, such as an IR blaster's `remote.send_command`. Requires the `api:` component (`api: homeassistant_services: true` is enabled automatically) and Home Assistant's own per-device permission. Defaults to `false` — the web page is unauthenticated unless you set that up, so this is a deliberate opt-in. See [Calling Home Assistant Actions](#calling-home-assistant-actions).
+* **ha_action** (Optional, bool): Allow the `ha_action:` prefix to fire Home Assistant actions from the device — how a remote key reaches things BLE can't, such as an IR blaster's `remote.send_command`. Requires the `api:` component (`api: homeassistant_services: true` is enabled automatically) and Home Assistant's own per-device permission, **Allow the device to perform Home Assistant actions**. Defaults to `false` — the web page is unauthenticated unless you set that up, so this is a deliberate opt-in. See [Calling Home Assistant Actions](#calling-home-assistant-actions).
 * **host_slots** (Optional, int): Number of host slots for multi-host switching (1–10). Each slot can store a bonded host. Switch between hosts using buttons, HA services, or the web control page. Defaults to `4`.
 * **mouse_sensitivity** (Optional, float): Web mouse base movement multiplier. Defaults to `1.0`. Range: 0.1–10.0.
 * **mouse_acceleration** (Optional, float): Web mouse speed-based acceleration factor. Defaults to `0.15`. Range: 0.0–2.0.
@@ -563,7 +563,8 @@ espidf_ble_keyboard:
 | `"hibernate"` | Hibernate the PC — saves to disk, full power off. Requires `powercfg /hibernate on`. |
 | `"shutdown"` | HID System Power Down signal — clean OS-level shutdown. |
 | `"power"` | HID power button — triggers Windows power button action. |
-| `"mute"` | Toggle mute. |
+| `"mute"` | Toggle mute (`0x00E2`). Android mutes whatever its volume keys would change: on a Samsung phone with *Use Volume keys for media* on, that's media, so the slider drops to 0. It never selects the phone's Sound / Vibrate / Mute mode — see [Phone sound modes](#phone-sound-modes-android). |
+| `"do_not_disturb"` | Toggle Do Not Disturb — HID System Do Not Disturb (Generic Desktop `0x9B`). Android 16 and later — works on a Galaxy Z Fold8; a host that doesn't know it ignores it. |
 | `"volume_up"` | Volume up. |
 | `"volume_down"` | Volume down. |
 | `"play_pause"` | Play / pause media. |
@@ -1280,7 +1281,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `do_not_disturb`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, for a `lit:` button `lit_bg`, `lit_fg`, and `level` for the track of a [level pot](#pots) or a [slider](#sliders) — green unless set. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -1576,7 +1577,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"if:<source>: <when on> \|\| <when off>"` | Branch on something the device actually knows, instead of `alternate:`'s blind counter. Branches split on `\|\|` and each may be a whole sequence. Nothing runs until the source has a state. See [Branching on real state](#branching-on-real-state). |
 | `"<key>=<number>"` | Run that key's [Host Action](#host-actions-per-host-overrides) with each `{value}` in it replaced by the number — `spare12=40`. What a [pot](#pots) with `set` sends. |
 | `"lcd:<text>"` | Write text to an [LCD panel](#lcd-panels)'s `@msg` line, so a key can name where it just took you — `consumer:0x0223 \| lcd:Netflix`. Up to 64 characters. |
-| `"ha_action:<domain>.<action>;<key>=<value>;…"` | Ask Home Assistant to run one of its own actions — e.g. an IR blaster's `remote.send_command`. Needs `ha_action: true`. See [Calling Home Assistant Actions](#calling-home-assistant-actions). |
+| `"ha_action:<domain>.<action>;<key>=<value>;…"` | Ask Home Assistant to run one of its own actions — e.g. an IR blaster's `remote.send_command`. Needs `ha_action: true` here and **Allow the device to perform Home Assistant actions** in HA. See [Calling Home Assistant Actions](#calling-home-assistant-actions). |
 
 ---
 
@@ -1762,7 +1763,7 @@ espidf_ble_keyboard:
   ha_action: true
 ```
 
-and **Allow the device to perform Home Assistant actions** in the device's ESPHome integration options in HA. Without the HA-side permission the call is dropped *silently*; without `ha_action: true` the device refuses it and logs why. The component enables `api: homeassistant_services: true` for you.
+and **Allow the device to perform Home Assistant actions** in the device's ESPHome integration options in HA. Without the HA-side permission the keyboard's log shows nothing: HA rejects the call, logs an error and raises a warning under *Settings → System → Repairs*. Without `ha_action: true` the device refuses the call and logs why. The component enables `api: homeassistant_services: true` for you.
 
 Syntax rules:
 
@@ -1773,6 +1774,33 @@ Syntax rules:
 * Overrides and macros cap at 255 characters, so a raw `b64:` IR payload doesn't fit — teach the blaster the command and call it by name instead.
 
 > `ha_action:` reaches whatever HA lets the device call, and the web page is open to the network unless you have given it a password — which is why this is off by default. Enable it on a trusted network, or alongside [authentication](#securing-the-web-control-page).
+
+### Phone sound modes (Android)
+
+Bluetooth has no key for an Android phone's Sound / Vibrate / Mute mode: `mute` mutes media, and `do_not_disturb` toggles Do Not Disturb on Android 16 and later. To set the mode itself, have Home Assistant's Companion app on the phone do it. Create a script in HA, choose *Edit in YAML*, replace everything with this, and save. Replace `<phone>` with the phone's name in HA, which is what follows `notify.mobile_app_` in *Developer tools → Actions*:
+
+```yaml
+alias: Phone ringer
+fields:
+  mode:
+    description: "normal, vibrate, silent, or next to step through them"
+sequence:
+  - variables:
+      current: "{{ states('sensor.<phone>_ringer_mode') }}"
+      wanted: "{{ mode | default('next', true) }}"
+      target: >-
+        {{ {'normal': 'vibrate', 'vibrate': 'silent'}.get(current, 'normal') if wanted == 'next' else wanted }}
+  - action: notify.mobile_app_<phone>
+    data:
+      message: command_ringer_mode
+      data:
+        command: "{{ target }}"
+mode: single
+```
+
+Then `ha_action:script.phone_ringer;mode=next` on a key steps Sound → Vibrate → Mute → Sound, starting from the mode the phone is actually in, so changing it by hand doesn't put the key out of step. `mode=normal`, `mode=vibrate` and `mode=silent` set one mode. The key or macro needs both switches from [Calling Home Assistant Actions](#calling-home-assistant-actions): `ha_action: true` in the keyboard's YAML and **Allow the device to perform Home Assistant actions** in HA.
+
+On the phone, switch on *Remotely control app & device* for your server: in the Companion app, go to *Settings → Companion app* and tap the server. Without it the app ignores commands and a run does nothing at all. `next` also needs the app's *Ringer mode* sensor, which is off until you enable it under *Settings → Companion app → Manage sensors*. The first command asks for Do Not Disturb access. If a run posts an ordinary notification instead of changing the mode, the command wasn't one of the three modes. The app may also turn Do Not Disturb on with `silent`, and off with the other two.
 
 ---
 

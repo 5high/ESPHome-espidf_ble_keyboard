@@ -13,6 +13,9 @@ web control page shows the matching version badge.
   and the Home Assistant remote card. The card gains a setting for the keys' layout.
 - **Keys of any size.** A remote style can give a key its size in pixels instead of one of the four
   sizes, its icon scaled to match; the builder offers it beside them.
+- **A Do Not Disturb key**, as an action and a remote key, for hosts that know it — Android 16 and
+  later. The README also shows how to set an Android phone to sound, vibrate or mute through the Home
+  Assistant app, which Bluetooth alone can't do.
 
 ### Changed
 - **Room for 32 macros**, up from 16. Copying macros to a linked keyboard checks the room that
