@@ -2,7 +2,7 @@
 
 This is a custom [ESPHome](https://esphome.io) component that turns an ESP32 into a Bluetooth Low Energy (BLE) HID keyboard and mouse that can switch between up to ten paired hosts. It serves its own web remote and ships Home Assistant dashboard cards. Any key on any host can also fire a Home Assistant action, such as an IR command, so one remote can mix Bluetooth keys and IR on the same page — and a host slot can have Bluetooth turned off entirely to be a pure IR remote, making it a universal remote as well. This component targets **ESP-IDF Bluedroid GATTS** (rather than NimBLE), chosen for the HID behavior and host compatibility validated in this project.
 
-<img src="docs/overview.png" width="520" alt="The web page's remote, keyboard and mouse">
+<img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/overview.png" width="520" alt="The web page's remote, keyboard and mouse">
 
 ## Features
 
@@ -1043,7 +1043,7 @@ api:
 
 When `web_control: true` is enabled, a full control page is available at `http://<device-ip>/ble_keyboard` with **keyboard, mouse, Position Finder, remote, buttons, macro, and host action** sections. Section toggle buttons in the toolbar let you show/hide (and reorder) each section. When `host_slots` > 1, a host bar appears below the toolbar showing all slots. Click a slot to switch. The active slot is highlighted. Occupied slots show the stored Bluetooth address. The **Position Finder** (locked by default; click **Edit** to use) sends the cursor to an exact spot and calibrates `mouse_goto` per host — see [Absolute mouse positioning](#absolute-mouse-positioning).
 
-<img src="docs/web_server.png" width="427" alt="Web Control Page">
+<img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/web_server.png" width="427" alt="Web Control Page">
 
 The page is stored and served gzip-compressed, the same way ESPHome's own web UI serves its
 dashboard, so it costs about 73 KB of flash instead of 243 KB and loads a good deal faster. Every
@@ -1116,7 +1116,7 @@ A dangling reference is flagged: any override row pointing at a macro that no lo
 
 **Editing without a reflash:** the web UI has a **Host Actions** card. Pick a host slot, then add or edit overrides for it; they persist to NVS and win over the YAML value. To give other hosts the same ones, tick them, tick the hosts under the list and press **Copy**; if a host already has a different action under the same name, it asks before replacing it. A [linked keyboard](#linking-a-second-keyboard)'s hosts are listed too, as `Bedroom KB: Bed TV`. The action-name box offers every overridable name as you type, and the replacement box has the same preset dropdown as the macro editor, so neither has to be typed from memory. Rows tagged `YAML` come from your config and are read-only — set an override of the same name to shadow one, and delete that override to fall back. You can edit a slot other than the one currently active.
 
-<img src="docs/host_actions.png" width="420" alt="Host Actions card in the web UI">
+<img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/host_actions.png" width="420" alt="Host Actions card in the web UI">
 
 **Forget Host** sits next to the slot picker and removes the BLE bond for whichever slot the picker shows — including one that isn't the active host. It takes two taps: the first turns it red and reads `Confirm?`, the second does it, and it disarms itself after three seconds or if you change slot.
 
@@ -1936,7 +1936,7 @@ Features:
 - **Remote styles** — the card draws the same [remote styles](#remote-style-per-host) the web page does, and can follow the one set for the active host.
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 
-![Mouse HA Card](docs/mouse_ha_card.png)
+![Mouse HA Card](https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/mouse_ha_card.png)
 
 ---
 
@@ -2705,7 +2705,7 @@ Features:
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 - **Keyboard layouts** — `layout: us` (default), `layout: uk`, `layout: de`, or `layout: be` renders the matching ANSI/ISO/QWERTZ/AZERTY shape with the correct shifted labels.
 
-![Keyboard HA Card](docs/keyboard_ha_card.png)
+![Keyboard HA Card](https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/keyboard_ha_card.png)
 
 ---
 
@@ -2876,7 +2876,7 @@ Features:
 - **Keyboard keys** — a style's `keyboard` and `typing` keys open the on-screen keys or a typing box under the remote, in the pop-out too. See [Typing from the remote](#typing-from-the-remote).
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 
-<img src="docs/remote_ha_card.png" height="560" alt="Remote HA card, full remote"> <img src="docs/remote_style6.png" height="560" alt="Remote in Style 6, with logo keys and a screen">
+<img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/remote_ha_card.png" height="560" alt="Remote HA card, full remote"> <img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/remote_style6.png" height="560" alt="Remote in Style 6, with logo keys and a screen">
 
 ---
 
