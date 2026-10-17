@@ -108,7 +108,7 @@
 import {
   RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, RMT_LCD_LABELLED, lcdLabel,
   sectionHtml, validateTpl, themeValueBad, useIcons, knobWire, knobLevel, typeWire, keysSquareWidth,
-} from './remote-styles.js?v=1.17.0-dev';
+} from './remote-styles.js?v=1.17.0';
 
 // Which build of this file the browser actually loaded, read from the ?v= its
 // importer wrote rather than from a constant that has to be remembered at
@@ -140,7 +140,7 @@ const KBD_LAYOUTS = ['us', 'uk', 'de', 'be'];
 // on a dashboard it is the copy already running. A pop-out window has only this
 // card's module, and loads its own.
 let kbdLoad = null;
-const loadKeyboardCard = () => kbdLoad || (kbdLoad = import('./keyboard-card.js?v=1.17.0-dev').catch(() => {}));
+const loadKeyboardCard = () => kbdLoad || (kbdLoad = import('./keyboard-card.js?v=1.17.0').catch(() => {}));
 
 // ── Pop-out ──────────────────────────────────────────────────────────────────
 // The remote can leave the dashboard for a window of its own: one that stays

@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
-## Unreleased
+## v1.17.0 — 2026-10-17
 
 ### Added
 - **Keys that bring up a keyboard on the remote.** One opens the on-screen keys under the remote; the
