@@ -751,16 +751,19 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 #media-card>h2{flex-wrap:wrap}
 .rmt-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
 .rmt-head .macro-edit-btn{margin-left:0}
-/* The keyboard or mouse pad the remote's keyboard, typing and touchpad keys open,
-   under the remote and inside its card. Never named .rmt-: tools/gen-remote-styles.mjs
-   lifts those rules into the Home Assistant card, which draws its own. */
-.rkb{margin:10px auto 0}
-.rkb[hidden],.rkb:not([data-mode=keys]) .rkb-keys,.rkb:not([data-mode=type]) .rkb-type,
-.rkb:not([data-mode=pad]) .rkb-pad{display:none}
+/* The typing box, keys and mouse pad the remote's typing, keyboard and touchpad
+   keys open, under the remote and inside its card — any of them at once, listed in
+   data-open. Never named .rmt-: tools/gen-remote-styles.mjs lifts those rules into
+   the Home Assistant card, which draws its own. */
+.rkb{margin:10px auto 0;display:flex;flex-direction:column;gap:8px}
+.rkb[hidden],.rkb:not([data-open~=keys]) .rkb-keys,.rkb:not([data-open~=type]) .rkb-typerow,
+.rkb:not([data-open~=pad]) .rkb-pad,.rkb-send[hidden]{display:none}
 .rkb-keys .row:last-child{margin-bottom:0}
-/* 16px text: a phone zooms the whole page in on a box with anything smaller. As
-   wide as what holds it, and size="1" so it never asks a window for more. */
-.rkb-type{display:block;width:100%;max-width:320px;margin:0 auto;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:16px;font-family:inherit}
+/* The box, its auto tick and Send. 16px text: a phone zooms the whole page in on
+   a box with anything smaller. As wide as what holds it, and size="1" so it never
+   asks a window for more. */
+.rkb-typerow{display:flex;align-items:center;gap:6px;width:100%;max-width:380px;margin:0 auto}
+.rkb-type{flex:1;min-width:0;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:16px;font-family:inherit}
 .rkb-type:focus{outline:none;border-color:var(--active)}
 /* The hint smaller than what is typed, so it fits a box as narrow as most
    remotes; a box narrower still ends it with an ellipsis rather than mid-word.
@@ -812,7 +815,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="host-bar" id="host-bar" style="display:none"></div>
 <div id="peer-bars"></div>
 <div class="card" id="keyboard">
-<div class="kb-header"><span class="kb-title">Keyboard<span class="kb-drives" data-why="Typing and pointing go to %s, the keyboard the remote is driving." hidden></span></span><div class="kb-paste"><textarea id="kb-paste-text" rows="1" maxlength="5000" placeholder="Paste text to type&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea><button class="kb-paste-btn" id="kb-paste-clip" title="Read clipboard &amp; type it" style="display:none">&#128203;</button><label class="kb-paste-auto" title="Type pasted text immediately"><input type="checkbox" id="kb-paste-autock">auto</label><button class="kb-paste-btn" id="kb-paste-send">Send</button></div><select id="layoutSel" class="layout-sel"></select></div>
+<div class="kb-header"><span class="kb-title">Keyboard<span class="kb-drives" data-why="Typing and pointing go to %s, the keyboard the remote is driving." hidden></span></span><div class="kb-paste"><textarea id="kb-paste-text" rows="1" maxlength="5000" placeholder="Type or paste" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea><button class="kb-paste-btn" id="kb-paste-clip" title="Read clipboard &amp; type it" style="display:none">&#128203;</button><label class="kb-paste-auto" title="Type pasted text immediately"><input type="checkbox" id="kb-paste-autock">auto</label><button class="kb-paste-btn" id="kb-paste-send">Send</button></div><select id="layoutSel" class="layout-sel" title="The active host's keyboard layout, saved for that host. It has to match the layout the host itself is set to."></select></div>
 <div id="kb-rows"></div>
 </div>
 
@@ -883,9 +886,10 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
      here follow whichever machine is selected. The markup this replaced is now
      the `default` entry in RMT_TEMPLATES, which reproduces it exactly. -->
 <div id="rmt-body" class="rmt-body"></div>
-<!-- What the remote's keyboard, typing and touchpad keys open. Inside the card, so
-     it goes wherever the remote goes, popped out included. -->
-<div id="rmt-kbd" class="rkb" hidden><div class="rkb-keys"></div><input class="rkb-type" type="text" size="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="enter" placeholder="Type &mdash; it goes straight to the host" aria-label="Type to the host"><div class="rkb-pad"><div class="touchpad"><span class="touchpad-hint">Drag to move</span></div><div class="mbtn-row" title="Long-press a button to hold it (drag); tap it again to let go"><button class="mbtn" data-btn="1">Left</button><button class="mbtn" data-btn="4">Middle</button><button class="mbtn" data-btn="2">Right</button></div><div class="scroll-row"><button class="sbtn" data-scroll="3">&#9650; Up</button><button class="sbtn" data-scroll="-3">&#9660; Down</button></div></div></div>
+<!-- What the remote's typing, keyboard and touchpad keys open. Inside the card, so
+     it goes wherever the remote goes, popped out included. The box comes first: on a
+     phone its own keyboard covers the bottom of the screen. -->
+<div id="rmt-kbd" class="rkb" hidden><div class="rkb-typerow"><input class="rkb-type" type="text" size="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="enter" placeholder="Type or paste" aria-label="Type to the host"><label class="kb-paste-auto" title="Ticked, it goes as you type. Untick to write first and send it whole with Send &mdash; or with Enter or Tab, which follow it."><input type="checkbox" class="rkb-auto" checked>auto</label><button type="button" class="kb-paste-btn rkb-send" hidden>Send</button></div><div class="rkb-keys"></div><div class="rkb-pad"><div class="touchpad"><span class="touchpad-hint">Drag to move</span></div><div class="mbtn-row" title="Long-press a button to hold it (drag); tap it again to let go"><button class="mbtn" data-btn="1">Left</button><button class="mbtn" data-btn="4">Middle</button><button class="mbtn" data-btn="2">Right</button></div><div class="scroll-row"><button class="sbtn" data-scroll="3">&#9650; Up</button><button class="sbtn" data-scroll="-3">&#9660; Down</button></div></div></div>
 </div>
 
 <div class="card" id="btns-card">
@@ -1127,6 +1131,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="rpt-times">
 <label>Speed <input id="typ-delay" type="number" min="2" max="10000" step="1" title="The time each character takes, split between its key going down and coming up. Lower is faster; raise it for a host that drops characters. Empty = the default."> ms a character</label>
 <label>Characters the layout lacks <select id="typ-uni" title="What becomes of a character this host's layout has no key for &mdash; curly quotes, dashes, an &eacute; on a US layout.&#10;&#10;Plain equivalents: &rsquo; types ', &mdash; types --, &eacute; types e.&#10;Windows Alt codes: the character itself, for anything in Windows-1252. Num Lock is turned on for it and back off after.&#10;Linux Ctrl+Shift+U: the character itself, any of them, in GNOME and other IBus desktops."><option value="">Default</option><option value="fold">Plain equivalents</option><option value="windows">Windows Alt codes</option><option value="linux">Linux Ctrl+Shift+U</option></select></label>
+<label>Layout <select id="typ-lay" title="How the keyboard turns characters into keys for this host. It has to match the layout the host itself is set to. The Keyboard card's picker saves it here too, for the active host."><option value="">Default</option></select></label>
 </div>
 <div class="macro-form"><button id="typ-save">Save typing</button><button id="typ-reset" class="cancel">Reset</button></div>
 <div id="typ-note" style="font-size:11px;color:var(--muted)" hidden>This slot doesn&rsquo;t advertise, so nothing is typed on it.</div>
@@ -1172,6 +1177,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["slider",…]</code></dt><dd>A track to press or drag to a value, as an analogue pot is turned to one: <code>["slider",{"set":"spare12","label":"Lamp"}]</code> sends <code>spare12=&lt;value&gt;</code> once when let go, and <code>{"level":"tv_volume"}</code> sends the presses of <code>"volume_up","volume_down"</code> (or two actions you list) from that reading. Upright unless <code>"horizontal":true</code> (or <code>"vertical":false</code>); <code>length</code> 30&ndash;480 pixels and <code>width</code> 10&ndash;120 (how thick), <code>thumb</code> 8&ndash;120 (its size, apart from the width), <code>"thumb_shape":"line"</code> for a fader cap, <code>min</code> <code>max</code> <code>inc</code>, <code>show</code>, <code>label</code>, <code>label_at</code> and <code>marks</code> as on a pot. A pot&rsquo;s settings and actions carry over, so changing <code>"pot"</code> to <code>"slider"</code> is all a swap takes: <code>size</code> is the length, and a third action is pressed by a tap on the thumb, as a pot&rsquo;s middle key is.</dd>
 <dt><code>["side",…]</code></dt><dd>Sections side by side instead of one under another: <code>["side",["strip",["Vol","volume_up","volume_down"]],["pot",{"size":100}],["strip",["Ch","channel_up","channel_down"]]]</code> puts a knob between two columns. <code>["side",{"gap":24},…]</code> sets the room between them, 0&ndash;200 pixels (12 unless set).</dd>
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
+<dt><code>"keyboard"</code></dt><dd>The layout of the keys its <code>keyboard</code> key opens: <code>"us"</code>, <code>"uk"</code>, <code>"de"</code> or <code>"be"</code>. Left out, the keyboard&rsquo;s own here, and the card&rsquo;s <code>keyboard_layout</code> in Home Assistant.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
 A button is its action name, or <code>["spare1","Netflix"]</code> to label it &mdash; pair that with an override on the same host and the key both reads and does what you want &mdash; or <code>["spare1","Netflix","#e50914 wide"]</code> to colour and size it (<code>light sm md lg xl wide sq squircle</code>, <code>s:50</code> for a size in pixels instead of <code>sm</code>&ndash;<code>xl</code>, or <code>fill h:80</code> for rectangles that share their row's width). Add <code>icon:</code> and a name among those options to put an icon from <strong>Button Icons</strong> on the key &mdash; <code>["spare1","Netflix","icon:netflix lg sq"]</code>, with <code>ih:36</code> to draw it larger or smaller than the key's size gives it &mdash; and its label becomes the tooltip, and what the key shows if the icon is missing. <code>theme</code> is optional, and its <code>bg</code> takes a gradient.</div>
@@ -1677,6 +1683,7 @@ function showStatus(d){
   // only when it changes: the map is a handful of short strings, and the
   // comparison to avoid re-painting them would cost more than the paint.
   if(window.applyLcd)window.applyLcd(d.lcd||null);
+  if(window.syncLayout)window.syncLayout(d.layout);
 }
 function showOffline(text){
   sdot.className='status-dot';
@@ -2512,7 +2519,7 @@ function knobWire(root,send){
 // piece asked for once more. send.key(mod,kc) taps a key. Both return promises
 // and go one at a time, in order, so a key never overtakes text typed before it.
 // Returns reset(), which empties the box without sending anything.
-function typeWire(input,send){
+function typeWire(input,send,ctl){
   // HID usages. Named keys by name; the rest by where the key is (code), which is
   // what a usage numbers anyway, so a shortcut needs no layout.
   const SPECIAL={Enter:0x28,Escape:0x29,Backspace:0x2A,Tab:0x2B,Insert:0x49,Home:0x4A,PageUp:0x4B,
@@ -2530,9 +2537,10 @@ function typeWire(input,send){
   // well inside what the keyboard takes in one request.
   const cost=ch=>ch===' '||/^[A-Za-z0-9*\-._]$/.test(ch)?1:3*new TextEncoder().encode(ch).length;
   // What the box held last time — all of it already on its way to the host.
-  let last='',composing=false;
+  let last='',composing=false,live=true;
   input.value='';
   const q=[];let running=false,waits=0,badT=null;
+  const hint=input.placeholder;
   function flag(){
     input.classList.add('tw-bad');
     clearTimeout(badT);badT=setTimeout(()=>input.classList.remove('tw-bad'),1500);
@@ -2541,7 +2549,7 @@ function typeWire(input,send){
   // in a few requests rather than one per letter.
   function push(op){
     const t=q[q.length-1];
-    if(op.s!==undefined&&t&&t.s!==undefined)t.s+=op.s;
+    if(op.s!==undefined&&t&&t.s!==undefined&&!t.held===!op.held)t.s+=op.s;
     else q.push(op);
     if(!running)next();
   }
@@ -2563,17 +2571,66 @@ function typeWire(input,send){
       // 30ms, which the same letter typed twice would otherwise risk.
       setTimeout(next,35);
     };
+    const fail=()=>{
+      waits=0;flag();
+      // Written text that didn't go goes back into the box, if nothing has been
+      // written there since, rather than being lost — and the Enter or Tab sent
+      // after it with it.
+      if(op.held&&!input.value){
+        input.value=q.filter(o=>o.held).map(o=>o.s).join('');
+        q.length=0;running=false;return;
+      }
+      done();
+    };
     Promise.resolve(p).then(r=>{
       // Still typing what it has. The same piece again shortly, for up to half a
       // minute, as the paste bar waits.
       if(r==='busy'&&++waits<=100){setTimeout(next,300);return}
-      if(r==='busy')flag();
+      if(r==='busy'){fail();return}
       waits=0;done();
-    },()=>{waits=0;flag();done()});
+    },fail);
+  }
+  // The box's text, whole, and the box empty for the next.
+  function flush(){
+    const v=input.value;
+    input.value='';
+    if(v)push({s:v,held:true});
+  }
+  function reset(){input.value='';last='';input.classList.remove('tw-bad')}
+  // Ticked, what is typed goes as it is typed. Unticked the box is written in
+  // first — autocorrect's swaps made, a password checked — and goes whole with
+  // Send, or with Enter or Tab, which follow it. Kept per browser.
+  function setLive(on){
+    live=on;
+    if(ctl.go)ctl.go.hidden=on;
+    input.enterKeyHint=on?'enter':'send';
+    input.placeholder=on?hint:'Write, then Send';
+    // A phone's own corrections help text that waits to be read over; typed
+    // live, each one is a run of Backspaces on the host.
+    input.spellcheck=!on;
+    input.setAttribute('autocorrect',on?'off':'on');
+  }
+  if(ctl&&ctl.auto){
+    let v=null;
+    try{v=localStorage.getItem(ctl.store)}catch(e){}
+    ctl.auto.checked=v!=='0';
+    setLive(ctl.auto.checked);
+    ctl.auto.addEventListener('change',()=>{
+      try{localStorage.setItem(ctl.store,ctl.auto.checked?'1':'0')}catch(e){}
+      setLive(ctl.auto.checked);
+      reset();
+      input.focus();
+    });
+  }
+  if(ctl&&ctl.go){
+    // The box keeps the focus, and a phone its keyboard.
+    ctl.go.addEventListener('mousedown',e=>e.preventDefault());
+    ctl.go.addEventListener('click',()=>{flush();input.focus()});
   }
   input.addEventListener('compositionstart',()=>{composing=true});
   input.addEventListener('compositionend',()=>{composing=false});
   input.addEventListener('input',()=>{
+    if(!live)return;
     const v=input.value;
     let i=0;const n=Math.min(v.length,last.length);
     while(i<n&&v.charCodeAt(i)===last.charCodeAt(i))i++;
@@ -2593,6 +2650,15 @@ function typeWire(input,send){
     // picks a word rather than ending a line. So does a key still to be combined
     // with the next one (Dead).
     if(e.isComposing||e.keyCode===229||e.key==='Dead'||e.key==='Process')return;
+    // Written first: every other key edits the box, as it would any box.
+    if(!live){
+      if((e.key==='Enter'||e.key==='Tab')&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
+        e.preventDefault();
+        flush();
+        push({m:e.shiftKey?2:0,k:e.key==='Enter'?0x28:0x2B});
+      }
+      return;
+    }
     const altGr=!!(e.getModifierState&&e.getModifierState('AltGraph'));
     // Paste is the one shortcut the box keeps: what it pastes is typed.
     if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.code==='KeyV')return;
@@ -2616,7 +2682,10 @@ function typeWire(input,send){
     // A line ends with Enter, and a field with Tab: the box starts again.
     if(kc===0x28||kc===0x2B){input.value='';last=''}
   });
-  return {reset(){input.value='';last='';input.classList.remove('tw-bad')}};
+  return {reset,
+    // The box shut: typed live it starts again, as the host has it all; written
+    // and not sent, the text waits there for it to open again.
+    leave(){if(live)reset();else input.classList.remove('tw-bad')}};
 }
 // How wide a keyboard's rows have to be for every ordinary key (flex 1) to be at
 // least as wide as it is tall. Each key keeps its own padding and border, and
@@ -4150,6 +4219,7 @@ function insertStep(el,val){
   const oncNote=document.getElementById('onc-note');
   const typDelay=document.getElementById('typ-delay');
   const typUni=document.getElementById('typ-uni');
+  const typLay=document.getElementById('typ-lay');
   const typSave=document.getElementById('typ-save');
   const typReset=document.getElementById('typ-reset');
   const typNote=document.getElementById('typ-note');
@@ -4297,7 +4367,7 @@ function insertStep(el,val){
     if(oncIn){oncIn.disabled=quiet;oncSave.disabled=quiet;oncNote.hidden=!quiet}
     // ... and nothing is ever typed on it.
     if(typDelay){
-      [typDelay,typUni,typSave,typReset].forEach(el=>{el.disabled=quiet});
+      [typDelay,typUni,typLay,typSave,typReset].forEach(el=>{if(el)el.disabled=quiet});
       typNote.hidden=!quiet;
     }
     if(!bcastCk)return;
@@ -4744,23 +4814,43 @@ function insertStep(el,val){
     typDelay.placeholder=t.delay_def;
     typUni.options[0].textContent='Default ('+(TYP_NAMES[t.unicode_def]||t.unicode_def)+')';
     typUni.value=t.unicode||'';
+    typT=t;
+    typLayouts();
+    if(typLay)typLay.value=t.layout||'';
     typSlot=slot;
   }
+  // The layouts this keyboard has, named as the Keyboard card's picker names them
+  // once the device has said — which can be after this host's settings arrived,
+  // so the picker calls this again then — and the page's own list until it has.
+  let typT=null;
+  function typLayouts(){
+    if(!typLay||!typT)return;
+    const pick=document.getElementById('layoutSel');
+    const all=pick&&pick.options.length?[...pick.options].map(o=>[o.value,o.textContent]):
+      Object.keys(LAYOUTS).map(k=>[k,k.toUpperCase()]);
+    const keep=typLay.value;
+    typLay.length=1;
+    all.forEach(([v,n])=>typLay.appendChild(new Option(n,v)));
+    const def=all.find(x=>x[0]===typT.layout_def);
+    typLay.options[0].textContent='Default ('+(def?def[1]:typT.layout_def||'')+')';
+    typLay.value=keep;
+  }
+  window.typLayouts=typLayouts;
   if(typToggle)typToggle.addEventListener('click',()=>{
     typPanel.classList.toggle('open');
     typToggle.innerHTML='Typing '+(typPanel.classList.contains('open')?'▴':'▾');
   });
-  [typDelay,typUni].forEach(el=>{if(el)el.addEventListener('input',()=>{typDirty=true})});
-  function saveTyping(delay,uni){
+  [typDelay,typUni,typLay].forEach(el=>{if(el)el.addEventListener('input',()=>{typDirty=true})});
+  function saveTyping(delay,uni,lay){
     const target=typSlot===null?slot:typSlot;
-    apiPost('typing_set',{slot:target,delay:delay,unicode:uni}).then(r=>{
+    apiPost('typing_set',{slot:target,delay:delay,unicode:uni,layout:lay}).then(r=>{
       if(!r.ok)return r.text().then(t=>{alert(t)});
       typDirty=false;
       load();
     });
   }
-  if(typSave)typSave.addEventListener('click',()=>saveTyping(typDelay.value.trim(),typUni.value));
-  if(typReset)typReset.addEventListener('click',()=>saveTyping('',''));
+  if(typSave)typSave.addEventListener('click',()=>saveTyping(typDelay.value.trim(),typUni.value,typLay?typLay.value:''));
+  if(typReset)typReset.addEventListener('click',()=>saveTyping('','',''));
 
   // Called by the host bar whenever the device changes host, however that
   // happened — a tap here, a physical button, Home Assistant.
@@ -5010,13 +5100,14 @@ function insertStep(el,val){
   // style *is* was the first thing lost. Sections print one per line here,
   // exactly as they are written in RMT_BUILTIN above.
   //
-  // Only the four keys the import keeps are written, in a fixed order, so the
+  // Only the keys the import keeps are written, in a fixed order, so the
   // round trip through the box stays byte-stable — anything else a hand-written
   // style carries is dropped here, as it would be on save.
   function tplText(t){
     const p=tplPlain(t),out=['{'];
     out.push('  "id": '+JSON.stringify(p.id)+',');
     out.push('  "name": '+JSON.stringify(p.name)+',');
+    if(p.keyboard)out.push('  "keyboard": '+JSON.stringify(p.keyboard)+',');
     const tk=Object.keys(p.theme||{});
     if(!tk.length)out.push('  "theme": {},');
     else{
@@ -5234,6 +5325,9 @@ function insertStep(el,val){
     if(!Array.isArray(t.sections)||!t.sections.length)return 'sections must be a non-empty array';
     if(t.theme!==undefined&&(typeof t.theme!=='object'||t.theme===null||Array.isArray(t.theme)))
       return 'theme must be an object';
+    // The layout its keyboard key's keys are drawn in.
+    if(t.keyboard!==undefined&&(typeof t.keyboard!=='string'||!/^(us|uk|de|be)$/.test(t.keyboard)))
+      return 'keyboard is the layout its keyboard key opens: us, uk, de or be';
     // Theme values are handed to setProperty, which rejects malformed CSS on its
     // own — but a fetch is well-formed and would have the page load from
     // somewhere else the moment a style is applied. Nothing here needs one.
@@ -5703,13 +5797,21 @@ function insertStep(el,val){
     });
   });
 
+  // The keys the device keeps of a style, in this order. keyboard only when set,
+  // so a style without one is stored as it always was.
+  function tplStored(t){
+    const o={id:t.id,name:String(t.name).trim()};
+    if(t.keyboard)o.keyboard=t.keyboard;
+    o.theme=t.theme||{};o.sections=t.sections;
+    return o;
+  }
   // What Import writes for one style, and the check that it can be written: the
   // compact form the device stores. Says what is wrong with the style itself;
   // where it goes is decided for the whole list at once below.
   function tplCheck(t){
     const why=validateTpl(t);
     if(why)return {err:why};
-    const compact=JSON.stringify({id:t.id,name:t.name.trim(),theme:t.theme||{},sections:t.sections});
+    const compact=JSON.stringify(tplStored(t));
     if(compact.length>RMT_CUSTOM_LEN)
       return {err:'Too big: '+compact.length+' characters, limit '+RMT_CUSTOM_LEN+'.'};
     return {compact:compact};
@@ -6290,7 +6392,7 @@ function insertStep(el,val){
   }
   // How much of a stored style this one uses, and where Import would put it.
   function sbMeter(t){
-    const len=JSON.stringify({id:t.id,name:String(t.name).trim(),theme:t.theme||{},sections:t.sections}).length;
+    const len=JSON.stringify(tplStored(t)).length;
     const was=RMT_CUSTOM.find(c=>c.id===t.id),full=!was&&RMT_CUSTOM.length>=RMT_CUSTOM_MAX;
     sbLen.textContent=len+' of '+RMT_CUSTOM_LEN+' characters · '+(was?'saving replaces “'+was.name+'”':
       full?'all '+RMT_CUSTOM_MAX+' places are taken, so delete a style first':
@@ -6675,6 +6777,16 @@ function insertStep(el,val){
     }),'k-')));
     if(/^spare\d+$/.test(K.a))sbInsp.appendChild(sbEl('div',{class:'sb-hint'},
       ['A spare does nothing until a host gives it a Host Action.']));
+    // The layout of the keys it opens. Kept on the style ("keyboard"), not the
+    // key: every keyboard key in a style opens the same keys.
+    if(K.a==='keyboard'){
+      const lay=sbSelect('Layout','k-kbd',/^(us|uk|de|be)$/.test(t.keyboard)?t.keyboard:'',
+        [['',"the keyboard's"],['us','English (US)'],['uk','English (UK)'],['de','German'],['be','Belgian']],
+        v=>sbDo(x=>{if(v)x.keyboard=v;else delete x.keyboard}));
+      lay.title='The keys it opens, here and on the Home Assistant card. Only the look: a key still types '+
+        "its character, in the host's layout.";
+      sbInsp.appendChild(sbEl('div',{class:'sb-row'},[lay]));
+    }
   }
 
   if(sbCanvas)sbCanvas.addEventListener('click',e=>{
@@ -6990,7 +7102,7 @@ function insertStep(el,val){
   // right now, and where it sat) are this browser's business on this screen, and
   // restoring them onto another one would say a window is open that isn't.
   const UI_KEYS=['blekb_theme','blekb_zoom','blekb_sections','blekb_order','blekb_finder_unlocked',
-                 'blekb_paste_auto','blekb_rmt_ontop'];
+                 'blekb_paste_auto','blekb_rmt_ontop','blekb_rmt_type_auto'];
   const bkSave=document.getElementById('bk-save');
   const bkLoad=document.getElementById('bk-load');
   const bkFile=document.getElementById('bk-file');
@@ -7060,10 +7172,9 @@ function insertStep(el,val){
         +'This REPLACES current settings:\n'
         +'  • '+macros.length+' macro(s) — existing macros are deleted first\n'
         +'  • overrides on '+Object.keys(overrides).length+' host slot(s) — existing saved overrides are cleared\n'
-        +'  • keyboard layout: '+(d.layout||'unchanged')+'\n'
         +'  • calibration for '+Object.keys(scales).length+' slot(s)\n'
         +'  • on-connect actions for '+Object.keys(onc).length+' host slot(s) — the rest are cleared\n'
-        +'  • typing settings for '+Object.keys(typ).length+' host slot(s) — the rest go back to the defaults\n'
+        +'  • typing settings and layouts for '+Object.keys(typ).length+' host slot(s) — the rest go back to the defaults\n'
         +'  • '+(d.icons&&typeof d.icons==='object'?Object.keys(d.icons).length:0)+' button icon(s) — existing icons are deleted first\n'
         +'  • '+(Array.isArray(d.remote_templates)?d.remote_templates.length:0)+' custom remote style(s), and the style each host uses — existing custom styles are deleted first\n'
         +'  • Remote Buttons, Hold to Repeat, Press and Hold and Advertise over Bluetooth, for every host\n'
@@ -7225,15 +7336,14 @@ function insertStep(el,val){
         chain=chain.then(()=>post('broadcast_set',{slot:sl,on:off?0:1}));
         const act=onc[sl]||onc[String(sl)];
         chain=chain.then(()=>post('on_connect_set',{slot:sl,action:typeof act==='string'?act.slice(0,255):''}));
-        // [delay, "method"], 0 and "" for not set; an omitted slot goes back to the defaults.
+        // [delay, "method", "layout"], 0 and "" for not set; an omitted slot goes
+        // back to the defaults, and so does a layout a file from older firmware
+        // has no place for.
         const t=Array.isArray(typ[sl])?typ[sl]:Array.isArray(typ[String(sl)])?typ[String(sl)]:[0,''];
-        chain=chain.then(()=>post('typing_set',{slot:sl,delay:t[0]>0?t[0]:'',unicode:typeof t[1]==='string'?t[1]:''}));
+        chain=chain.then(()=>post('typing_set',{slot:sl,delay:t[0]>0?t[0]:'',unicode:typeof t[1]==='string'?t[1]:'',
+          layout:typeof t[2]==='string'?t[2]:''}));
       });
       return chain;
-    }).then(()=>{
-      if(!d.layout)return;
-      status('Restoring: layout...');
-      return post('set_layout',{id:d.layout});
     }).then(()=>{
       status('Restoring: calibration...');
       let chain=Promise.resolve();
@@ -7330,9 +7440,12 @@ const capsBtns=[];
 // drawn twice: one set of modifiers, so a Shift tapped on either lights both,
 // and a layout change redraws them all.
 const KB_ROOTS=[];
+// A root's own layout (data-layout: the remote's, from its style), or the
+// keyboard's. Only the look: a key still types its character.
+const layoutOf=kb=>kb&&kb.dataset&&LAYOUTS[kb.dataset.layout]?kb.dataset.layout:currentLayout;
 function drawKeys(kb){
   kb.innerHTML='';
-  const rows=(LAYOUTS[currentLayout]||LAYOUTS.us).ROWS;
+  const rows=(LAYOUTS[layoutOf(kb)]||LAYOUTS.us).ROWS;
   rows.forEach((row,ri)=>{
     const rd=document.createElement('div');
     rd.className='row';
@@ -7506,7 +7619,7 @@ function bindKeys(kb,pip){
     // release outside the button never fires pointerup on it otherwise, and with
     // a key held that is one left down on the host rather than a lost tap.
     try{ab.setPointerCapture(e.pointerId)}catch(_){}
-    const rows=(LAYOUTS[currentLayout]||LAYOUTS.us).ROWS;
+    const rows=(LAYOUTS[layoutOf(kb)]||LAYOUTS.us).ROWS;
     const k=rows[+ab.dataset.r][+ab.dataset.k];
     // Long-press (500 ms) on either Shift locks it sticky until tapped again.
     if(k&&k.t==='m'&&(k.mod==='shift'||k.mod==='rshift')){
@@ -7562,7 +7675,7 @@ function bindKeys(kb,pip){
       // and the character has already been typed once, or the reply is still on
       // its way and will do it. Either way there is nothing to send from here.
     }else if(ok&&ab&&!sLockFired){
-      const rows=(LAYOUTS[currentLayout]||LAYOUTS.us).ROWS;const k=rows[+ab.dataset.r][+ab.dataset.k];onKey(k);
+      const rows=(LAYOUTS[layoutOf(kb)]||LAYOUTS.us).ROWS;const k=rows[+ab.dataset.r][+ab.dataset.k];onKey(k);
     }
     ok=false;ab=null;sLockFired=false;
   });
@@ -7686,12 +7799,23 @@ apiPost('release').catch(()=>{});
     currentLayout=id;
     buildKeyboard();
   }
+  // Saved for the active host. A poll that lands while it is on its way still
+  // says the old layout, so syncLayout waits for it.
+  let picking=0;
   sel.addEventListener('change',()=>{
     const id=sel.value;
+    picking++;
     apiPost('set_layout',{id}).then(r=>{
       if(r.ok)apply(id);else alert('Layout switch failed');
-    }).catch(()=>{});
+    }).catch(()=>{}).then(()=>{picking--});
   });
+  // The active host's layout, from every status poll: a host switch brings its
+  // own, as does a save in Host Actions or on another tab.
+  window.syncLayout=function(id){
+    if(picking||!id||!LAYOUTS[id])return;
+    if(sel.value!==id&&[...sel.options].some(o=>o.value===id))sel.value=id;
+    apply(id);
+  };
   // One-time fetch to populate the dropdown and pick up the active layout.
   fetch('api/ble_keyboard/status').then(r=>r.json()).then(d=>{
     if(d.layouts){
@@ -7702,6 +7826,7 @@ apiPost('release').catch(()=>{});
         if(L.id===(d.layout||'us'))o.selected=true;
         sel.appendChild(o);
       });
+      if(window.typLayouts)window.typLayouts();
     }
     if(d.layout&&LAYOUTS[d.layout])apply(d.layout);
   }).catch(()=>{});
@@ -8067,20 +8192,31 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
   const kbdBox=kbd&&kbd.querySelector('.rkb-type');
   const kbdPad=kbd&&kbd.querySelector('.rkb-pad');
   let kbdTw=null;
-  // Opens a key's panel, switches to it from another one, or shuts it. Runs
-  // inside the press, which is the one moment an always-on-top window may be
-  // resized, and when a phone will bring up its keyboard for the box.
+  // Each key opens its own part and shuts it again, the others staying as they
+  // are, so the box and the keys can be up together. data-open lists the open ones.
+  const KBD_PART={keyboard:'keys',typing:'type',touchpad:'pad'};
+  const kbdOpen=()=>new Set((kbd.dataset.open||'').split(' ').filter(Boolean));
+  function kbdSet(open){
+    kbd.dataset.open=[...open].join(' ');
+    kbd.hidden=!open.size;
+  }
+  // Runs inside the press, which is the one moment an always-on-top window may
+  // be resized, and when a phone will bring up its keyboard for the box.
   function kbdToggle(a){
     if(!kbd)return;
-    const mode=a==='typing'?'type':a==='touchpad'?'pad':'keys';
-    if(!kbd.hidden&&kbd.dataset.mode===mode){kbdClose();kbdFit();return}
-    kbd.dataset.mode=mode;
-    kbd.hidden=false;
-    if(mode==='keys'){
-      kbdLeaveBox();
+    const part=KBD_PART[a]||'keys',open=kbdOpen();
+    if(open.has(part)){
+      open.delete(part);
+      kbdSet(open);
+      if(part==='type')kbdLeaveBox();
+      kbdFit();
+      return;
+    }
+    open.add(part);
+    kbdSet(open);
+    if(part==='keys'){
       addKeyboardRoot(kbdKeys,true);
-    }else if(mode==='pad'){
-      kbdLeaveBox();
+    }else if(part==='pad'){
       addMouseRoot(kbdPad);
     }else{
       // Through api(), as the Keyboard card's keys go: a tab driving a linked
@@ -8092,20 +8228,20 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
           r&&r.status===409?'busy':r&&r.ok?true:Promise.reject(new Error('not typed'))),
         key:(m,k)=>api('key',{modifier:m,keycode:k}).then(r=>
           r&&r.ok?true:Promise.reject(new Error('not sent'))),
-      });
+      },{auto:kbd.querySelector('.rkb-auto'),go:kbd.querySelector('.rkb-send'),store:'blekb_rmt_type_auto'});
       kbdBox.focus();
     }
     kbdFit();
   }
   function kbdClose(){
     if(!kbd||kbd.hidden)return;
-    kbd.hidden=true;
+    kbdSet(new Set());
     kbdLeaveBox();
   }
-  // Emptied, and let go of, so the next key pressed on the PC goes where it
-  // would have gone before the box was opened.
+  // Let go of, so the next key pressed on the PC goes where it would have gone
+  // before the box was opened — and emptied, unless it holds text not yet sent.
   function kbdLeaveBox(){
-    if(kbdTw)kbdTw.reset();
+    if(kbdTw)kbdTw.leave();
     if(kbdBox.ownerDocument.activeElement===kbdBox)kbdBox.blur();
   }
   // Both, as a host switch does: now, for an always-on-top window this press
@@ -8114,14 +8250,29 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     if(window.onRemoteFitNow)window.onRemoteFitNow();
     if(window.onRemoteResize)window.onRemoteResize();
   }
-  // A redraw, or this host's hidden list, can take away the key that shuts the
-  // panel. It shuts with it rather than stay open with nothing to close it.
+  // The layout a style draws its keys in ("keyboard"), or the keyboard's own
+  // when it names none. Only the look: what a key types is still a character,
+  // which the keyboard turns into keys in the host's layout, as it does all text.
+  function kbdLayout(id){
+    if(!kbdKeys)return;
+    const v=id&&LAYOUTS[id]?id:'';
+    if((kbdKeys.dataset.layout||'')===v)return;
+    kbdKeys.dataset.layout=v;
+    if(KB_ROOTS.indexOf(kbdKeys)>=0){buildKeyboard();kbdFit()}
+  }
+  // A redraw, or this host's hidden list, can take away the key that shuts a
+  // part. The part shuts with it rather than stay open with nothing to close it.
   function kbdCheck(){
     if(!kbd||kbd.hidden)return;
-    const a=kbd.dataset.mode==='type'?'typing':kbd.dataset.mode==='pad'?'touchpad':'keyboard';
-    if(![...body.querySelectorAll('.rmt-btn[data-action="'+a+'"]')].some(b=>b.style.visibility!=='hidden')){
-      kbdClose();kbdFit();
+    const open=kbdOpen();
+    let gone=false;
+    for(const[a,part]of Object.entries(KBD_PART)){
+      if(!open.has(part)||[...body.querySelectorAll('.rmt-btn[data-action="'+a+'"]')].some(b=>b.style.visibility!=='hidden'))continue;
+      open.delete(part);
+      if(part==='type')kbdLeaveBox();
+      gone=true;
     }
+    if(gone){kbdSet(open);kbdFit()}
   }
   // `fired` is what keeps hold and tap from both counting: once the hold timer
   // has sent anything, pointerup must NOT send its usual press on release.
@@ -8808,7 +8959,7 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
   };
   // What is actually drawn, not just which style it came from. A style edited in
   // place keeps its id, so an id-only check would leave the old body on screen.
-  const tplKey=t=>JSON.stringify([t.sections,t.theme||null]);
+  const tplKey=t=>JSON.stringify([t.sections,t.theme||null,t.keyboard||null]);
   // Draws a style object. Split out of applyTemplate so the style editor can
   // show what it is about to save while that style exists nowhere but the box.
   function drawTemplate(t){
@@ -8835,6 +8986,7 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     useIcons(Object.assign({},ICON_CACHE,t.icons||{}));
     body.innerHTML=t.sections.map(sectionHtml).join('');
     lastDrawnTpl=t;
+    kbdLayout(t.keyboard);
     wantIcons(t);
     // Forced: the buttons are new, so whatever this host hides has to be
     // reapplied even though the hidden set itself did not change.
@@ -9035,7 +9187,8 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     // so the gap between them counts as drawn.
     const kp=el.parentNode&&el.parentNode.querySelector('.rkb:not([hidden])');
     if(kp){
-      if(kp.dataset.mode==='keys'){
+      const open=(kp.dataset.open||'').split(' ');
+      if(open.includes('keys')){
         const pv=kp.style.width,pm=kp.style.minWidth,ps=getComputedStyle(kp);
         // Their height taken with room for every label on one line: squeezed into
         // a narrow window first, a label wraps and its key stands taller than the
@@ -9050,7 +9203,7 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
       // The mouse pad is as wide as the remote, but no narrower than a thumb can
       // steer on — and keeps its shape, so its height is taken at that width.
       const pv=kp.style.width;
-      if(kp.dataset.mode==='pad'){
+      if(open.includes('pad')){
         kp.style.width=Math.max(w,320)+'px';
         w=Math.max(w,kp.getBoundingClientRect().width);
       }

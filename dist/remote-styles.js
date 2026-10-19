@@ -781,7 +781,7 @@ function knobWire(root,send){
   });
 }
 
-function typeWire(input,send){
+function typeWire(input,send,ctl){
   // HID usages. Named keys by name; the rest by where the key is (code), which is
   // what a usage numbers anyway, so a shortcut needs no layout.
   const SPECIAL={Enter:0x28,Escape:0x29,Backspace:0x2A,Tab:0x2B,Insert:0x49,Home:0x4A,PageUp:0x4B,
@@ -799,9 +799,10 @@ function typeWire(input,send){
   // well inside what the keyboard takes in one request.
   const cost=ch=>ch===' '||/^[A-Za-z0-9*\-._]$/.test(ch)?1:3*new TextEncoder().encode(ch).length;
   // What the box held last time — all of it already on its way to the host.
-  let last='',composing=false;
+  let last='',composing=false,live=true;
   input.value='';
   const q=[];let running=false,waits=0,badT=null;
+  const hint=input.placeholder;
   function flag(){
     input.classList.add('tw-bad');
     clearTimeout(badT);badT=setTimeout(()=>input.classList.remove('tw-bad'),1500);
@@ -810,7 +811,7 @@ function typeWire(input,send){
   // in a few requests rather than one per letter.
   function push(op){
     const t=q[q.length-1];
-    if(op.s!==undefined&&t&&t.s!==undefined)t.s+=op.s;
+    if(op.s!==undefined&&t&&t.s!==undefined&&!t.held===!op.held)t.s+=op.s;
     else q.push(op);
     if(!running)next();
   }
@@ -832,17 +833,66 @@ function typeWire(input,send){
       // 30ms, which the same letter typed twice would otherwise risk.
       setTimeout(next,35);
     };
+    const fail=()=>{
+      waits=0;flag();
+      // Written text that didn't go goes back into the box, if nothing has been
+      // written there since, rather than being lost — and the Enter or Tab sent
+      // after it with it.
+      if(op.held&&!input.value){
+        input.value=q.filter(o=>o.held).map(o=>o.s).join('');
+        q.length=0;running=false;return;
+      }
+      done();
+    };
     Promise.resolve(p).then(r=>{
       // Still typing what it has. The same piece again shortly, for up to half a
       // minute, as the paste bar waits.
       if(r==='busy'&&++waits<=100){setTimeout(next,300);return}
-      if(r==='busy')flag();
+      if(r==='busy'){fail();return}
       waits=0;done();
-    },()=>{waits=0;flag();done()});
+    },fail);
+  }
+  // The box's text, whole, and the box empty for the next.
+  function flush(){
+    const v=input.value;
+    input.value='';
+    if(v)push({s:v,held:true});
+  }
+  function reset(){input.value='';last='';input.classList.remove('tw-bad')}
+  // Ticked, what is typed goes as it is typed. Unticked the box is written in
+  // first — autocorrect's swaps made, a password checked — and goes whole with
+  // Send, or with Enter or Tab, which follow it. Kept per browser.
+  function setLive(on){
+    live=on;
+    if(ctl.go)ctl.go.hidden=on;
+    input.enterKeyHint=on?'enter':'send';
+    input.placeholder=on?hint:'Write, then Send';
+    // A phone's own corrections help text that waits to be read over; typed
+    // live, each one is a run of Backspaces on the host.
+    input.spellcheck=!on;
+    input.setAttribute('autocorrect',on?'off':'on');
+  }
+  if(ctl&&ctl.auto){
+    let v=null;
+    try{v=localStorage.getItem(ctl.store)}catch(e){}
+    ctl.auto.checked=v!=='0';
+    setLive(ctl.auto.checked);
+    ctl.auto.addEventListener('change',()=>{
+      try{localStorage.setItem(ctl.store,ctl.auto.checked?'1':'0')}catch(e){}
+      setLive(ctl.auto.checked);
+      reset();
+      input.focus();
+    });
+  }
+  if(ctl&&ctl.go){
+    // The box keeps the focus, and a phone its keyboard.
+    ctl.go.addEventListener('mousedown',e=>e.preventDefault());
+    ctl.go.addEventListener('click',()=>{flush();input.focus()});
   }
   input.addEventListener('compositionstart',()=>{composing=true});
   input.addEventListener('compositionend',()=>{composing=false});
   input.addEventListener('input',()=>{
+    if(!live)return;
     const v=input.value;
     let i=0;const n=Math.min(v.length,last.length);
     while(i<n&&v.charCodeAt(i)===last.charCodeAt(i))i++;
@@ -862,6 +912,15 @@ function typeWire(input,send){
     // picks a word rather than ending a line. So does a key still to be combined
     // with the next one (Dead).
     if(e.isComposing||e.keyCode===229||e.key==='Dead'||e.key==='Process')return;
+    // Written first: every other key edits the box, as it would any box.
+    if(!live){
+      if((e.key==='Enter'||e.key==='Tab')&&!e.ctrlKey&&!e.altKey&&!e.metaKey){
+        e.preventDefault();
+        flush();
+        push({m:e.shiftKey?2:0,k:e.key==='Enter'?0x28:0x2B});
+      }
+      return;
+    }
     const altGr=!!(e.getModifierState&&e.getModifierState('AltGraph'));
     // Paste is the one shortcut the box keeps: what it pastes is typed.
     if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.code==='KeyV')return;
@@ -885,7 +944,10 @@ function typeWire(input,send){
     // A line ends with Enter, and a field with Tab: the box starts again.
     if(kc===0x28||kc===0x2B){input.value='';last=''}
   });
-  return {reset(){input.value='';last='';input.classList.remove('tw-bad')}};
+  return {reset,
+    // The box shut: typed live it starts again, as the host has it all; written
+    // and not sent, the text waits there for it to open again.
+    leave(){if(live)reset();else input.classList.remove('tw-bad')}};
 }
 
 function keysSquareWidth(rows){
@@ -1372,6 +1434,9 @@ function validateTpl(t){
     if(!Array.isArray(t.sections)||!t.sections.length)return 'sections must be a non-empty array';
     if(t.theme!==undefined&&(typeof t.theme!=='object'||t.theme===null||Array.isArray(t.theme)))
       return 'theme must be an object';
+    // The layout its keyboard key's keys are drawn in.
+    if(t.keyboard!==undefined&&(typeof t.keyboard!=='string'||!/^(us|uk|de|be)$/.test(t.keyboard)))
+      return 'keyboard is the layout its keyboard key opens: us, uk, de or be';
     // Theme values are handed to setProperty, which rejects malformed CSS on its
     // own — but a fetch is well-formed and would have the page load from
     // somewhere else the moment a style is applied. Nothing here needs one.

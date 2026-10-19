@@ -282,9 +282,19 @@ class EspidfBleKeyboard : public Component
   bool ha_action_enabled() const { return ha_action_enabled_; }
   void set_host_slots(uint8_t slots) { host_slots_ = slots > MAX_HOST_SLOTS ? MAX_HOST_SLOTS : slots; }
 
-  // Keyboard layout
+  // Keyboard layout, per host. A host's own — picked on the web page, saved in
+  // NVS "lay<slot>" — wins; without one it gets its hosts: entry's layout:, then
+  // the keyboard-wide pick older firmware saved (kept until keyboard_layout
+  // changes), then keyboard_layout.
   void set_keyboard_layout(const std::string &id);      // YAML default
-  void set_runtime_layout(const std::string &id, bool persist = true);  // web UI persists; slot-driven does not
+  /// "" goes back to the default. False for an unknown id or a failed save.
+  bool set_slot_layout(uint8_t slot, const std::string &id);
+  /// The host's own, or nullptr.
+  const KeyboardLayout *get_slot_layout(uint8_t slot) const {
+    return slot < MAX_HOST_SLOTS ? slot_layout_pick_[slot] : nullptr;
+  }
+  /// What the host gets without one of its own.
+  const KeyboardLayout *get_slot_layout_default(uint8_t slot) const;
   const KeyboardLayout *active_layout() const { return active_layout_; }
   const char *active_layout_id() const { return active_layout_ != nullptr ? active_layout_->id : "us"; }
 
@@ -1538,8 +1548,10 @@ class EspidfBleKeyboard : public Component
   // Keyboard layout state
   const KeyboardLayout *active_layout_{nullptr};
   std::string yaml_layout_id_{"us"};
+  const KeyboardLayout *slot_layout_pick_[MAX_HOST_SLOTS]{};  // each host's own (NVS "lay<slot>")
+  const KeyboardLayout *legacy_layout_{nullptr};  // the keyboard-wide pick older firmware saved
   void load_layout_();
-  void save_layout_(const std::string &id);
+  void apply_layout_(uint8_t slot);
   void update_led_state_(uint8_t led_byte);
   uint8_t caps_corrected_(uint8_t modifier, bool letter) const;
   void send_battery_notify_();

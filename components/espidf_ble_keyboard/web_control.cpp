@@ -1080,7 +1080,7 @@ class BleKbWebHandler : public AsyncWebHandler {
       // ha_action: strings would otherwise realloc its way up on the shared heap.
       // Counted exactly, escaping included, and refused when it doesn't fit.
       const std::string &on_connect = kb_->get_on_connect((uint8_t) slot);
-      size_t est = 180 + json_escaped_size(on_connect);
+      size_t est = 220 + json_escaped_size(on_connect);
       for (const auto &o : nvs) est += json_escaped_size(o.name) + json_escaped_size(o.action) + 40;
       for (const auto &o : yaml) est += json_escaped_size(o.name) + json_escaped_size(o.action) + 40;
       if (heap_short(est, "Host Actions", ""))
@@ -1121,11 +1121,14 @@ class BleKbWebHandler : public AsyncWebHandler {
       {
         const EspidfBleKeyboard::TypingCfg own = kb_->get_slot_typing((uint8_t) slot);
         const EspidfBleKeyboard::TypingCfg def = kb_->get_slot_typing_default((uint8_t) slot);
-        char buf[112];
+        const KeyboardLayout *lay = kb_->get_slot_layout((uint8_t) slot);
+        char buf[176];
         snprintf(buf, sizeof(buf),
-                 "\",\"typing\":{\"delay\":%u,\"delay_def\":%u,\"unicode\":\"%s\",\"unicode_def\":\"%s\"}}",
+                 "\",\"typing\":{\"delay\":%u,\"delay_def\":%u,\"unicode\":\"%s\",\"unicode_def\":\"%s\","
+                 "\"layout\":\"%s\",\"layout_def\":\"%s\"}}",
                  (unsigned) own.delay, (unsigned) def.delay, EspidfBleKeyboard::unicode_input_name(own.method),
-                 EspidfBleKeyboard::unicode_input_name(def.method));
+                 EspidfBleKeyboard::unicode_input_name(def.method), lay != nullptr ? lay->id : "",
+                 kb_->get_slot_layout_default((uint8_t) slot)->id);
         json += buf;
       }
       send_response(200, "application/json", json);
@@ -1297,7 +1300,7 @@ class BleKbWebHandler : public AsyncWebHandler {
         for (const auto &h : kb_->get_hold(s)) est += h.size() + 4;
         est += 96;  // that slot's keys, calibration, style id and host entry
         est += json_escaped_size(kb_->get_on_connect(s)) + 8;
-        est += 32;  // its typing settings
+        est += 48;  // its typing settings and layout
       }
       // The custom styles, which nothing above covers and which are by far the
       // largest thing in here: eight of them is 12 KB stored and more once
@@ -1409,17 +1412,18 @@ class BleKbWebHandler : public AsyncWebHandler {
         json_escape_append(json, a);
         json += "\"";
       }
-      // [delay, "method"] for slots Host Actions gave either one; 0 and "" are
-      // "not set", and an absent slot restores as neither.
+      // [delay, "method", "layout"] for slots given any of them; 0 and "" are
+      // "not set", and an absent slot restores as none.
       json += "},\"typing\":{";
       bool first_typ = true;
       for (uint8_t s = 0; s < kb_->host_slots(); s++) {
         const EspidfBleKeyboard::TypingCfg t = kb_->get_slot_typing(s);
-        if (t.delay == 0 && t.method == UNICODE_UNSET) continue;
+        const KeyboardLayout *lay = kb_->get_slot_layout(s);
+        if (t.delay == 0 && t.method == UNICODE_UNSET && lay == nullptr) continue;
         if (!first_typ) json += ",";
         first_typ = false;
         json += "\"" + std::to_string(s) + "\":[" + std::to_string(t.delay) + ",\"" +
-                EspidfBleKeyboard::unicode_input_name(t.method) + "\"]";
+                EspidfBleKeyboard::unicode_input_name(t.method) + "\",\"" + (lay != nullptr ? lay->id : "") + "\"]";
       }
       json += "},\"remote_templates\":[";
       bool first_tpl = true;
@@ -1805,17 +1809,16 @@ class BleKbWebHandler : public AsyncWebHandler {
       }
 
     } else if (path == "set_layout") {
+      // The Keyboard card's picker: the active host's own layout.
       std::string id = request->hasArg("id") ? request->arg("id").c_str() : "";
       if (id.empty()) {
         send_response(400, "text/plain", "id required");
+      } else if (get_layout_by_id(id.c_str()) == nullptr) {
+        send_response(400, "text/plain", "Unknown layout");
+      } else if (!kb_->set_slot_layout(kb_->active_host_slot(), id)) {
+        send_response(400, "text/plain", "Could not save the layout to storage");
       } else {
-        const KeyboardLayout *prev = kb_->active_layout();
-        kb_->set_runtime_layout(id);
-        if (kb_->active_layout() == prev && (prev == nullptr || id != prev->id)) {
-          send_response(400, "text/plain", "Unknown layout");
-        } else {
-          send_response(200, "text/plain", "OK");
-        }
+        send_response(200, "text/plain", "OK");
       }
 
     } else if (path == "on_connect_set") {
@@ -1836,11 +1839,14 @@ class BleKbWebHandler : public AsyncWebHandler {
       }
 
     } else if (path == "typing_set") {
-      // A host's own typing pace, and its way with characters its layout lacks.
-      // Either one left empty goes back to what YAML says.
+      // A host's own typing pace, its way with characters its layout lacks, and
+      // its layout. Any one left empty goes back to its default; a layout not
+      // sent at all stays as it is.
       int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : -1;
       const std::string delay_s = request->hasArg("delay") ? request->arg("delay").c_str() : "";
       const std::string method_s = request->hasArg("unicode") ? request->arg("unicode").c_str() : "";
+      const bool has_layout = request->hasArg("layout");
+      const std::string layout_s = has_layout ? request->arg("layout").c_str() : "";
       char *end = nullptr;
       const long delay = delay_s.empty() ? 0 : strtol(delay_s.c_str(), &end, 10);
       const uint8_t method =
@@ -1851,7 +1857,10 @@ class BleKbWebHandler : public AsyncWebHandler {
         send_response(400, "text/plain", "Typing speed is 2 to 10000 ms a character, or empty for the default");
       } else if (!method_s.empty() && method == UNICODE_UNSET) {
         send_response(400, "text/plain", "unicode is fold, windows or linux, or empty for the default");
-      } else if (!kb_->set_slot_typing((uint8_t) slot, (uint16_t) delay, method)) {
+      } else if (!layout_s.empty() && get_layout_by_id(layout_s.c_str()) == nullptr) {
+        send_response(400, "text/plain", "Unknown layout");
+      } else if (!kb_->set_slot_typing((uint8_t) slot, (uint16_t) delay, method) ||
+                 (has_layout && !kb_->set_slot_layout((uint8_t) slot, layout_s))) {
         send_response(400, "text/plain", "Could not save the typing settings to storage");
       } else {
         send_response(200, "text/plain", "OK");

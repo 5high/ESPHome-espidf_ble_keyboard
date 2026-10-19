@@ -18,11 +18,20 @@ web control page shows the matching version badge.
   and waits for a host's Bluetooth to catch up rather than leave a key held down.
 - **The characters a host's layout lacks can be typed on Windows and Linux**, per host: Windows
   types anything in its Western code page as Alt codes, Linux any character through Ctrl+Shift+U.
+- **The remote's typing box can be written in first.** With its auto box unticked, text waits there,
+  phone corrections and all, until Send, Enter or Tab types it whole.
+- **A style can set the layout of the keys its keyboard key opens**, from the builder, so the Home
+  Assistant card draws a host's layout without a card setting of its own.
 
 ### Changed
 - **Mouse movement merges while a host's Bluetooth catches up**, instead of piling up reports that
   hold the keyboard's memory until it runs out. On a link that keeps up, every move goes out as
   before.
+- **The keyboard layout is saved per host.** The web page's picker saves it for the active host,
+  and Host Actions sets any host's. A host with no layout of its own now goes back to its default
+  instead of keeping the previous host's.
+- **The remote's keyboard, typing box and touchpad can be open together.** Each key opens and
+  closes its own, the box above the keys, on the web page and the Home Assistant remote card.
 
 ### Fixed
 - **The keys a remote's keyboard key opens are square on a Home Assistant dashboard too**, as they

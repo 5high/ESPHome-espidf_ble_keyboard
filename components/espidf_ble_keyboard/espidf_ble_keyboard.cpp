@@ -3075,8 +3075,8 @@ void EspidfBleKeyboard::switch_host(uint8_t slot, bool from_action) {
     get_active_slot_passkey(slot_has_pk, slot_pk, slot_sc);
     apply_security_params(slot_has_pk);
 
-    // Apply per-slot keyboard layout (ephemeral; does not overwrite the web UI's NVS choice).
-    if (!slot_layout_id_[slot].empty()) set_runtime_layout(slot_layout_id_[slot], false);
+    // Its keyboard layout: its own, else its default — never the last host's.
+    apply_layout_(slot);
     // ... and its typing pace and way with characters its layout lacks.
     apply_typing_(slot);
 
@@ -3282,13 +3282,9 @@ void EspidfBleKeyboard::setup() {
     publish_repeat_();
     publish_hold_();
     publish_remote_style_();
-    // Apply YAML default if no setter ran (defensive), then let NVS override.
-    if (active_layout_ == nullptr) active_layout_ = default_layout();
+    // Each host's layout, and the one the boot host gets.
     load_layout_();
-    // Boot slot has a configured per-slot layout — apply ephemerally so it wins over the NVS default
-    // until the user manually picks something in the web UI for this slot.
-    if (!slot_layout_id_[active_slot_].empty())
-        set_runtime_layout(slot_layout_id_[active_slot_], false);
+    apply_layout_(active_slot_);
     generate_slot_addrs_();
     if (active_host_sensor_ != nullptr)
         active_host_sensor_->publish_state(active_slot_);
@@ -4278,16 +4274,49 @@ void EspidfBleKeyboard::set_keyboard_layout(const std::string &id) {
     ESP_LOGI(TAG, "Keyboard layout (YAML default): %s", active_layout_->id);
 }
 
-void EspidfBleKeyboard::set_runtime_layout(const std::string &id, bool persist) {
-    const KeyboardLayout *lay = get_layout_by_id(id.c_str());
-    if (lay == nullptr) {
-        ESP_LOGW(TAG, "Unknown keyboard layout '%s' — ignoring", id.c_str());
-        return;
+// What a host gets without a layout of its own: its hosts: entry's, then the
+// keyboard-wide pick older firmware saved, then keyboard_layout.
+const KeyboardLayout *EspidfBleKeyboard::get_slot_layout_default(uint8_t slot) const {
+    if (slot < MAX_HOST_SLOTS && !slot_layout_id_[slot].empty()) {
+        const KeyboardLayout *lay = get_layout_by_id(slot_layout_id_[slot].c_str());
+        if (lay != nullptr) return lay;
     }
+    if (legacy_layout_ != nullptr) return legacy_layout_;
+    const KeyboardLayout *lay = get_layout_by_id(yaml_layout_id_.c_str());
+    return lay != nullptr ? lay : default_layout();
+}
+
+void EspidfBleKeyboard::apply_layout_(uint8_t slot) {
+    const KeyboardLayout *lay = get_slot_layout(slot);
+    if (lay == nullptr) lay = get_slot_layout_default(slot);
+    if (lay == active_layout_) return;
     active_layout_ = lay;
-    if (persist) save_layout_(id);
     pending_lcd_publish_.store(true);   // @layout
-    ESP_LOGI(TAG, "Keyboard layout (runtime%s): %s", persist ? "" : ", ephemeral", active_layout_->id);
+    ESP_LOGI(TAG, "Keyboard layout on host %u: %s", (unsigned) slot, lay->id);
+}
+
+// Written before it is kept, as set_slot_typing is.
+bool EspidfBleKeyboard::set_slot_layout(uint8_t slot, const std::string &id) {
+    const KeyboardLayout *lay = id.empty() ? nullptr : get_layout_by_id(id.c_str());
+    if (slot >= MAX_HOST_SLOTS || (!id.empty() && lay == nullptr)) return false;
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return false;
+    char key[12];
+    snprintf(key, sizeof(key), "lay%u", slot);
+    esp_err_t err = lay == nullptr ? nvs_erase_key(handle, key) : nvs_set_str(handle, key, lay->id);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;   // clearing one that was never set
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Keyboard layout for host %u not saved: %s", (unsigned) slot, esp_err_to_name(err));
+        return false;
+    }
+    slot_layout_pick_[slot] = lay;
+    if (slot == active_slot_) apply_layout_(slot);
+    edits_++;
+    ESP_LOGI(TAG, "Keyboard layout for host %u: %s%s", (unsigned) slot,
+             (lay != nullptr ? lay : get_slot_layout_default(slot))->id, lay != nullptr ? "" : " (default)");
+    return true;
 }
 
 void EspidfBleKeyboard::load_layout_() {
@@ -4303,38 +4332,34 @@ void EspidfBleKeyboard::load_layout_() {
     const bool yaml_changed = (yaml_get != ESP_OK) || (yaml_layout_id_ != saved_yaml);
 
     if (yaml_changed) {
-        // Persist the new YAML default and discard any stale runtime override
+        // Persist the new YAML default and discard any stale keyboard-wide pick
         // so the user's flash actually takes effect without a factory reset.
         nvs_set_str(handle, "yaml_layout", yaml_layout_id_.c_str());
         nvs_erase_key(handle, "layout");
         nvs_commit(handle);
         ESP_LOGI(TAG, "YAML keyboard_layout changed (%s -> %s); cleared NVS override",
                  (yaml_get == ESP_OK) ? saved_yaml : "<none>", yaml_layout_id_.c_str());
-        nvs_close(handle);
-        return;  // active_layout_ already points at the new YAML default
-    }
-
-    // 2) YAML unchanged — honour the user's runtime web-UI override, if any.
-    char buf[16];
-    size_t len = sizeof(buf);
-    if (nvs_get_str(handle, "layout", buf, &len) == ESP_OK) {
-        const KeyboardLayout *lay = get_layout_by_id(buf);
-        if (lay != nullptr) {
-            active_layout_ = lay;
-            ESP_LOGI(TAG, "Keyboard layout from NVS: %s", active_layout_->id);
-        } else {
-            ESP_LOGW(TAG, "NVS layout '%s' unknown; keeping YAML default '%s'",
-                     buf, active_layout_ != nullptr ? active_layout_->id : "us");
+    } else {
+        // 2) YAML unchanged — a keyboard-wide pick older firmware saved is the
+        //    default for a host with no layout of its own and none in its hosts:
+        //    entry. Nothing writes it now.
+        char buf[16];
+        size_t len = sizeof(buf);
+        if (nvs_get_str(handle, "layout", buf, &len) == ESP_OK) {
+            legacy_layout_ = get_layout_by_id(buf);
+            if (legacy_layout_ == nullptr) {
+                ESP_LOGW(TAG, "NVS layout '%s' unknown; ignoring it", buf);
+            }
         }
     }
-    nvs_close(handle);
-}
 
-void EspidfBleKeyboard::save_layout_(const std::string &id) {
-    nvs_handle_t handle;
-    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return;
-    nvs_set_str(handle, "layout", id.c_str());
-    nvs_commit(handle);
+    // 3) Each host's own.
+    for (uint8_t slot = 0; slot < MAX_HOST_SLOTS; slot++) {
+        char key[12], buf[16];
+        snprintf(key, sizeof(key), "lay%u", slot);
+        size_t len = sizeof(buf);
+        if (nvs_get_str(handle, key, buf, &len) == ESP_OK) slot_layout_pick_[slot] = get_layout_by_id(buf);
+    }
     nvs_close(handle);
 }
 

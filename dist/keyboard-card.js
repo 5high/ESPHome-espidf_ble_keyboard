@@ -1264,7 +1264,7 @@ class BleKeyboardCard extends HTMLElement {
     const ta = document.createElement('textarea');
     ta.rows = 1;
     ta.maxLength = 5000;
-    ta.placeholder = 'Paste text to type…';
+    ta.placeholder = 'Type or paste';
     ta.setAttribute('autocapitalize', 'off');
     ta.spellcheck = false;
 

@@ -336,13 +336,14 @@ binary_sensor:
 * **sources** (Optional, list): Entities a remote style may read — to show on an [LCD panel](#lcd-panels) or a [pot](#pots), to branch on with [`if:`](#branching-on-real-state), or to light a button with `lit:`. Each entry names exactly one of `sensor:`, `text_sensor:`, `text:` or `binary_sensor:` by id, plus an optional `key:` (what the style calls it — defaults to the entity's id) and, for a numeric sensor, `unit:` and `decimals:` overrides. A `binary_sensor:` publishes the literal `on`/`off`. At most 8.
 * **battery_level** (Optional, ID): A sensor whose value (0–100) is published over the BLE Battery Service, so the host's Bluetooth settings show the keyboard's real charge. Any sensor reading a percentage will do — an ADC with a calibration filter, a fuel-gauge IC, a template sensor. Values outside 0–100 are clamped and an unavailable reading is ignored rather than sent as 0%. Without this the service is still advertised and reports a fixed 100%. See [Battery level](#battery-level).
 * **presence_scan** (Optional, bool): Listen for paired hosts nearby, all the time — for the `presence`, `presence_count` and `presence_rssi` sensors, and for the web page's green dots, which the **Green dot** tick box under **Host Actions → Identity Key (IRK)** shows or hides in each browser; the **IRK** and **MAC** boxes beside it choose what counts as hearing a host. The radio spends about a tenth of its time listening. Defaults to `false`. See [Paired hosts nearby](#paired-hosts-nearby).
-* **keyboard_layout** (Optional, string): Default keyboard layout. One of `us` (default), `uk`, `de`, `be`. Controls how `send_string` maps each character to USB HID keycodes — must match the *host's* keyboard layout. Can be overridden at runtime from the web UI (persisted to NVS, survives reboot). See [Keyboard layouts](#keyboard-layouts) below.
+* **keyboard_layout** (Optional, string): Default keyboard layout. One of `us` (default), `uk`, `de`, `be`. Controls how `send_string` maps each character to USB HID keycodes — must match the *host's* keyboard layout. A host can have its own: `layout:` in its `hosts:` entry, or one picked for it on the web page. See [Keyboard layouts](#keyboard-layouts) below.
 * **hosts** (Optional, list): Per-slot passkey and pairing mode overrides. Each entry has:
   * **slot** (Required, int): Host slot number (0–9).
   * **passkey** (Optional, int): 6-digit PIN for this slot (000000–999999). If omitted, the slot uses the global `passkey` setting (or Just Works if no global passkey).
   * **passkey_mode** (Optional, string): `legacy` (default) or `secure_connections`. Overrides the global `passkey_mode` for this slot.
   * **key_delay_ms** (Optional, int): This host's typing speed, 2–10000 ms a character, instead of the top-level one.
   * **unicode_input** (Optional, string): `fold`, `windows` or `linux` for this host, instead of the top-level one.
+  * **layout** (Optional, string): This host's keyboard layout, instead of `keyboard_layout`. One picked for it on the web page wins. See [Setting the layout](#setting-the-layout).
   * **appearance** (Optional): What the slot shows up as to a host scanning for it: `keyboard` (default), `audio`, or any Bluetooth appearance number. `audio` lets a watch whose Bluetooth menu lists only audio devices find the slot; paired, it is still a keyboard, mouse and media keys. Only the slot's advertising changes. See [Pairing with a Galaxy Watch](#pairing-with-a-galaxy-watch).
 
 ### `button` (Platform: `espidf_ble_keyboard`)
@@ -1186,7 +1187,7 @@ Nothing holds by default. The Home Assistant [Media Remote Card](#media-remote-c
 
 ### Typing Per Host
 
-Open **Typing** in the Host Actions card to give a host its own typing speed — a fast PC takes a long paste in a fraction of the time, a host that drops characters gets longer — and its own way with [characters its layout lacks](#characters-a-layout-lacks). An empty box takes the default, the slot's `hosts:` entry or else the top level, shown in its place; **Reset** empties both. Saved on the device and included in [Backup and restore](#backup-and-restore). It goes down to about 32 ms a character, and a host whose Bluetooth can't take that pace gets the text at its own pace instead.
+Open **Typing** in the Host Actions card to give a host its own typing speed — a fast PC takes a long paste in a fraction of the time, a host that drops characters gets longer — its own way with [characters its layout lacks](#characters-a-layout-lacks), and its [keyboard layout](#setting-the-layout). An empty box takes the default, the slot's `hosts:` entry or else the top level, shown in its place; **Reset** empties all three. Saved on the device and included in [Backup and restore](#backup-and-restore). It goes down to about 32 ms a character, and a host whose Bluetooth can't take that pace gets the text at its own pace instead.
 
 ### Remote Style Per Host
 
@@ -1292,7 +1293,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `do_not_disturb`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `do_not_disturb`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `touchpad`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, for a `lit:` button `lit_bg`, `lit_fg`, and `level` for the track of a [level pot](#pots) or a [slider](#sliders) — green unless set. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -1307,6 +1308,8 @@ Three of those do more than they look:
 - **`clip`** accepts a `polygon()` for a genuinely tapered body, e.g. `"polygon(0% 0%, 100% 0%, 82% 100%, 18% 100%)"`. It is validated as a polygon and nothing else.
 
 `url()` is refused anywhere in a theme — an imported style must not be able to make the page fetch from another host.
+
+**The keyboard key's layout.** `"keyboard": "de"` draws the keys a style's [`keyboard`](#typing-from-the-remote) key opens in that layout: `us`, `uk`, `de` or `be`. Left out, the web page draws them in the keyboard's own layout and the Home Assistant card in its `keyboard_layout`. A style usually belongs to one host, so it is the place to say that host's layout once, for both. It changes only what the keys show: each still types its character, which the keyboard sends in the host's layout as it does all text. In the builder, select a keyboard key and pick its **Layout**.
 
 > `ring_fg` exists because a nav ring is often the opposite tone to the rest of the remote — a white ring on a black body, a black one on alloy. Without it the arrows inherit `btn_fg` and disappear.
 
@@ -2306,15 +2309,15 @@ If the browser refuses the on-top window for any other reason, the remote opens 
 Two keys open a keyboard under the remote. Add them to a style like any other key; the builder lists them under **Keyboard and mouse**.
 
 - **`keyboard`** shows the on-screen keys: the Keyboard card's, in its layout, sharing its Shift and Caps.
-- **`typing`** opens a box with the cursor in it, so a phone brings up its own keyboard and a PC types with the real one. Each change goes to the host as you make it: letters as text, deletions and autocorrect's swaps as Backspaces and the new text, so they land right while the host's cursor is at the end of what you typed. Enter, Tab, Esc, the arrows, F1–F12 and Ctrl or Win shortcuts go as keys, and a paste is typed. Enter starts the box again.
+- **`typing`** opens a box with the cursor in it, so a phone brings up its own keyboard and a PC types with the real one. Each change goes to the host as you make it: letters as text, deletions and autocorrect's swaps as Backspaces and the new text, so they land right while the host's cursor is at the end of what you typed. Enter, Tab, Esc, the arrows, F1–F12 and Ctrl or Win shortcuts go as keys, and a paste is typed. Enter starts the box again. Untick **auto** beside it to write first instead: the text waits in the box, where your phone's corrections and the arrow keys work as in any box, until **Send** types it whole — or Enter or Tab, which then follow it. Useful for a message you want to read over, a password, or a TV search box that searches at every letter. Text not sent yet stays in the box when it closes, and comes back if it couldn't be sent. Each browser remembers its choice.
 
-Press the key again to close it, or the other key to switch. The keyboard goes with the remote when it pops out, and the window grows to hold it — wide enough for square keys, about 580px — and shrinks back when it closes. It types wherever the remote's keys go, a [linked keyboard](#linking-a-second-keyboard) included. The keys themselves send nothing, so in a macro or a Host Action they do nothing.
+Each key opens its own part and closes it again, so the box, the keys and a [touchpad](#a-touchpad-on-the-remote) can be up together, the box on top where a phone's keyboard won't cover it. The keyboard goes with the remote when it pops out, and the window grows to hold it — wide enough for square keys, about 580px — and shrinks back when it closes. It types wherever the remote's keys go, a [linked keyboard](#linking-a-second-keyboard) included. The keys themselves send nothing, so in a macro or a Host Action they do nothing.
 
-The [Home Assistant remote card](#media-remote-card-for-home-assistant) has both keys too, in its pop-out as well. Set its `keyboard_layout` to the device's layout for the on-screen keys.
+The [Home Assistant remote card](#media-remote-card-for-home-assistant) has both keys too, in its pop-out as well. The on-screen keys follow the style's `keyboard` layout, or the card's `keyboard_layout` for a style that doesn't set one.
 
 ### A touchpad on the remote
 
-A style's **`touchpad`** key opens the Mouse card's pad under the remote: drag to move, tap to click, the three buttons (long-press one to hold it for a drag) and the scroll keys. Press it again to close it, or a keyboard key to switch. It goes with the remote when it pops out, the window widening to at least 320px for it, and moves the pointer wherever the remote's keys go.
+A style's **`touchpad`** key opens the Mouse card's pad under the remote: drag to move, tap to click, the three buttons (long-press one to hold it for a drag) and the scroll keys. Press it again to close it; the keyboard keys and typing box can be open with it. It goes with the remote when it pops out, the window widening to at least 320px for it, and moves the pointer wherever the remote's keys go.
 
 The Home Assistant remote card has it too, drawn by the [mouse card](#mouse-control-card-for-home-assistant), so it needs that card's services — `api_services: true` registers them.
 
@@ -2370,7 +2373,7 @@ Macros, host actions and `mouse_goto` calibration only exist in the device's NVS
 
 - Macros
 - Saved per-host action overrides (the `SAVED` rows — YAML-defined ones are deliberately excluded, since writing them back as saved overrides would shadow later YAML edits)
-- The keyboard layout chosen in the web UI
+- Per-host typing settings and keyboard layouts
 - Per-host `mouse_goto` calibration
 - Per-host hidden remote buttons
 - Per-host hold-to-repeat settings (a host left on the defaults is simply absent, and restores as "reset to defaults")
@@ -2431,7 +2434,8 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/macro_set` | POST | `name`, `action` | Add a macro, or replace the one with that name — how a linked keyboard copies its macros here |
 | `/api/ble_keyboard/macro_delete` | POST | `index` (int) | Delete a macro by index |
 | `/api/ble_keyboard/overrides` | GET | `slot` (int, default active) | Per-host action overrides: `{"slot":N,"active":M,"items":[{"name":"record","action":"combo:0x0C:0x15","src":"nvs"\|"yaml"}]}`, plus that host's on-connect action and its `typing`: `{"delay":0,"delay_def":80,"unicode":"","unicode_def":"fold"}` — what [Typing per host](#typing-per-host) saved (0 and empty for nothing) and what applies without it |
-| `/api/ble_keyboard/typing_set` | POST | `slot`, `delay` (2–10000), `unicode` (`fold`, `windows` or `linux`) | Set a host's [typing](#typing-per-host); either left empty goes back to the default |
+| `/api/ble_keyboard/typing_set` | POST | `slot`, `delay` (2–10000), `unicode` (`fold`, `windows` or `linux`), `layout` (optional: `us`, `uk`, `de` or `be`) | Set a host's [typing](#typing-per-host); any one left empty goes back to the default, and a layout not sent stays as it is |
+| `/api/ble_keyboard/set_layout` | POST | `id` (`us`, `uk`, `de` or `be`) | Set the active host's [keyboard layout](#setting-the-layout), saved for that host |
 | `/api/ble_keyboard/override_set` | POST | `slot`, `name`, `action` | Set a per-host action override (max 8 per slot); persists to NVS |
 | `/api/ble_keyboard/override_clear` | POST | `slot`, `name` | Delete a saved override, falling back to YAML / built-in |
 | `/api/ble_keyboard/hidden` | GET | `slot` (int, default `style_slot`) | Buttons removed from the remote for that host: `{"slot":N,"hidden":["record"]}` |
@@ -2815,7 +2819,7 @@ show_host_switcher: true      # false hides the switcher, still following the ho
 popout: on_top                # pop-out button: on_top, window or false (default: on_top)
 popout_border: false          # the card around the popped-out remote (default: false)
 popout_header: true           # the name and host switcher line in the pop-out (default: true)
-keyboard_layout: us           # on-screen keys a style's keyboard key opens: us, uk, de or be (default: us)
+keyboard_layout: us           # on-screen keys a style's keyboard key opens, if the style doesn't set them: us, uk, de or be (default: us)
 ```
 
 Optional configuration:
@@ -2845,7 +2849,7 @@ Optional configuration:
 | `popout` | `on_top` | The pop-out button in the card's header, on desktop browsers. `on_top` opens the remote in a window that stays above the others where the browser can make one, and an ordinary window where it can't; `window` always opens an ordinary one; `false` removes the button. See [Popping the card out](#popping-the-card-out). |
 | `popout_border` | `false` | The card around the popped-out remote — its border, name and host switcher. Off, the window holds the remote and nothing else, as the device page's pop-out does; but while the host switcher shows, the border comes with it, since the name and switcher sit on the card. |
 | `popout_header` | `true` | The line with the card's name and host switcher, in the pop-out window. Off leaves it out there — and so leaves the border to `popout_border` alone — while the card left on the dashboard keeps its switcher, so the host can still be changed there. |
-| `keyboard_layout` | `us` | The layout of the on-screen keys a style's `keyboard` key opens: `us`, `uk`, `de` or `be`. Set it to the device's, as on the keyboard card. See [Typing from the remote](#typing-from-the-remote). |
+| `keyboard_layout` | `us` | The layout of the on-screen keys a style's `keyboard` key opens, for a style that doesn't set its own `keyboard`: `us`, `uk`, `de` or `be`. Set it to the device's, as on the keyboard card. See [Typing from the remote](#typing-from-the-remote). |
 
 #### Remote styles on the card
 
@@ -3384,31 +3388,27 @@ A standard German keyboard prints these characters in the lower-right corner of 
 
 ### Setting the layout
 
-**YAML (default at boot):**
+Each host has its own layout, and switching host switches layout with it.
+
+**YAML:** `keyboard_layout` is the default, and `layout:` in a `hosts:` entry sets that host's:
 
 ```yaml
 espidf_ble_keyboard:
   id: my_keyboard
-  device_name: "ESP32 BLE KB"
   keyboard_layout: uk
-```
-
-**Web UI (overrides YAML, persisted to NVS):** open `http://<device-ip>/ble_keyboard` and use the layout dropdown in the Keyboard card header. The choice is saved and survives reboot. Erasing NVS reverts to the YAML default.
-
-> **Precedence note:** if you change `keyboard_layout` in YAML and reflash, the new value takes effect on the next boot — any previous web-UI override is automatically cleared. Web-UI overrides only persist across reboots while the YAML value stays the same. No factory reset needed to "see" a YAML edit.
-
-**Per host slot (YAML, auto-applied on switch):** add `layout:` to any entry in the `hosts:` list to bind a layout to that slot. When you switch to that host (via service, button, or web UI), the device flips to its layout automatically. This is ephemeral — it does not overwrite a manual web-UI pick in NVS, and switching to a slot with no `layout:` keeps whatever was active.
-
-```yaml
-espidf_ble_keyboard:
-  id: my_keyboard
   host_slots: 4
   hosts:
     - slot: 0
       layout: us
     - slot: 1
-      layout: uk
+      layout: de
 ```
+
+**Web UI:** the layout dropdown in the Keyboard card header sets the active host's layout, and **Typing** in the Host Actions card sets any host's. Either way it is saved on the device for that host, survives reboot, and is included in [Backup and restore](#backup-and-restore). The dropdown follows the active host, so it always shows the layout text is being typed in.
+
+A host's layout is, in order: one picked for it on the web page, its `hosts:` entry's `layout:`, then `keyboard_layout`. **Reset** under **Typing** takes a host back to its YAML. A host with none of its own uses the default — it never keeps the layout of the host before it.
+
+> Firmware before v1.18.0 saved one keyboard-wide pick from the dropdown. It still counts, in place of `keyboard_layout`, for hosts with no layout of their own — until `keyboard_layout` itself is changed in YAML, which clears it.
 
 ### Matching the host's layout
 
