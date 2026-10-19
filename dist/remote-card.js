@@ -1170,6 +1170,9 @@ class BleRemoteCard extends HTMLElement {
     // The pad is as wide as the remote, but no narrower than a thumb can steer on.
     const pad = this.shadowRoot.querySelector('.kbd-panel[data-mode=pad]:not([hidden])');
     let w = 0, h = 0;
+    // At the keys' own height, not the shorter one a narrow dashboard card draws
+    // them at (_kbdSquare, which puts it back below).
+    if (this._kbdEl) this._kbdEl.style.removeProperty('--kb-key-h');
     try {
       const { bare } = docked ? this._markPop(true) : this._popAttrs();
       if (kbRows) keys.style.minWidth = `${keysSquareWidth(kbRows)}px`;
@@ -1193,7 +1196,10 @@ class BleRemoteCard extends HTMLElement {
       if (keep === null) card.removeAttribute('style'); else card.setAttribute('style', keep);
       if (kbRows) keys.style.minWidth = '';
       if (pad) pad.style.minWidth = '';
-      if (docked) this._markPop(false);
+      if (docked) {
+        this._markPop(false);
+        this._kbdSquare();
+      }
     }
     if (!w || !h) return null;
     const scr = window.screen || {};
@@ -1867,6 +1873,7 @@ class BleRemoteCard extends HTMLElement {
         this._kbdInput.focus();
       }
     }
+    this._kbdSquare();
     this._fitKbd();
   }
 
@@ -1906,10 +1913,45 @@ class BleRemoteCard extends HTMLElement {
       host.appendChild(kb);
       this._kbdEl = kb;
       if (this._hass) kb.hass = this._hass;
+      this._kbdSquare();
+      // And again whenever the dashboard gives the card another width.
+      if (!this._sqRO) {
+        this._sqRO = new ResizeObserver(() => this._kbdSquare());
+        this._sqRO.observe(this);
+      }
       this._fitKbd();
     };
     if (customElements.get('ble-keyboard-card')) make();
     else loadKeyboardCard().then(make);
+  }
+
+  // On the dashboard the keys are drawn square, as the device page's and a popped
+  // window's are: the panel grows past the 460px the rest of the card keeps to,
+  // up to the width that makes them square, where the card has that room. A card
+  // narrower than that keeps its width and draws them shorter instead, as tall as
+  // a letter key is wide. Measured at their own height, the hint taken off first.
+  _kbdSquare() {
+    const kb = this._kbdEl, sr = this.shadowRoot;
+    const panel = sr && sr.getElementById('kbd-panel');
+    if (!kb || !kb.shadowRoot || !panel) return;
+    const fits = !this.hasAttribute('popped') && !panel.hidden && panel.dataset.mode === 'keys';
+    const rows = fits ? kb.shadowRoot.querySelectorAll('.kb-row') : [];
+    kb.style.removeProperty('--kb-key-h');
+    if (!rows.length) {
+      panel.style.maxWidth = '';
+      return;
+    }
+    const want = `${Math.max(460, keysSquareWidth(rows))}px`;
+    if (panel.style.maxWidth !== want) panel.style.maxWidth = want;
+    const win = kb.ownerDocument.defaultView || window;
+    let unit = Infinity, tall = 0;
+    for (const k of kb.shadowRoot.querySelectorAll('.kb-row .key')) {
+      const s = win.getComputedStyle(k);
+      const w = parseFloat(s.width) || 0;
+      if (w > 0) unit = Math.min(unit, w);
+      tall = Math.max(tall, parseFloat(s.height) || 0);
+    }
+    if (unit < tall - 1) kb.style.setProperty('--kb-key-h', `${Math.max(20, Math.floor(unit))}px`);
   }
 
   // The mouse card's pad, buttons and scroll keys, drawn bare the same way and

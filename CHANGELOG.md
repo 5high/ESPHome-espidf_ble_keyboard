@@ -25,6 +25,9 @@ web control page shows the matching version badge.
   before.
 
 ### Fixed
+- **The keys a remote's keyboard key opens are square on a Home Assistant dashboard too**, as they
+  already were popped out: the keyboard grows wider than the rest of the card where there is room,
+  and its keys are drawn shorter on a card too narrow for that.
 - **Text no longer loses the characters its host's layout has no key for.** Curly quotes, dashes,
   the ellipsis and accented letters on a US layout were left out of pasted and typed text; they now
   arrive as their plain equivalents.

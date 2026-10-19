@@ -628,6 +628,11 @@ class BleKeyboardCard extends HTMLElement {
       :host([embedded]) .header {
         display: none;
       }
+      /* Where the remote card has no room to make them square, it makes them
+         shorter instead (--kb-key-h, set on this element). */
+      :host([embedded]) .key {
+        min-height: var(--kb-key-h, 34px);
+      }
       .card {
         background: var(--ha-card-background, var(--card-background-color, #fff));
         border-radius: var(--ha-card-border-radius, 12px);
