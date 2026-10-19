@@ -98,15 +98,40 @@ struct HidKeyMapping {
   uint8_t followup_modifier; // modifier on the second stroke (e.g. Shift for uppercase accented vowels)
 };
 
-// One queued keystroke of typed text. `letter` marks a key whose character Caps
-// Lock changes. That is decided from the character when the text is queued: a
-// keycode alone can't say, since the key that is M in the US layout types a
-// comma in the Belgian one.
+// One queued keystroke of typed text, and what is special about it (STROKE_*).
 struct TypedStroke {
   uint8_t modifier;
   uint8_t keycode;
-  bool letter;
+  uint8_t flags;
 };
+enum : uint8_t {
+  // A key whose character Caps Lock changes. Decided from the character when the
+  // text is queued: a keycode alone can't say, since the key that is M in the US
+  // layout types a comma in the Belgian one.
+  STROKE_LETTER = 1,
+  // Its key-up leaves the modifier down: the digits of an Alt code, which Windows
+  // reads as one number only while Alt stays held.
+  STROKE_KEEP_MOD = 2,
+  // Not a key of its own: Num Lock, tapped first if the host has it off, since an
+  // Alt code's digits are keypad keys and those are arrows without it.
+  STROKE_NUM_ON = 4,
+  // Num Lock tapped again, if STROKE_NUM_ON turned it on.
+  STROKE_NUM_BACK = 8,
+};
+
+// How a host gets a character its layout has no key for. Keep the values in
+// sync with UNICODE_INPUTS in __init__.py.
+enum : uint8_t {
+  UNICODE_FOLD = 0,     // its plain equivalent, typed through the layout
+  UNICODE_WINDOWS = 1,  // Alt + numpad code, for anything in Windows-1252
+  UNICODE_LINUX = 2,    // Ctrl+Shift+U, the hex digits and a space (IBus)
+  UNICODE_UNSET = 0xFF,
+};
+/// The plain form of a character no layout types, into `out` (at most 3
+/// characters, possibly none). False when there is none.
+bool fold_codepoint(uint32_t cp, char out[4]);
+/// Its Windows-1252 byte — the number an Alt code types it with — or 0.
+uint8_t cp1252_byte(uint32_t cp);
 
 struct UnicodeKeyMapping {
   uint32_t codepoint;
@@ -218,6 +243,32 @@ class EspidfBleKeyboard : public Component
 
   void set_key_delay_ms(uint32_t ms) { key_delay_ms_ = ms; }
   uint32_t key_delay_ms() const { return key_delay_ms_; }
+  void set_unicode_input(uint8_t method) { unicode_input_ = method; }
+
+  // Typing per host: its pace, and how it gets characters its layout lacks.
+  // YAML gives defaults — the top level, then the slot's hosts: entry — and Host
+  // Actions saves a host's own in NVS, which wins. 0 and UNICODE_UNSET are "not
+  // set at this level".
+  struct TypingCfg {
+    uint16_t delay{0};
+    uint8_t method{UNICODE_UNSET};
+  };
+  void set_host_slot_typing(uint8_t slot, uint16_t delay_ms, uint8_t method) {
+    if (slot < MAX_HOST_SLOTS) {
+      host_slot_configs_[slot].key_delay_ms = delay_ms;
+      host_slot_configs_[slot].unicode_input = method;
+    }
+  }
+  /// What Host Actions saved for the slot.
+  TypingCfg get_slot_typing(uint8_t slot) const {
+    return slot < MAX_HOST_SLOTS ? typing_[slot] : TypingCfg{};
+  }
+  /// What applies when Host Actions saved nothing: the slot's YAML, else the top level's.
+  TypingCfg get_slot_typing_default(uint8_t slot) const;
+  bool set_slot_typing(uint8_t slot, uint16_t delay_ms, uint8_t method);
+  static const char *unicode_input_name(uint8_t method);
+  /// UNICODE_UNSET for anything that isn't one of the names.
+  static uint8_t unicode_input_from(const std::string &name);
 
   // Safety net for a hold whose release never arrives (browser closed mid-press,
   // a lost on_release). 0 = off: a held key then stays down until something
@@ -656,6 +707,8 @@ class EspidfBleKeyboard : public Component
     // active slot, so that is the one a new connection belongs to.
     link_slot_.store(connected ? (int8_t) active_slot_ : (int8_t) -1);
     link_secure_.store(false);
+    tx_room_max_ = 0;   // each link has a room of its own (tx_clear_)
+    drop_mouse_motion_();   // motion meant for a link that has gone
     pending_lcd_publish_.store(true);   // @state
     // Lock states belong to the host: unknown until this one reports them, and
     // the LED sensors go dark on a disconnect rather than showing the last
@@ -707,6 +760,8 @@ class EspidfBleKeyboard : public Component
     uint32_t passkey{0};
     bool secure_connections{false};  // true = secure_connections, false = legacy
     uint16_t appearance{APPEARANCE_KEYBOARD};  // advertised only; GATT stays a keyboard
+    uint16_t key_delay_ms{0};                  // 0 = the top-level key_delay_ms
+    uint8_t unicode_input{UNICODE_UNSET};      // unset = the top-level unicode_input
   };
 
   struct HostSlot {
@@ -893,6 +948,9 @@ class EspidfBleKeyboard : public Component
   /// bytes of stack and about 860 spare, and walking every source there meant a
   /// call chain of string-building frames on the thinnest stack in the system.
   const std::string &lcd_status_json() const { return lcd_status_json_; }
+  /// Pending timers for /status, `[["name",seconds,slot],…]`, soonest first.
+  void append_timers_json(std::string &out);
+  uint8_t timer_count() const { return timer_count_; }
   /// Optional text sensor carrying the panel values to the Lovelace card, cut
   /// to what a Home Assistant state holds — the same reason the hidden, hold and
   /// repeat lists travel as sensors: a dashboard on https cannot fetch this
@@ -1056,6 +1114,15 @@ class EspidfBleKeyboard : public Component
   bool passkey_secure_connections_{false};
   std::string device_name_{"ESP32 BLE KB"};
   uint32_t key_delay_ms_{80};
+  uint8_t unicode_input_{UNICODE_FOLD};
+  TypingCfg typing_[MAX_HOST_SLOTS]{};  // Host Actions' own, per slot (NVS "typ<slot>")
+  // The active host's typing, resolved from the levels above. Atomic: the loop
+  // types with them while a switch or a Host Actions save sets them from another
+  // task.
+  std::atomic<uint32_t> cur_key_delay_{80};
+  std::atomic<uint8_t> cur_unicode_{UNICODE_FOLD};
+  void load_typing_();
+  void apply_typing_(uint8_t slot);
 
   bool web_control_enabled_{false};
   float mouse_sensitivity_{1.0f};
@@ -1171,6 +1238,33 @@ class EspidfBleKeyboard : public Component
   /// replaced by the number. False when `action` is not of that form; true once
   /// handled, dropped included — the typed-text fallback must never see one.
   bool run_valued_(uint8_t slot, const std::string &action);
+  // Timers — after:[<name>:]<time>:<action>. RAM only: a restart forgets them, as
+  // a TV forgets its sleep timer. An after: runs on whichever task its action came
+  // in on and loop() takes the due ones out, so the table has a lock — never held
+  // across queue_action(), which can run an action inline and land back here.
+  struct Timer {
+    char name[16];  // empty for an unnamed one
+    uint32_t due_ms;
+    int8_t slot;    // the host it was set on; -1 for none, a to: run's
+    std::string action;
+  };
+  static const uint8_t MAX_TIMERS = 8;
+  Timer timers_[MAX_TIMERS]{};
+  uint8_t timer_count_{0};
+  SemaphoreHandle_t timer_mutex_{nullptr};
+  std::atomic<bool> timers_changed_{false};
+  std::string timer_lcd_;      // @timer as the panel last had it; loop()'s alone
+  uint32_t timer_lcd_ms_{0};   // when loop() last worked it out
+  // Fired timers ride the action queue as "\x1E<slot>:<action>" — a control
+  // character no action string starts with, as PEER_JOB is.
+  static const char TIMER_JOB = '\x1E';
+  // The host whose Host Action is running under host_action:N: — the page a key
+  // was pressed on, when that is not the active host. -1 otherwise.
+  int8_t page_slot_ctx_{-1};
+  void run_after_(const std::string &action);
+  void drop_timer_(uint8_t i);
+  void timers_loop_();
+  void run_timer_job_(const std::string &job);
   // Stack accounting for a whole action chain — see report_action_stack_().
   void report_action_stack_();
   /// Resolve a macro index to its action string and queue that.
@@ -1449,7 +1543,20 @@ class EspidfBleKeyboard : public Component
   void update_led_state_(uint8_t led_byte);
   uint8_t caps_corrected_(uint8_t modifier, bool letter) const;
   void send_battery_notify_();
-  void send_mouse_report_(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
+  esp_err_t send_mouse_report_(uint8_t buttons, int8_t x, int8_t y, int8_t wheel);
+  // Relative motion and scrolling not yet sent. A move goes straight out while
+  // the link keeps up; while it is behind, moves add up here instead of queuing,
+  // and whichever call or loop pass finds room sends the sum (flush_mouse_).
+  std::atomic<int32_t> pend_dx_{0}, pend_dy_{0}, pend_wheel_{0};
+  uint32_t mouse_wait_ms_{0};  // since when motion has waited for room
+  /// What motion is waiting, as far as the link has room — all of it if `force`.
+  void flush_mouse_(bool force = false);
+  bool mouse_room_ok_(uint32_t now);
+  void drop_mouse_motion_() { pend_dx_.store(0); pend_dy_.store(0); pend_wheel_.store(0); }
+  /// mouse_goto's steps: `ms` as before, then on until the link has room, at most half a second.
+  void wait_tx_room_(uint32_t ms);
+  /// The stack's room for reports on this link, and the most it has had (tx_room_max_).
+  uint16_t tx_room_();
   void send_system_(uint8_t usage);
 
   // Non-blocking string typing state machine (driven from loop())
@@ -1463,6 +1570,27 @@ class EspidfBleKeyboard : public Component
   std::deque<TypedStroke> type_queue_;
   bool type_key_up_pending_{false};
   uint32_t type_next_ms_{0};
+  // Something is waiting to be typed — what a timer's visit waits on.
+  std::atomic<bool> type_busy_{false};
+  uint8_t type_mod_held_{0};  // what a STROKE_KEEP_MOD key-up left down
+  // The link's room for reports, as the stack counts it: the most it has had
+  // free on this connection, and since when a key has waited for it (tx_clear_).
+  uint16_t tx_room_max_{0};
+  uint32_t tx_wait_ms_{0};
+  bool tx_wait_logged_{false};
+  /// Whether a key can go down now, its key-up free to follow straight after.
+  bool tx_clear_(uint32_t now);
+  // One more key-up once the text is typed, release_at_ms_ after the last.
+  bool release_after_{false};
+  uint32_t release_at_ms_{0};
+  bool num_tapped_{false};    // STROKE_NUM_ON turned the host's Num Lock on
+  uint32_t num_wait_ms_{0};   // since when STROKE_NUM_ON has waited for the host's LEDs
+  /// One character onto the queue (under type_mutex_), by whichever route this
+  /// host has for it. `num` is set when it queued an Alt code. False if nothing types it.
+  bool queue_codepoint_(uint32_t cp, uint8_t method, bool &num);
+  /// The layout's own strokes for a character; false when the layout has none.
+  bool queue_layout_char_(uint32_t cp, bool caps_aware = true);
+  void num_lock_step_(uint32_t now, uint32_t next);
   /// One step of typing when one is due: the next key down, or its key up.
   void type_step_();
   /// Forget whatever is still to be typed, and the memory it held.

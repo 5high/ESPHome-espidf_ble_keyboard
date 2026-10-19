@@ -75,12 +75,15 @@ espidf_ble_keyboard:
   passkey: 123456
   passkey_mode: legacy
   keyboard_layout: us            # us, uk, de or be
+  unicode_input: fold            # characters the layout lacks: fold, windows or linux
   host_slots: 5
   hosts:
     - slot: 0                    # Windows PC
       passkey: 111111
       passkey_mode: legacy
       layout: us                     # us, uk, de or be
+      key_delay_ms: 30               # this host's typing speed
+      unicode_input: windows         # é, ’ and — typed as Alt codes
       actions:
         record: "combo:0x0C:0x15"      # Record starts Game Bar recording
     - slot: 1                    # iPhone
@@ -314,6 +317,10 @@ button:
     keyboard_id: my_keyboard
     name: "Show Desktop Twice"
     action: "press_button:show_desktop | delay:1000 | press_button:show_desktop"
+  - platform: espidf_ble_keyboard
+    keyboard_id: my_keyboard
+    name: "Sleep in 30 min"
+    action: "after:pc:30m:sleep"           # sleeps the host active now; after:pc:cancel cancels it
   # - platform: espidf_ble_keyboard
   #   keyboard_id: my_keyboard
   #   name: "Bedroom Volume Up"

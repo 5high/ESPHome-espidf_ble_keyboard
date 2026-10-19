@@ -30,6 +30,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 .status-text{font-size:13px;color:var(--muted)}
 .status-text.on{color:var(--accent)}
 .caps-pill{font-size:10px;font-weight:700;letter-spacing:.5px;padding:1px 5px;border:1px solid var(--accent);border-radius:4px;color:var(--accent)}
+.timer-pill{background:none;font-family:inherit;letter-spacing:.2px;cursor:pointer}
 .dev-name{font-size:13px;color:var(--name);margin-left:4px;font-weight:500}
 /* flex-grow so this reaches the right-hand card padding instead of stopping at its
    content width — the leftover is what the toggles below share out. */
@@ -750,11 +751,12 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 #media-card>h2{flex-wrap:wrap}
 .rmt-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
 .rmt-head .macro-edit-btn{margin-left:0}
-/* The keyboard the remote's keyboard and typing keys open, under the remote and
-   inside its card. Never named .rmt-: tools/gen-remote-styles.mjs lifts those
-   rules into the Home Assistant card, which draws a keyboard of its own. */
+/* The keyboard or mouse pad the remote's keyboard, typing and touchpad keys open,
+   under the remote and inside its card. Never named .rmt-: tools/gen-remote-styles.mjs
+   lifts those rules into the Home Assistant card, which draws its own. */
 .rkb{margin:10px auto 0}
-.rkb[hidden],.rkb[data-mode=keys] .rkb-type,.rkb[data-mode=type] .rkb-keys{display:none}
+.rkb[hidden],.rkb:not([data-mode=keys]) .rkb-keys,.rkb:not([data-mode=type]) .rkb-type,
+.rkb:not([data-mode=pad]) .rkb-pad{display:none}
 .rkb-keys .row:last-child{margin-bottom:0}
 /* 16px text: a phone zooms the whole page in on a box with anything smaller. As
    wide as what holds it, and size="1" so it never asks a window for more. */
@@ -781,11 +783,12 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="status-dot" id="sdot"></div>
 <span class="status-text" id="stxt">Disconnected</span>
 <span class="caps-pill" id="capsind" title="Caps Lock is on at the host" hidden>CAPS</span>
+<button class="caps-pill timer-pill" id="timerind" hidden></button>
 <span class="dev-name" id="dname"></span>
 <!-- Carries the release tag, and `-dev` while main is ahead of the last one. Drop
      the suffix when tagging; append a letter (v1.7.0-dev-b) to tell two dev builds
      apart when chasing a "my edit didn't reach the device" problem. -->
-<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.17.0</span>
+<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.18.0-dev</span>
 </div>
 <div class="toolbar-right">
 <div class="section-toggles" id="toggle-bar">
@@ -817,14 +820,14 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <h2><svg viewBox="0 0 24 24"><path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/></svg>Mouse<span class="kb-drives" data-why="Typing and pointing go to %s, the keyboard the remote is driving." hidden></span></h2>
 <div class="touchpad" id="touchpad"><span class="touchpad-hint">Drag to move</span></div>
 <div class="mbtn-row">
-<button class="mbtn" id="ml">Left</button>
-<button class="mbtn" id="mm">Middle</button>
-<button class="mbtn" id="mr">Right</button>
+<button class="mbtn" id="ml" data-btn="1">Left</button>
+<button class="mbtn" id="mm" data-btn="4">Middle</button>
+<button class="mbtn" id="mr" data-btn="2">Right</button>
 </div>
 <div style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center">Long-press a button to hold (drag) &middot; tap it again to release</div>
 <div class="scroll-row">
-<button class="sbtn" id="su">&#9650; Up</button>
-<button class="sbtn" id="sd">&#9660; Down</button>
+<button class="sbtn" id="su" data-scroll="3">&#9650; Up</button>
+<button class="sbtn" id="sd" data-scroll="-3">&#9660; Down</button>
 </div>
 </div>
 
@@ -880,9 +883,9 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
      here follow whichever machine is selected. The markup this replaced is now
      the `default` entry in RMT_TEMPLATES, which reproduces it exactly. -->
 <div id="rmt-body" class="rmt-body"></div>
-<!-- What the remote's keyboard and typing keys open. Inside the card, so it goes
-     wherever the remote goes, popped out included. -->
-<div id="rmt-kbd" class="rkb" hidden><div class="rkb-keys"></div><input class="rkb-type" type="text" size="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="enter" placeholder="Type &mdash; it goes straight to the host" aria-label="Type to the host"></div>
+<!-- What the remote's keyboard, typing and touchpad keys open. Inside the card, so
+     it goes wherever the remote goes, popped out included. -->
+<div id="rmt-kbd" class="rkb" hidden><div class="rkb-keys"></div><input class="rkb-type" type="text" size="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="enter" placeholder="Type &mdash; it goes straight to the host" aria-label="Type to the host"><div class="rkb-pad"><div class="touchpad"><span class="touchpad-hint">Drag to move</span></div><div class="mbtn-row" title="Long-press a button to hold it (drag); tap it again to let go"><button class="mbtn" data-btn="1">Left</button><button class="mbtn" data-btn="4">Middle</button><button class="mbtn" data-btn="2">Right</button></div><div class="scroll-row"><button class="sbtn" data-scroll="3">&#9650; Up</button><button class="sbtn" data-scroll="-3">&#9660; Down</button></div></div></div>
 </div>
 
 <div class="card" id="btns-card">
@@ -989,6 +992,8 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <option value="delay:500">Delay 500ms</option>
 <option value="delay:1000">Delay 1000ms</option>
 <option value="repeat:5:">Repeat 5&times; (edit count)</option>
+<option value="after:30m:">After 30 min (edit time)</option>
+<option value="after:cancel">Cancel Timers</option>
 <option value="switch_host:">Switch to Host (edit slot)</option>
 <option value="switch_host:next">Next Host</option>
 <option value="switch_host:prev">Prev Host</option>
@@ -1115,6 +1120,18 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="macro-form"><button id="hld-save">Save hold</button><button id="hld-none" class="cancel">None</button></div>
 </div>
 </div>
+<div class="hid-panel" id="typ-panel">
+<button class="hid-toggle" id="typ-toggle">Typing &#9662;</button>
+<div class="hid-body" id="typ-body">
+<div style="font-size:12px;color:var(--muted);margin:6px 0">How text reaches this host &mdash; pasted, typed in a box or sent by a macro. Leave one empty for the default your YAML gives it. Saved per host.</div>
+<div class="rpt-times">
+<label>Speed <input id="typ-delay" type="number" min="2" max="10000" step="1" title="The time each character takes, split between its key going down and coming up. Lower is faster; raise it for a host that drops characters. Empty = the default."> ms a character</label>
+<label>Characters the layout lacks <select id="typ-uni" title="What becomes of a character this host's layout has no key for &mdash; curly quotes, dashes, an &eacute; on a US layout.&#10;&#10;Plain equivalents: &rsquo; types ', &mdash; types --, &eacute; types e.&#10;Windows Alt codes: the character itself, for anything in Windows-1252. Num Lock is turned on for it and back off after.&#10;Linux Ctrl+Shift+U: the character itself, any of them, in GNOME and other IBus desktops."><option value="">Default</option><option value="fold">Plain equivalents</option><option value="windows">Windows Alt codes</option><option value="linux">Linux Ctrl+Shift+U</option></select></label>
+</div>
+<div class="macro-form"><button id="typ-save">Save typing</button><button id="typ-reset" class="cancel">Reset</button></div>
+<div id="typ-note" style="font-size:11px;color:var(--muted)" hidden>This slot doesn&rsquo;t advertise, so nothing is typed on it.</div>
+</div>
+</div>
 <div class="hid-panel" id="tpl-panel">
 <button class="hid-toggle" id="tpl-toggle">Remote Style &#9662;</button>
 <div class="hid-body" id="tpl-body">
@@ -1151,7 +1168,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["media",…]</code></dt><dd>A row of small transport buttons.</dd>
 <dt><code>["apps",…]</code></dt><dd>A row of wide pills.</dd>
 <dt><code>["grid",…]</code></dt><dd>Equal rectangles in columns, the layout said once: <code>["grid",{"cols":2,"h":56,"opts":"sq"},["spare1","Copy"],["spare2","Paste"]]</code>. The settings are optional &mdash; <code>cols</code> 1&ndash;8 (2 if left out), <code>h</code> 24&ndash;160 pixels, and <code>opts</code> every key takes. A key's own options add to those, and <code>"|"</code> leaves a cell empty.</dd>
-<dt><code>["lcd",…]</code></dt><dd>A small screen: <code>["lcd",["Room","temp"],["Host","@host"]]</code>. Each line is a label and the value to show &mdash; <code>@host @slot @mac @state @rssi @battery @layout</code> come from the keyboard itself, <code>@last</code> and <code>@station</code> name the button just pressed, <code>@msg</code> shows what an <code>lcd:text</code> action wrote, and any other name is an entry in the component's <code>sources:</code>. A third entry sizes and justifies one line: <code>sm lg xl</code>, <code>left centre right</code>, or a <code>#hex</code> colour. Left alone a line spreads &mdash; label one side, value the other. A settings object in front of the lines sizes the panel itself like a real display: <code>{"cols":16,"rows":2}</code> is 16 characters by 2 lines (4&ndash;40 and 1&ndash;8), and <code>fg bg label border</code> colour that panel alone.</dd>
+<dt><code>["lcd",…]</code></dt><dd>A small screen: <code>["lcd",["Room","temp"],["Host","@host"]]</code>. Each line is a label and the value to show &mdash; <code>@host @slot @mac @state @rssi @battery @layout</code> come from the keyboard itself, <code>@last</code> and <code>@station</code> name the button just pressed, <code>@msg</code> shows what an <code>lcd:text</code> action wrote, <code>@timer</code> the time left on the soonest <code>after:</code> timer, and any other name is an entry in the component's <code>sources:</code>. A third entry sizes and justifies one line: <code>sm lg xl</code>, <code>left centre right</code>, or a <code>#hex</code> colour. Left alone a line spreads &mdash; label one side, value the other. A settings object in front of the lines sizes the panel itself like a real display: <code>{"cols":16,"rows":2}</code> is 16 characters by 2 lines (4&ndash;40 and 1&ndash;8), and <code>fg bg label border</code> colour that panel alone.</dd>
 <dt><code>["slider",…]</code></dt><dd>A track to press or drag to a value, as an analogue pot is turned to one: <code>["slider",{"set":"spare12","label":"Lamp"}]</code> sends <code>spare12=&lt;value&gt;</code> once when let go, and <code>{"level":"tv_volume"}</code> sends the presses of <code>"volume_up","volume_down"</code> (or two actions you list) from that reading. Upright unless <code>"horizontal":true</code> (or <code>"vertical":false</code>); <code>length</code> 30&ndash;480 pixels and <code>width</code> 10&ndash;120 (how thick), <code>thumb</code> 8&ndash;120 (its size, apart from the width), <code>"thumb_shape":"line"</code> for a fader cap, <code>min</code> <code>max</code> <code>inc</code>, <code>show</code>, <code>label</code>, <code>label_at</code> and <code>marks</code> as on a pot. A pot&rsquo;s settings and actions carry over, so changing <code>"pot"</code> to <code>"slider"</code> is all a swap takes: <code>size</code> is the length, and a third action is pressed by a tap on the thumb, as a pot&rsquo;s middle key is.</dd>
 <dt><code>["side",…]</code></dt><dd>Sections side by side instead of one under another: <code>["side",["strip",["Vol","volume_up","volume_down"]],["pot",{"size":100}],["strip",["Ch","channel_up","channel_down"]]]</code> puts a knob between two columns. <code>["side",{"gap":24},…]</code> sets the room between them, 0&ndash;200 pixels (12 unless set).</dd>
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
@@ -1609,7 +1626,31 @@ setZoom(parseInt(localStorage.getItem('blekb_zoom'))||100);
 const sdot=document.getElementById('sdot');
 const stxt=document.getElementById('stxt');
 const capsInd=document.getElementById('capsind');
+const timerInd=document.getElementById('timerind');
 const dname=document.getElementById('dname');
+// after: timers still to fire, [name, seconds left, slot] and soonest first: that
+// one on the chip, every one in its tooltip. Written the way a panel's @timer is.
+function timerText(s){
+  if(s<60)return s+' s';
+  const m=Math.ceil(s/60),h=Math.floor(m%1440/60);
+  return m<=60?m+' min':m<1440?Math.floor(m/60)+' h'+(m%60?' '+m%60+' min':''):Math.floor(m/1440)+' d'+(h?' '+h+' h':'');
+}
+function showTimers(list){
+  const t=Array.isArray(list)?list:[];
+  timerInd.hidden=!t.length;
+  timerInd.dataset.n=t.length;
+  if(!t.length)return;
+  timerInd.textContent='⏲ '+timerText(t[0][1]);
+  timerInd.title=t.map(x=>(x[0]||'Timer')+': '+timerText(x[1])+(x[2]>=0?', for host slot '+x[2]:'')).join('\n')
+    +'\n\nClick to cancel '+(t.length>1?'them':'it');
+}
+timerInd.addEventListener('click',()=>{
+  const n=+timerInd.dataset.n||0;
+  if(!n||!confirm(n>1?'Cancel all '+n+' timers?':'Cancel the timer?'))return;
+  // On a tab driving a linked keyboard, it is that keyboard's timers on the chip.
+  const p=peerLock();
+  apiPost('press',{action:(p!==null?'peer:'+p+':':'')+'after:cancel'}).then(()=>{if(p===null)pollStatus()}).catch(()=>{});
+});
 // The badge, the name beside it and the panels — for this keyboard, or for the
 // linked one the remote drives, whose /status comes inside its cached /state.
 function showStatus(d){
@@ -1630,6 +1671,7 @@ function showStatus(d){
   // way; this says why a real keyboard on that host is typing capitals.
   capsInd.hidden=d.caps!==true;
   if(window.syncHostCaps)window.syncHostCaps(d.caps);
+  showTimers(d.timers);
   if(d.device_name){dname.textContent='('+d.device_name+')';document.title=d.device_name+(POPOUT?' — Remote':' — BLE Control')}
   // Whatever the style on screen asked for. Sent on every tick rather than
   // only when it changes: the map is a handful of short strings, and the
@@ -1639,6 +1681,7 @@ function showStatus(d){
 function showOffline(text){
   sdot.className='status-dot';
   capsInd.hidden=true;
+  showTimers(null);
   stxt.className='status-text';
   stxt.textContent=text;
 }
@@ -1739,7 +1782,8 @@ kb_next:'<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 
 all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1.41zM4 6v12H2V6h2z"/>',
 all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>',
 kb_show:'<path d="M20 7v10H4V7h16m0-2H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/>',
-text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>'};
+text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>',
+pad_show:'<path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/>'};
 // Every action the remote can show. t=title, i=icon id, x=text label,
 // c=extra classes, r=repeats by default, g=group in the Host Actions grids.
 const RMT_BTNS={
@@ -1838,16 +1882,17 @@ last_host:{t:'Last Host',i:'host_last',g:9},
 next_keyboard:{t:'Next Keyboard',i:'kb_next',g:9},
 prev_host_all:{t:'Prev Host (all)',i:'all_prev',g:9},
 next_host_all:{t:'Next Host (all)',i:'all_next',g:9},
-// Keys that open a keyboard under the remote: the on-screen keys, or a box the
-// phone's or PC's own keyboard types into. The remote acts on them itself —
-// here and on the Home Assistant card — and never sends them, and the keyboard
-// opens wherever the remote is, popped out included.
+// Keys that open a keyboard or a mouse pad under the remote: the on-screen keys,
+// a box the phone's or PC's own keyboard types into, or the Mouse card's pad.
+// The remote acts on them itself — here and on the Home Assistant card — and
+// never sends them, and the panel opens wherever the remote is, popped out included.
 keyboard:{t:'Keyboard',i:'kb_show',g:10},
-typing:{t:'Typing box',i:'text_in',g:10}};
+typing:{t:'Typing box',i:'text_in',g:10},
+touchpad:{t:'Touchpad',i:'pad_show',g:10}};
 // The keys above that the page acts on itself.
-const RMT_PAGE_KEYS=['next_keyboard','prev_host_all','next_host_all','keyboard','typing'];
-// Of those, the two that open the keyboard panel under the remote.
-const RMT_KB_KEYS=['keyboard','typing'];
+const RMT_PAGE_KEYS=['next_keyboard','prev_host_all','next_host_all','keyboard','typing','touchpad'];
+// Of those, the three that open the panel under the remote.
+const RMT_KB_KEYS=['keyboard','typing','touchpad'];
 const RMT_KINDS=['row','dpad','ring','pot','slider','strip','rocker','media','apps','grid','lcd','side','-'];
 // A theme may only set these, and each maps to a custom property the .rmt-*
 // rules already read. An imported template therefore cannot inject CSS: keys
@@ -1927,7 +1972,7 @@ const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
 // already reads, so a panel-level colour needs no CSS of its own.
 const RMT_LCD_COLOURS=['fg','bg','label','border'];
 const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout',
-'@last','@station','@msg'];
+'@last','@station','@msg','@timer'];
 // @last and @station arrive as the action that was pressed — "spare1" — which
 // says nothing to a viewer. The style is the only place that knows the key was
 // labelled "Netflix", so the renderers translate these two through it. @msg is
@@ -3715,6 +3760,13 @@ function macroRefs(action,out){
     a.substring(10).split('||').forEach(b=>macroRefs(b,out));
     return out;
   }
+  if(a.indexOf('after:')===0){
+    // after:[<name>:]<time>:<action> — only the action can name a macro.
+    let rest=a.substring(6),sep=rest.indexOf(':');
+    if(sep!==-1&&/^\s*[a-z]/i.test(rest)){rest=rest.substring(sep+1);sep=rest.indexOf(':')}
+    if(sep!==-1)macroRefs(rest.substring(sep+1),out);
+    return out;
+  }
   if(a.indexOf('|')!==-1){
     a.split('|').forEach(s=>macroRefs(s,out));
     return out;
@@ -4096,6 +4148,11 @@ function insertStep(el,val){
   const oncPreset=document.getElementById('onc-preset');
   const oncSave=document.getElementById('onc-save');
   const oncNote=document.getElementById('onc-note');
+  const typDelay=document.getElementById('typ-delay');
+  const typUni=document.getElementById('typ-uni');
+  const typSave=document.getElementById('typ-save');
+  const typReset=document.getElementById('typ-reset');
+  const typNote=document.getElementById('typ-note');
   const copyBar=document.getElementById('ov-copy');
   const copyHosts=document.getElementById('ov-copy-hosts');
   const copyGo=document.getElementById('ov-copy-go');
@@ -4109,6 +4166,8 @@ function insertStep(el,val){
   // edits, a reload (a host switch moves this card) leaves it alone, and Save
   // still goes to the slot it was typed for.
   let oncSlot=null,oncDirty=false;
+  // The same for the Typing boxes.
+  let typSlot=null,typDirty=false;
   // Whether each slot advertises, as /hosts last reported it. Kept so the tick
   // can follow the picker without a fetch per slot change.
   let bcastBySlot={};
@@ -4236,6 +4295,11 @@ function insertStep(el,val){
     // A slot that never advertises never connects, so its action would never run.
     const quiet=bcastBySlot[slot]===false;
     if(oncIn){oncIn.disabled=quiet;oncSave.disabled=quiet;oncNote.hidden=!quiet}
+    // ... and nothing is ever typed on it.
+    if(typDelay){
+      [typDelay,typUni,typSave,typReset].forEach(el=>{el.disabled=quiet});
+      typNote.hidden=!quiet;
+    }
     if(!bcastCk)return;
     bcastCk.checked=!quiet;
   }
@@ -4286,6 +4350,7 @@ function insertStep(el,val){
   function load(){
     apiGetJSON('overrides?'+new URLSearchParams({slot:slot})).then(d=>{
       if(oncIn&&!oncDirty){oncIn.value=d.on_connect||'';oncSlot=slot}
+      if(typDelay&&d.typing&&!typDirty)showTyping(d.typing);
       list.innerHTML='';
       shownItems=d.items||[];
       // A tick only for what this host still has.
@@ -4358,6 +4423,7 @@ function insertStep(el,val){
   slotSel.addEventListener('change',()=>{
     slot=parseInt(slotSel.value);
     oncDirty=false;   // picking another host shows that host's action
+    typDirty=false;
     picked.clear();copyTo.delete(slot);copyMsg('');
     // An armed confirm belongs to the slot it was armed on, never the new one.
     if(forgetBtn)resetForget();
@@ -4495,7 +4561,7 @@ function insertStep(el,val){
                                           group:RMT_BTNS[a].g,rpt:!!RMT_BTNS[a].r}));
   }
   const GROUP_NAMES=['Power &amp; navigation','D-pad','Volume, channel &amp; brightness','Media','Colours','Apps',
-                     'TV keys','Numbers','Spare (set an override to use)','Hosts','Keyboard'];
+                     'TV keys','Numbers','Spare (set an override to use)','Hosts','Keyboard and mouse'];
 
   // Shared by all three per-host panels: same button list, same grouping — only
   // what a tick means differs, so the caller supplies that as a predicate.
@@ -4665,6 +4731,36 @@ function insertStep(el,val){
         return loadHold();
       });
   });
+
+  // ── Typing (per host) ──
+  // This host's pace and its way with characters its layout lacks, filled by
+  // load() from the same /overrides reply. An empty box is the YAML default,
+  // which the boxes show in its place.
+  const typPanel=document.getElementById('typ-panel');
+  const typToggle=document.getElementById('typ-toggle');
+  const TYP_NAMES={fold:'plain equivalents',windows:'Windows Alt codes',linux:'Linux Ctrl+Shift+U'};
+  function showTyping(t){
+    typDelay.value=t.delay||'';
+    typDelay.placeholder=t.delay_def;
+    typUni.options[0].textContent='Default ('+(TYP_NAMES[t.unicode_def]||t.unicode_def)+')';
+    typUni.value=t.unicode||'';
+    typSlot=slot;
+  }
+  if(typToggle)typToggle.addEventListener('click',()=>{
+    typPanel.classList.toggle('open');
+    typToggle.innerHTML='Typing '+(typPanel.classList.contains('open')?'▴':'▾');
+  });
+  [typDelay,typUni].forEach(el=>{if(el)el.addEventListener('input',()=>{typDirty=true})});
+  function saveTyping(delay,uni){
+    const target=typSlot===null?slot:typSlot;
+    apiPost('typing_set',{slot:target,delay:delay,unicode:uni}).then(r=>{
+      if(!r.ok)return r.text().then(t=>{alert(t)});
+      typDirty=false;
+      load();
+    });
+  }
+  if(typSave)typSave.addEventListener('click',()=>saveTyping(typDelay.value.trim(),typUni.value));
+  if(typReset)typReset.addEventListener('click',()=>saveTyping('',''));
 
   // Called by the host bar whenever the device changes host, however that
   // happened — a tap here, a physical button, Home Assistant.
@@ -6958,6 +7054,7 @@ function insertStep(el,val){
       const overrides=d.overrides&&typeof d.overrides==='object'?d.overrides:{};
       const scales=d.goto_scale&&typeof d.goto_scale==='object'?d.goto_scale:{};
       const onc=d.on_connect&&typeof d.on_connect==='object'?d.on_connect:{};
+      const typ=d.typing&&typeof d.typing==='object'?d.typing:{};
       const hosts=Array.isArray(d.hosts)?d.hosts:[];
       let msg='Restore from "'+(d.device||'unknown')+'"?\n\n'
         +'This REPLACES current settings:\n'
@@ -6966,6 +7063,7 @@ function insertStep(el,val){
         +'  • keyboard layout: '+(d.layout||'unchanged')+'\n'
         +'  • calibration for '+Object.keys(scales).length+' slot(s)\n'
         +'  • on-connect actions for '+Object.keys(onc).length+' host slot(s) — the rest are cleared\n'
+        +'  • typing settings for '+Object.keys(typ).length+' host slot(s) — the rest go back to the defaults\n'
         +'  • '+(d.icons&&typeof d.icons==='object'?Object.keys(d.icons).length:0)+' button icon(s) — existing icons are deleted first\n'
         +'  • '+(Array.isArray(d.remote_templates)?d.remote_templates.length:0)+' custom remote style(s), and the style each host uses — existing custom styles are deleted first\n'
         +'  • Remote Buttons, Hold to Repeat, Press and Hold and Advertise over Bluetooth, for every host\n'
@@ -7120,12 +7218,16 @@ function insertStep(el,val){
       const bc=d.broadcast&&typeof d.broadcast==='object'?d.broadcast:{};
       // Listed only for slots that have one, so an omitted slot restores as none.
       const onc=d.on_connect&&typeof d.on_connect==='object'?d.on_connect:{};
+      const typ=d.typing&&typeof d.typing==='object'?d.typing:{};
       slots.forEach(sl=>{
         chain=chain.then(()=>post('remote_style_set',{slot:sl,id:sty[sl]||sty[String(sl)]||''}));
         const off=bc[sl]===false||bc[String(sl)]===false;
         chain=chain.then(()=>post('broadcast_set',{slot:sl,on:off?0:1}));
         const act=onc[sl]||onc[String(sl)];
         chain=chain.then(()=>post('on_connect_set',{slot:sl,action:typeof act==='string'?act.slice(0,255):''}));
+        // [delay, "method"], 0 and "" for not set; an omitted slot goes back to the defaults.
+        const t=Array.isArray(typ[sl])?typ[sl]:Array.isArray(typ[String(sl)])?typ[String(sl)]:[0,''];
+        chain=chain.then(()=>post('typing_set',{slot:sl,delay:t[0]>0?t[0]:'',unicode:typeof t[1]==='string'?t[1]:''}));
       });
       return chain;
     }).then(()=>{
@@ -7702,16 +7804,27 @@ apiPost('release').catch(()=>{});
 })();
 
 // ── Mouse ──
-(function(){
-  if(POPOUT)return;
-  const pad=document.getElementById('touchpad');
-  let tracking=false,lastX=0,lastY=0,lastTime=0,startTime=0,moved=false,startSX=0,startSY=0;
+// The Mouse card's pad, buttons and scroll arrows — and the same again under the
+// remote, when its touchpad key opens them. That remote can be in a picture-in-
+// picture window, so everything here is pointer events on the elements themselves,
+// captured: listeners on this page's window would never hear a pad in there. Each
+// root keeps its own gesture; the sensitivity is read once for all of them.
+const MOUSE_CFG={sens:1.0,accel:0.15,max:4.0,scroll:2};
+const MOUSE_ROOTS=[];
+function addMouseRoot(root){
+  if(MOUSE_ROOTS.indexOf(root)>=0)return;
+  if(!MOUSE_ROOTS.length){
+    fetch('api/ble_keyboard/mouse_config').then(r=>r.json()).then(c=>{
+      const num=(v,d)=>typeof v==='number'&&isFinite(v)?v:d;
+      MOUSE_CFG.sens=num(c.sensitivity,MOUSE_CFG.sens);MOUSE_CFG.accel=num(c.acceleration,MOUSE_CFG.accel);
+      MOUSE_CFG.max=num(c.max_speed,MOUSE_CFG.max);MOUSE_CFG.scroll=num(c.scroll_sensitivity,MOUSE_CFG.scroll);
+    }).catch(()=>{});
+  }
+  MOUSE_ROOTS.push(root);
+  const pad=root.querySelector('.touchpad');
+  let tracking=false,pid=null,lastX=0,lastY=0,lastTime=0,startTime=0,moved=false,startSX=0,startSY=0;
   let accumX=0,accumY=0,moveAC=null,heldBtn=0;
-  let baseSens=1.0,accelFactor=0.15,maxSens=4.0,scrollSens=2;
   const tapDeadZone=5;
-  fetch('api/ble_keyboard/mouse_config').then(r=>r.json()).then(c=>{
-    baseSens=c.sensitivity;accelFactor=c.acceleration;maxSens=c.max_speed;scrollSens=c.scroll_sensitivity;
-  }).catch(()=>{});
 
   function onStart(x,y){tracking=true;lastX=startSX=x;lastY=startSY=y;lastTime=startTime=Date.now();moved=false;accumX=0;accumY=0;moveAC=new AbortController();pad.classList.add('active')}
   // Single request in flight; deltas keep merging into accumX/accumY while it
@@ -7735,7 +7848,7 @@ apiPost('release').catch(()=>{});
     const rawDx=x-lastX,rawDy=y-lastY;
     const dist=Math.sqrt(rawDx*rawDx+rawDy*rawDy);
     const speed=dist/dt;
-    const sens=Math.min(baseSens+speed*accelFactor,maxSens);
+    const sens=Math.min(MOUSE_CFG.sens+speed*MOUSE_CFG.accel,MOUSE_CFG.max);
     accumX+=rawDx*sens;accumY+=rawDy*sens;
     lastX=x;lastY=y;lastTime=now;
     flushMove();
@@ -7747,26 +7860,26 @@ apiPost('release').catch(()=>{});
     if(!moved&&!heldBtn&&Date.now()-startTime<250)api('mouse_click',{btn:1});
   }
 
-  pad.addEventListener('mousedown',e=>{e.preventDefault();onStart(e.clientX,e.clientY)});
-  window.addEventListener('mousemove',e=>onMove(e.clientX,e.clientY));
-  window.addEventListener('mouseup',()=>onEnd());
-
-  // The pad owns every touch that starts on it (touch-action:none). pan-y +
+  // The pad owns every pointer that starts on it (touch-action:none). pan-y +
   // direction-claiming was tried before, but the browser can start a vertical
   // pan inside the claim slack — after that, touchmoves are non-cancelable and
-  // preventDefault can't stop the page scrolling mid-drag.
-  function tCleanup(){window.removeEventListener('touchmove',winTouchMove);window.removeEventListener('touchend',winTouchEnd);window.removeEventListener('touchcancel',winTouchCancel)}
-  function winTouchMove(e){e.preventDefault();const t=e.touches[0];onMove(t.clientX,t.clientY)}
-  function winTouchEnd(e){if(e.touches.length===0){onEnd();tCleanup()}}
-  function winTouchCancel(){moved=true;onEnd();tCleanup()}  // moved=true: a canceled tap must not click
+  // preventDefault can't stop the page scrolling mid-drag. Captured, so the moves
+  // keep coming here wherever the finger or the mouse goes; one at a time, so a
+  // second finger is ignored rather than tugging the first.
+  pad.addEventListener('pointerdown',e=>{
+    if(tracking||(e.pointerType==='mouse'&&e.button!==0))return;
+    e.preventDefault();
+    pid=e.pointerId;
+    try{pad.setPointerCapture(pid)}catch(_){}
+    onStart(e.clientX,e.clientY);
+  });
+  pad.addEventListener('pointermove',e=>{if(e.pointerId===pid)onMove(e.clientX,e.clientY)});
+  pad.addEventListener('pointerup',e=>{if(e.pointerId===pid){pid=null;onEnd()}});
+  // A cancelled gesture, or a capture taken away, must not click (moved=true).
+  const cancel=e=>{if(e.pointerId===pid){pid=null;moved=true;onEnd()}};
+  pad.addEventListener('pointercancel',cancel);
+  pad.addEventListener('lostpointercapture',cancel);
   pad.addEventListener('contextmenu',e=>e.preventDefault());  // no long-press menu mid-drag
-  pad.addEventListener('touchstart',e=>{
-    const t=e.touches[0];
-    onStart(t.clientX,t.clientY);
-    window.addEventListener('touchmove',winTouchMove,{passive:false});
-    window.addEventListener('touchend',winTouchEnd,{passive:false});
-    window.addEventListener('touchcancel',winTouchCancel,{passive:false});
-  },{passive:true});
 
   let wheelAccum=0,wheelBusy=false;
   function flushWheel(){
@@ -7779,7 +7892,7 @@ apiPost('release').catch(()=>{});
   }
   pad.addEventListener('wheel',e=>{
     e.preventDefault();
-    wheelAccum+=-e.deltaY*scrollSens*0.02;
+    wheelAccum+=-e.deltaY*MOUSE_CFG.scroll*0.02;
     flushWheel();
   },{passive:false});
 
@@ -7787,13 +7900,13 @@ apiPost('release').catch(()=>{});
   // touchpad or mouse_goto); tap the held button to release. Held state is
   // client-side only — a normal tap on any button releases everything
   // server-side too, so it also clears the mark.
-  const btnMap={ml:1,mm:4,mr:2};
+  const btns=[...root.querySelectorAll('[data-btn]')];
   function setHeld(b){
     heldBtn=b;
-    for(const[id,btn]of Object.entries(btnMap))document.getElementById(id).classList.toggle('held',b===btn);
+    btns.forEach(el=>el.classList.toggle('held',b===+el.dataset.btn));
   }
-  for(const[id,btn]of Object.entries(btnMap)){
-    const el=document.getElementById(id);
+  btns.forEach(el=>{
+    const btn=+el.dataset.btn;
     let sx,sy,ok,ht=null;
     const clearHt=()=>{if(ht){clearTimeout(ht);ht=null}};
     el.addEventListener('contextmenu',e=>e.preventDefault());  // stop mobile long-press menu
@@ -7811,7 +7924,7 @@ apiPost('release').catch(()=>{});
       else{api('mouse_click',{btn:btn});setHeld(0)}
     });
     el.addEventListener('pointercancel',()=>{ok=false;el.classList.remove('p');clearHt()});
-  }
+  });
 
   // Scroll buttons
   let si=null;
@@ -7820,8 +7933,8 @@ apiPost('release').catch(()=>{});
   // left to clear it. Two fingers, one on each arrow, is how that happens.
   function startScroll(a){stopScroll();api('mouse_scroll',{amount:a});si=setInterval(()=>api('mouse_scroll',{amount:a}),150)}
   function stopScroll(){if(si){clearInterval(si);si=null}}
-  for(const[id,a]of[['su',3],['sd',-3]]){
-    const el=document.getElementById(id);
+  root.querySelectorAll('[data-scroll]').forEach(el=>{
+    const a=+el.dataset.scroll;
     // Capture the pointer on the way down. Touch does this implicitly, but mouse
     // and pen do not: press an arrow, drag off it, release, and pointerup fires
     // on whatever is under the cursor instead — never here, leaving the interval
@@ -7831,8 +7944,11 @@ apiPost('release').catch(()=>{});
     el.addEventListener('pointerdown',e=>{try{el.setPointerCapture(e.pointerId)}catch(_){}startScroll(a)});
     el.addEventListener('pointerup',stopScroll);
     el.addEventListener('pointercancel',stopScroll);
-  }
-})();
+    el.addEventListener('lostpointercapture',stopScroll);
+  });
+}
+// The Mouse card itself never goes into a popped-out window; the remote's pad can.
+if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
 
 // ── Remote Controls ──
 (function(){
@@ -7941,26 +8057,31 @@ apiPost('release').catch(()=>{});
   knobWire(card,knobSend);
 
   // ── Keyboard panel ──
-  // What the keyboard and typing keys open under the remote: the Keyboard card's
-  // keys drawn a second time, or a box a phone's or PC's own keyboard types into.
-  // It sits in the remote's card, so it goes wherever the remote goes, and a
-  // window sized around the remote grows to hold it — fitSize counts it.
+  // What the keyboard, typing and touchpad keys open under the remote: the
+  // Keyboard card's keys drawn a second time, a box a phone's or PC's own keyboard
+  // types into, or the Mouse card's pad drawn a second time. It sits in the
+  // remote's card, so it goes wherever the remote goes, and a window sized around
+  // the remote grows to hold it — fitSize counts it.
   const kbd=document.getElementById('rmt-kbd');
   const kbdKeys=kbd&&kbd.querySelector('.rkb-keys');
   const kbdBox=kbd&&kbd.querySelector('.rkb-type');
+  const kbdPad=kbd&&kbd.querySelector('.rkb-pad');
   let kbdTw=null;
-  // Opens a key's panel, switches to it from the other one, or shuts it. Runs
+  // Opens a key's panel, switches to it from another one, or shuts it. Runs
   // inside the press, which is the one moment an always-on-top window may be
   // resized, and when a phone will bring up its keyboard for the box.
   function kbdToggle(a){
     if(!kbd)return;
-    const mode=a==='typing'?'type':'keys';
+    const mode=a==='typing'?'type':a==='touchpad'?'pad':'keys';
     if(!kbd.hidden&&kbd.dataset.mode===mode){kbdClose();kbdFit();return}
     kbd.dataset.mode=mode;
     kbd.hidden=false;
     if(mode==='keys'){
       kbdLeaveBox();
       addKeyboardRoot(kbdKeys,true);
+    }else if(mode==='pad'){
+      kbdLeaveBox();
+      addMouseRoot(kbdPad);
     }else{
       // Through api(), as the Keyboard card's keys go: a tab driving a linked
       // keyboard types there, and a macro being recorded writes it down. A piece
@@ -7997,7 +8118,7 @@ apiPost('release').catch(()=>{});
   // panel. It shuts with it rather than stay open with nothing to close it.
   function kbdCheck(){
     if(!kbd||kbd.hidden)return;
-    const a=kbd.dataset.mode==='type'?'typing':'keyboard';
+    const a=kbd.dataset.mode==='type'?'typing':kbd.dataset.mode==='pad'?'touchpad':'keyboard';
     if(![...body.querySelectorAll('.rmt-btn[data-action="'+a+'"]')].some(b=>b.style.visibility!=='hidden')){
       kbdClose();kbdFit();
     }
@@ -8926,7 +9047,15 @@ apiPost('release').catch(()=>{});
         w=Math.max(w,kp.getBoundingClientRect().width);
         kp.style.width=pv;kp.style.minWidth=pm;
       }
+      // The mouse pad is as wide as the remote, but no narrower than a thumb can
+      // steer on — and keeps its shape, so its height is taken at that width.
+      const pv=kp.style.width;
+      if(kp.dataset.mode==='pad'){
+        kp.style.width=Math.max(w,320)+'px';
+        w=Math.max(w,kp.getBoundingClientRect().width);
+      }
       kh=Math.max(0,kp.getBoundingClientRect().bottom-el.getBoundingClientRect().bottom);
+      kp.style.width=pv;
     }
     const maxH=((window.screen&&screen.availHeight)||900)-80;
     // rw/rh are the measurements before clamping — what the remote actually is,

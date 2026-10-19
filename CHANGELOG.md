@@ -4,6 +4,31 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
+## Unreleased
+
+### Added
+- **Timers.** An action can run later — say a key that turns the monitor off in half an hour —
+  without holding up other keys meanwhile. Set again it starts over, one can be cancelled, a panel
+  can count down the soonest, and the web page shows them and cancels them. One set for a host that
+  is no longer active visits that host to run, then comes back.
+- **A touchpad on the remote.** A key opens the mouse pad, its buttons and scroll keys under the
+  remote, on the web page and the Home Assistant remote card, popped out included.
+- **Typing speed per host**, in YAML or Host Actions, so a fast computer takes a long paste quickly
+  and a slow host gets more time. Typing keeps to the speed set, down to about 32 ms a character,
+  and waits for a host's Bluetooth to catch up rather than leave a key held down.
+- **The characters a host's layout lacks can be typed on Windows and Linux**, per host: Windows
+  types anything in its Western code page as Alt codes, Linux any character through Ctrl+Shift+U.
+
+### Changed
+- **Mouse movement merges while a host's Bluetooth catches up**, instead of piling up reports that
+  hold the keyboard's memory until it runs out. On a link that keeps up, every move goes out as
+  before.
+
+### Fixed
+- **Text no longer loses the characters its host's layout has no key for.** Curly quotes, dashes,
+  the ellipsis and accented letters on a US layout were left out of pasted and typed text; they now
+  arrive as their plain equivalents.
+
 ## v1.17.0 — 2026-10-17
 
 ### Added

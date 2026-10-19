@@ -309,7 +309,8 @@ binary_sensor:
 
 * **id** (Required, ID): The ID used to link buttons or automations to this keyboard.
 * **device_name** (Optional, string): The BLE device name advertised during pairing. Defaults to `ESP32 BLE KB`. Maximum 29 characters.
-* **key_delay_ms** (Optional, int): Total delay per character when typing strings, in milliseconds. Split evenly between key-down and key-up. Defaults to `80`. Increase if characters are being dropped on slow BLE connections.
+* **key_delay_ms** (Optional, int): Total delay per character when typing strings, in milliseconds. Split evenly between key-down and key-up. Defaults to `80`. Lower types faster; raise it if characters are dropped on a slow connection. A host can have its own, under `hosts:` or in [Host Actions](#typing-per-host).
+* **unicode_input** (Optional, string): How a character the host's layout has no key for is typed: `fold` (default) as its plain equivalent, `windows` through Alt codes, or `linux` through Ctrl+Shift+U. A host can have its own. See [Characters a layout lacks](#characters-a-layout-lacks).
 * **max_key_hold_ms** (Optional, int): Safety net for a held key whose release never arrives — a browser tab closed mid-press, or an `on_release` that didn't fire. After this many milliseconds the device releases everything it is holding, including a held mouse button. Defaults to `0` (never auto-release); otherwise 100–600000. See [Press and hold](#press-and-hold).
 * **passkey** (Optional, int): A 6-digit static PIN (000000–999999). If set, the device uses static passkey pairing (legacy MITM bond) and requires this PIN during initial pairing.
 * **passkey_mode** (Optional, string): Passkey security mode. `legacy` (default) uses legacy MITM bonding — tested and recommended for Windows. `secure_connections` uses LE Secure Connections MITM bonding — required for iOS passkey pairing (legacy mode does not work on iOS). Android does not support passkey pairing with BLE HID keyboards.
@@ -340,6 +341,8 @@ binary_sensor:
   * **slot** (Required, int): Host slot number (0–9).
   * **passkey** (Optional, int): 6-digit PIN for this slot (000000–999999). If omitted, the slot uses the global `passkey` setting (or Just Works if no global passkey).
   * **passkey_mode** (Optional, string): `legacy` (default) or `secure_connections`. Overrides the global `passkey_mode` for this slot.
+  * **key_delay_ms** (Optional, int): This host's typing speed, 2–10000 ms a character, instead of the top-level one.
+  * **unicode_input** (Optional, string): `fold`, `windows` or `linux` for this host, instead of the top-level one.
   * **appearance** (Optional): What the slot shows up as to a host scanning for it: `keyboard` (default), `audio`, or any Bluetooth appearance number. `audio` lets a watch whose Bluetooth menu lists only audio devices find the slot; paired, it is still a keyboard, mouse and media keys. Only the slot's advertising changes. See [Pairing with a Galaxy Watch](#pairing-with-a-galaxy-watch).
 
 ### `button` (Platform: `espidf_ble_keyboard`)
@@ -556,7 +559,7 @@ espidf_ble_keyboard:
 
 | Action | Description |
 |---|---|
-| `"Hello\n"` | Type a string. Use `\n` for Enter. Printable ASCII is supported on all layouts; non-ASCII (e.g. `£ ¬ €` on UK) is supported via UTF-8 when a layout exposes it. Characters with no layout mapping are silently skipped. |
+| `"Hello\n"` | Type a string. Use `\n` for Enter. Printable ASCII is supported on all layouts; non-ASCII (e.g. `£ ¬ €` on UK) is supported via UTF-8 when a layout exposes it. A character the layout has no key for is typed as its plain equivalent, or the way the host's [`unicode_input`](#characters-a-layout-lacks) says. |
 | `"combo:0x08:0x15"` | Send a key combination. Format: `combo:<modifier_hex>:<keycode_hex>`. Use `0x00` as modifier for no modifier key. See [Keycode Reference](docs/keycodes.md). |
 | `"combo:0x00:0x04"` | Send a plain keypress with no modifier. `0x04` = A, `0x05` = B ... `0x1D` = Z. |
 | `"consumer:0x0192"` | Send any HID consumer control code. Format: `consumer:<usage_hex>`. See [Keycode Reference](docs/keycodes.md) for full list. |
@@ -598,7 +601,7 @@ espidf_ble_keyboard:
 | `"caps_lock:on"` / `"caps_lock:off"` / `"caps_lock:toggle"` | Set the host's Caps Lock. On and off tap it only when the host reports it the other way, then wait for the host to confirm; a host that has never reported it is left alone. |
 | `"prev_host"` / `"next_host"` / `"last_host"` | Remote keys for `switch_host:prev`, `switch_host:next` and `switch_host:back` below. |
 | `"next_keyboard"` / `"prev_host_all"` / `"next_host_all"` | Web page remote only: move the tab to the next [linked keyboard](#linking-a-second-keyboard), or step through every host of every linked keyboard. Anywhere else they do nothing. |
-| `"keyboard"` / `"typing"` | Remote keys, on the web page and the Home Assistant remote card: open the on-screen keyboard under the remote, or a box your phone's or PC's own keyboard types into. See [Typing from the remote](#typing-from-the-remote). Anywhere else they do nothing. |
+| `"keyboard"` / `"typing"` / `"touchpad"` | Remote keys, on the web page and the Home Assistant remote card: open the on-screen keyboard under the remote, a box your phone's or PC's own keyboard types into, or a mouse pad. See [Typing from the remote](#typing-from-the-remote) and [A touchpad on the remote](#a-touchpad-on-the-remote). Anywhere else they do nothing. |
 | `"spare1"` … `"spare32"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
 | `"left_click"` | Mouse left click. |
 | `"right_click"` | Mouse right click. |
@@ -632,7 +635,9 @@ espidf_ble_keyboard:
 | `"lcd:<text>"` | Put text on an [LCD panel](#lcd-panels)'s `@msg` line. Everything after the colon is the text. |
 | `"if:<source>: <when on> \|\| <when off>"` | Run one branch or the other depending on a [source](#branching-on-real-state). Does nothing until the source has a state. |
 | `"string:hello"` | Explicit text typing — useful in multi-step macros to distinguish text from action names. |
-| `"delay:N"` | Pause for N milliseconds (max 10000). Used between steps in multi-step macros. |
+| `"delay:N"` | Pause for N milliseconds (max 10000). Used between steps in multi-step macros. For longer, `after:`. |
+| `"after:<time>:<action>"` | Run `<action>` later, without holding up other keys — `after:30m:remote_power`. The time is seconds, or `90s`, `30m`, `2h`, `1h30m`, up to 24 days. Set again, it starts over. See [Running an action later](#running-an-action-later). |
+| `"after:<name>:<time>:<action>"` / `"after:<name>:cancel"` / `"after:cancel"` | A named timer, which the same name replaces; cancel that one, or every timer. |
 | `"repeat:N:<action>"` | Run `<action>` N times (max 1000). Put it at the start of a macro to repeat the whole sequence, e.g. `repeat:3:combo:0:40 \| delay:200`. |
 | `"send_custom_text"` | Send the first linked text entity's content. Requires `custom_text_id` in config. |
 | `"send_custom_text:N"` | Send the Nth linked text entity (0-based). E.g. `send_custom_text:1` for the second. |
@@ -1179,6 +1184,10 @@ Open **Press and Hold** in the Host Actions card and tick the buttons that shoul
 
 Nothing holds by default. The Home Assistant [Media Remote Card](#media-remote-card-for-home-assistant) honours the same list once the [`hold_buttons` text sensor](#press-and-hold-buttons) is added — it is the only way that card can learn the choice. See [Press and hold](#press-and-hold) for the physical-button equivalent, the action strings, and `max_key_hold_ms`.
 
+### Typing Per Host
+
+Open **Typing** in the Host Actions card to give a host its own typing speed — a fast PC takes a long paste in a fraction of the time, a host that drops characters gets longer — and its own way with [characters its layout lacks](#characters-a-layout-lacks). An empty box takes the default, the slot's `hosts:` entry or else the top level, shown in its place; **Reset** empties both. Saved on the device and included in [Backup and restore](#backup-and-restore). It goes down to about 32 ms a character, and a host whose Bluetooth can't take that pace gets the text at its own pace instead.
+
 ### Remote Style Per Host
 
 The web remote can be drawn in a different **style** per host, so switching to a media box brings up a compact remote shaped for it and switching back to the PC brings back the full one. Open **Remote Style** in the Host Actions card, pick the host, and step through the styles with **−** and **+**. Each press saves straight away, and changing the active host's style redraws the remote as you go — so the quickest way to find the one you want is to press **+** until it looks right. The list wraps, so you can reach the far end from either direction. The name between the buttons is a **dropdown**: open it to see every style at once and pick one directly, which is quicker once there are a few of your own. The **This tab** row below works the same way.
@@ -1389,8 +1398,9 @@ A title line centres by default, since it has no value to sit opposite; give it 
 | `@last` | The last button pressed, named as the current style labels it — a spare labelled `Netflix` shows "Netflix", not `spare1`. Changes on every press. |
 | `@station` | The same, but only the spares update it, so a volume tap doesn't wipe which station you chose. |
 | `@msg` | Whatever an `lcd:` action last wrote. |
+| `@timer` | The time left on the soonest [timer](#running-an-action-later) — `29 min`, then seconds in the last minute. |
 
-All three are held in memory only and start blank, so a panel shows `--` until something is pressed.
+The last four are held in memory only and start blank, so a panel shows `--` until something is pressed or a timer is set.
 
 **Writing your own text.** The `lcd:<text>` action puts anything you like on an `@msg` line — everything after the colon is the text, colons included. Chain it with whatever the key really does:
 
@@ -1572,6 +1582,7 @@ The panel is a deliberate 16 characters wide, so it sits inside the 280px body a
 | `"peer:<name>:<action>"` | Run an action on a [linked keyboard](#linking-a-second-keyboard). What a tab driving that keyboard sends for every key. |
 | `"to:<name>:<action>"` | Run an action on this keyboard with its keys sent to a [linked keyboard](#linking-a-second-keyboard) — `to:bedroom:macro:Netflix`. What a tab driving that keyboard sends for a macro. |
 | `"wait:connected"` | Hold a macro until the active host is ready for keys, up to 10 s (`wait:connected:N` for N ms). |
+| `"after:<time>:<action>"` | Run an action later without holding up other keys — `after:30m:remote_power`. Named, `after:sleep:30m:…` replaces the timer of that name and `after:sleep:cancel` cancels it. See [Running an action later](#running-an-action-later). |
 | `"forget_host:N"` | Remove the bond for host slot N (0–9). Clears the stored address and removes the BLE bond from the ESP32. If the forgotten host is currently connected, it is disconnected. |
 | `"press_button:<object_id>"` | Press another ESPHome button — e.g. `press_button:samsung_43_m70f_wol`. See [Pressing other ESPHome buttons](#pressing-other-esphome-buttons). |
 | `"alternate:<a> \|\| <b> \|\| …"` | Run **one branch** per press, advancing each time. Branches split on `\|\|`; a single `\|` still means "next step", so a branch can be a whole sequence. See [Toggling one button between two actions](#toggling-one-button-between-two-actions). |
@@ -1803,6 +1814,30 @@ mode: single
 Then `ha_action:script.phone_ringer;mode=next` on a key steps Sound → Vibrate → Mute → Sound, starting from the mode the phone is actually in, so changing it by hand doesn't put the key out of step. `mode=normal`, `mode=vibrate` and `mode=silent` set one mode. The key or macro needs both switches from [Calling Home Assistant Actions](#calling-home-assistant-actions): `ha_action: true` in the keyboard's YAML and **Allow the device to perform Home Assistant actions** in HA.
 
 On the phone, switch on *Remotely control app & device* for your server: in the Companion app, go to *Settings → Companion app* and tap the server. Without it the app ignores commands and a run does nothing at all. `next` also needs the app's *Ringer mode* sensor, which is off until you enable it under *Settings → Companion app → Manage sensors*. The first command asks for Do Not Disturb access. If a run posts an ordinary notification instead of changing the mode, the command wasn't one of the three modes. The app may also turn Do Not Disturb on with `silent`, and off with the other two.
+
+---
+
+## Running an Action Later
+
+`after:` runs an action after a while, holding up nothing meanwhile — unlike `delay:`, which stops at 10 seconds and keeps every press behind it waiting. A key that turns the monitor off in half an hour:
+
+```
+after:30m:consumer:0x30 | delay:1000 | ok
+```
+
+- **The time** is seconds, or `90s`, `30m`, `2h`, `1h30m`, `1d`, up to 24 days.
+- **The action** is everything after the time, `|` included. To do something now as well, put that first and point `after:` at a macro: `lcd:Off in 30 | after:30m:macro:Monitor off`.
+- **Set again, it starts over.** A timer is replaced by the same action set again, or by any action set under the same name: `after:sleep:30m:…` and `after:sleep:60m:…` share the `sleep` timer, `after:sleep:cancel` cancels it, and `after:cancel` cancels every timer.
+- **It runs for the host it was set on.** If another host is active when it fires, the keyboard visits that host, runs the action and comes back, as a [macro's visit](#multi-host-switching) does — after any held key is let go and any text has been typed. On a slot that [never advertises](#a-slot-that-never-advertises) it runs that slot's Host Action without switching.
+- **Eight at a time, in memory only.** A restart forgets them, as a TV forgets its sleep timer.
+
+The web page shows pending timers beside the connection badge, and a click on them cancels them. A [panel](#lcd-panels) counts down the soonest with `@timer`; Home Assistant gets about one update a minute of it.
+
+A TV-style sleep key, a step further each press, as a Host Action:
+
+```
+alternate: lcd:Sleep 30 | after:sleep:30m:remote_power || lcd:Sleep 60 | after:sleep:60m:remote_power || lcd:Sleep off | after:sleep:cancel
+```
 
 ---
 
@@ -2231,7 +2266,7 @@ when you aren't using it.
 - **Remove buttons per host** — untick the remote buttons a host doesn't need; they disappear for that host only — see [Removing remote buttons per host](#removing-remote-buttons-per-host)
 - **Section toggles** — show/hide Keyboard, Mouse, Remote, and Buttons sections individually (state saved in browser)
 - **Pop out the remote** — **Pop out** in the Remote heading moves the remote into a window of its own, so it stays in reach while you scroll the page or work in another app; **Pin back** returns it to where it was. See [Popping the remote out](#popping-the-remote-out)
-- **A keyboard on the remote** — a style's `keyboard` and `typing` keys open the on-screen keys or a box your phone's or PC's own keyboard types into, under the remote and in its pop-out. See [Typing from the remote](#typing-from-the-remote)
+- **A keyboard on the remote** — a style's `keyboard` and `typing` keys open the on-screen keys or a box your phone's or PC's own keyboard types into, under the remote and in its pop-out, and its `touchpad` key a mouse pad. See [Typing from the remote](#typing-from-the-remote)
 - **Remote shapes stand on their own once popped out** — a style that draws its own remote body (Style 1, 2, 4, 5 and most imported ones) loses the card from behind it in the popped-out window, so what floats there is the remote's shape, shadow and taper rather than a slab inside a slab. In the page it keeps its card, like the sections around it. Styles that draw no body of their own keep theirs everywhere
 - **Zoom controls** — resize keyboard and mouse with +/- buttons in 5% steps (50%–200%), zoom level saved in browser
 - **Light/dark theme** — toggle between dark and light mode, preference saved in browser
@@ -2268,7 +2303,7 @@ If the browser refuses the on-top window for any other reason, the remote opens 
 
 ### Typing from the remote
 
-Two keys open a keyboard under the remote. Add them to a style like any other key; the builder lists them under **Keyboard**.
+Two keys open a keyboard under the remote. Add them to a style like any other key; the builder lists them under **Keyboard and mouse**.
 
 - **`keyboard`** shows the on-screen keys: the Keyboard card's, in its layout, sharing its Shift and Caps.
 - **`typing`** opens a box with the cursor in it, so a phone brings up its own keyboard and a PC types with the real one. Each change goes to the host as you make it: letters as text, deletions and autocorrect's swaps as Backspaces and the new text, so they land right while the host's cursor is at the end of what you typed. Enter, Tab, Esc, the arrows, F1–F12 and Ctrl or Win shortcuts go as keys, and a paste is typed. Enter starts the box again.
@@ -2276,6 +2311,12 @@ Two keys open a keyboard under the remote. Add them to a style like any other ke
 Press the key again to close it, or the other key to switch. The keyboard goes with the remote when it pops out, and the window grows to hold it — wide enough for square keys, about 580px — and shrinks back when it closes. It types wherever the remote's keys go, a [linked keyboard](#linking-a-second-keyboard) included. The keys themselves send nothing, so in a macro or a Host Action they do nothing.
 
 The [Home Assistant remote card](#media-remote-card-for-home-assistant) has both keys too, in its pop-out as well. Set its `keyboard_layout` to the device's layout for the on-screen keys.
+
+### A touchpad on the remote
+
+A style's **`touchpad`** key opens the Mouse card's pad under the remote: drag to move, tap to click, the three buttons (long-press one to hold it for a drag) and the scroll keys. Press it again to close it, or a keyboard key to switch. It goes with the remote when it pops out, the window widening to at least 320px for it, and moves the pointer wherever the remote's keys go.
+
+The Home Assistant remote card has it too, drawn by the [mouse card](#mouse-control-card-for-home-assistant), so it needs that card's services — `api_services: true` registers them.
 
 ### Linking a second keyboard
 
@@ -2374,7 +2415,7 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/screen` | GET | — | Desktop geometry (size, origin, monitors, goto scales) for the Position Finder |
 | `/api/ble_keyboard/goto_scale` | POST | `v` / `vx` / `vy` (scale), `save=1`, `reset=1` | Set `mouse_goto` calibration live (persist per host with `save`) |
 | `/api/ble_keyboard/goto_last` | GET | — | Last `mouse_goto` target (Windows coords) |
-| `/api/ble_keyboard/status` | GET | — | Returns `{"connected":bool,"paired":bool,"device_name":"...",…}`. Its `edits` count goes up whenever Host Actions, an on-connect action or the macros are saved, by anyone — the page reads those lists again when it moves |
+| `/api/ble_keyboard/status` | GET | — | Returns `{"connected":bool,"paired":bool,"device_name":"...",…}`. Its `edits` count goes up whenever Host Actions, an on-connect action, typing settings or the macros are saved, by anyone — the page reads those lists again when it moves. `timers` lists [timers](#running-an-action-later) still to fire as `[name, seconds left, slot]`, soonest first |
 | `/api/ble_keyboard/state` | GET | — | `/hosts`, `/status` and the drawn host's `/hidden`, `/repeat` and `/hold` replies in one object, and the macros as `[name, hash]` pairs (FNV-1a of the action, 8 hex digits) — what a [linked keyboard](#linking-a-second-keyboard) reads |
 | `/api/ble_keyboard/peers` | GET | — | Each linked keyboard's last `/state`, with `ok` and its `age` in seconds. Only on a keyboard with `peers:` |
 | `/api/ble_keyboard/peer_forward` | POST | `peer`, `ep`, and that endpoint's own parameters | Pass one keyboard or mouse request (`string`, `key`, `hold_key`, `release`, `mouse_move`, `mouse_click`, `mouse_hold`, `mouse_release`, `mouse_scroll`), or a `macro_set` or `override_set`, on to a linked keyboard |
@@ -2389,7 +2430,8 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/macro_update` | POST | `index`, `name`, `action` | Update an existing macro |
 | `/api/ble_keyboard/macro_set` | POST | `name`, `action` | Add a macro, or replace the one with that name — how a linked keyboard copies its macros here |
 | `/api/ble_keyboard/macro_delete` | POST | `index` (int) | Delete a macro by index |
-| `/api/ble_keyboard/overrides` | GET | `slot` (int, default active) | Per-host action overrides: `{"slot":N,"active":M,"items":[{"name":"record","action":"combo:0x0C:0x15","src":"nvs"\|"yaml"}]}` |
+| `/api/ble_keyboard/overrides` | GET | `slot` (int, default active) | Per-host action overrides: `{"slot":N,"active":M,"items":[{"name":"record","action":"combo:0x0C:0x15","src":"nvs"\|"yaml"}]}`, plus that host's on-connect action and its `typing`: `{"delay":0,"delay_def":80,"unicode":"","unicode_def":"fold"}` — what [Typing per host](#typing-per-host) saved (0 and empty for nothing) and what applies without it |
+| `/api/ble_keyboard/typing_set` | POST | `slot`, `delay` (2–10000), `unicode` (`fold`, `windows` or `linux`) | Set a host's [typing](#typing-per-host); either left empty goes back to the default |
 | `/api/ble_keyboard/override_set` | POST | `slot`, `name`, `action` | Set a per-host action override (max 8 per slot); persists to NVS |
 | `/api/ble_keyboard/override_clear` | POST | `slot`, `name` | Delete a saved override, falling back to YAML / built-in |
 | `/api/ble_keyboard/hidden` | GET | `slot` (int, default `style_slot`) | Buttons removed from the remote for that host: `{"slot":N,"hidden":["record"]}` |
@@ -2873,7 +2915,7 @@ Features:
 - **Per-host remapping** — every button is a named action, so any of them can do something different on each paired host.
 - **Host switcher** — optional prev/next buttons in the header to change the active BLE host, with its name and MAC address. Switching here also repaints the card's [per-host hidden buttons](#removing-remote-buttons-per-host). See [Host switcher on the cards](#host-switcher-on-the-cards).
 - **Pop-out** — the remote in a window of its own on a desktop browser, on top of other windows where the browser allows. See [Popping the card out](#popping-the-card-out).
-- **Keyboard keys** — a style's `keyboard` and `typing` keys open the on-screen keys or a typing box under the remote, in the pop-out too. See [Typing from the remote](#typing-from-the-remote).
+- **Keyboard keys** — a style's `keyboard` and `typing` keys open the on-screen keys or a typing box under the remote, and its `touchpad` key a mouse pad, in the pop-out too. See [Typing from the remote](#typing-from-the-remote).
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 
 <img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/remote_ha_card.png" height="560" alt="Remote HA card, full remote"> <img src="https://raw.githubusercontent.com/markusg1234/ESPHome-espidf_ble_keyboard/main/docs/remote_style6.png" height="560" alt="Remote in Style 6, with logo keys and a screen">
@@ -3377,6 +3419,26 @@ The device layout only sets how the ESP turns characters into HID codes — the 
 - **iOS / iPadOS:** *Settings → General → Keyboard → Hardware Keyboard →* tap the layout name *→* pick *British*.
 - **Linux (Wayland / GNOME):** *Settings → Keyboard → Input Sources →* add *English (UK)*, then move it to the top, or use `setxkbmap gb` on X11. For German use *Deutsch* / `setxkbmap de`.
 
+### Characters a layout lacks
+
+A character the host's layout has no key for — a curly quote or a dash in pasted text, an `é` on a US layout — is typed as its plain equivalent: `’` as `'`, `“ ”` as `"`, `—` as `--`, `…` as `...`, `é` as `e`, `€` as `EUR`. One with none, an emoji say, is left out, and the log says so.
+
+`unicode_input` types the character itself instead, on hosts that allow it — for the whole keyboard, or per host under `hosts:` or in Host Actions' Typing panel:
+
+| `unicode_input` | Types |
+|---|---|
+| `fold` | Plain equivalents. The default, and the only choice on Android and iOS. |
+| `windows` | Anything in Windows' Western code page — accented letters, curly quotes, dashes, `€ £ ©` — as an Alt code, Num Lock turned on for it and back off after. Anything else still folds, and an emoji is left out. Windows set to a non-Western language reads the codes in its own code page. |
+| `linux` | Any character, emoji included, through Ctrl+Shift+U, in GNOME and other desktops running IBus. |
+
+```yaml
+espidf_ble_keyboard:
+  unicode_input: fold        # everywhere, unless a host says otherwise
+  hosts:
+    - slot: 0
+      unicode_input: windows # the PC
+```
+
 ### Adding a new layout
 
 The layout system is intentionally small. Adding a new layout (e.g. French AZERTY) touches just three places:
@@ -3391,7 +3453,7 @@ No header changes, no `send_string` changes, no NVS code changes. The web UI dro
 
 ### Notes
 
-- Characters with no mapping in the active layout are skipped silently (a debug log is emitted).
+- Characters with no mapping in the active layout are typed as their plain equivalent, or as `unicode_input` says — see [Characters a layout lacks](#characters-a-layout-lacks).
 - A layout switch in the middle of a typing operation can't corrupt in-flight text — keystrokes are pre-resolved at enqueue time using whatever layout was active then.
 - `combo:` actions (raw HID `(modifier, keycode)` pairs) are layout-independent by design. Macros built from `combo:` keep working unchanged after a layout change.
 - The web "Keyboard" card visual reflects the active layout (US shows ANSI, UK shows ISO with the extra `\|` key and `£` on Shift+3, DE shows QWERTZ with `ü/ö/ä/ß` keys and German modifier labels).
@@ -3505,7 +3567,7 @@ After the first successful bond, reconnect behavior is typically stable.
 * **iOS not pairing:** Set `passkey_mode: secure_connections`, remove old Bluetooth bonds on both devices, then pair again.
 * **iOS pairs but no typing/control:** Ensure you are using `passkey_mode: secure_connections`. Remove the bond on both the iOS device and the ESP32 (reboot/reflash), then pair again. After pairing, check the log for `Consumer CCC=0x0001` and `System CCC=0x0001` — if these are missing, iOS has not fully subscribed to the HID reports. Reflash and re-pair from a clean state.
 * **Typed text in the wrong case:** Caps Lock is on at the host, and the host is a Mac or iPad, where Shift can't undo it — start the macro with `caps_lock:off`. See [Caps Lock and typed text](#caps-lock-and-typed-text).
-* **Typing speed / dropped characters:** The default `key_delay_ms: 80` (40ms key-down + 40ms key-up) suits most connections. If characters are dropped on a slow BLE connection, increase this value (e.g. `key_delay_ms: 120`). If typing feels too slow, it can be reduced.
+* **Typing speed / dropped characters:** The default `key_delay_ms: 80` (40ms key-down + 40ms key-up) suits most connections. If characters are dropped on a slow BLE connection, increase this value (e.g. `key_delay_ms: 120`). If typing feels too slow, it can be reduced. Either can be set for one host only — see [Typing per host](#typing-per-host). A curly quote or an accented letter missing from typed text is a character the layout has no key for — see [Characters a layout lacks](#characters-a-layout-lacks).
 * **Hibernate not working:** Hibernate uses the Windows Run dialog. Ensure the PC is not in a state where it is blocked (e.g., fullscreen app or UAC prompt). Also ensure hibernate is enabled: run `powercfg /hibernate on` in an admin command prompt.
 * **PC not waking from sleep:** Check that **USB Wake Support** (or similar) is enabled in your BIOS/UEFI Power Management settings.
 * **Re-pair after firmware update:** If the HID descriptor changes (e.g. after adding media keys), you must remove and re-pair the device in Windows Bluetooth settings.

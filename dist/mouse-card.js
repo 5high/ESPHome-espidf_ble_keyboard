@@ -230,6 +230,23 @@ class BleMouseCard extends HTMLElement {
           gap: 8px;
           flex: 0 0 auto;
         }
+        /* Drawn inside the remote card, under the remote its touchpad key
+           belongs to: the pad, buttons and scroll keys alone, on that card's
+           background, with no card, header or host switcher of their own. */
+        :host([embedded]) {
+          height: auto;
+        }
+        :host([embedded]) .card {
+          background: none;
+          box-shadow: none;
+          border-radius: 0;
+          padding: 0;
+          height: auto;
+          overflow: visible;
+        }
+        :host([embedded]) .header {
+          display: none;
+        }
         .header svg {
           width: 20px;
           height: 20px;
@@ -524,8 +541,10 @@ class BleMouseCard extends HTMLElement {
     return i < 0 ? undefined : (this._config.host_names || [])[i];
   }
 
-  // Which keyboard this card drives: the one the selected host belongs to.
+  // Which keyboard this card drives: the one the selected host belongs to — or,
+  // drawn inside a remote card, whichever that card's keys go to.
   _peerName() {
+    if (this._peerSource) return this._peerSource();
     return (this._target && this._target.peer) || null;
   }
 

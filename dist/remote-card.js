@@ -108,7 +108,7 @@
 import {
   RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, RMT_LCD_LABELLED, lcdLabel,
   sectionHtml, validateTpl, themeValueBad, useIcons, knobWire, knobLevel, typeWire, keysSquareWidth,
-} from './remote-styles.js?v=1.17.0';
+} from './remote-styles.js?v=1.18.0-dev';
 
 // Which build of this file the browser actually loaded, read from the ?v= its
 // importer wrote rather than from a constant that has to be remembered at
@@ -130,17 +130,20 @@ if (CARD_VER !== 'unversioned' && RMT_VER !== 'unversioned' && RMT_VER !== CARD_
 // Keys the device's web page acts on itself — they move that page's tab between
 // linked keyboards. Nothing outside it can do that, so this card never draws them.
 const PAGE_ONLY = ['next_keyboard', 'prev_host_all', 'next_host_all'];
-// Keys this card acts on itself, never sent: they open a keyboard under the
-// remote — the keyboard card's keys, or a box a phone's or PC's own keyboard
-// types into. See _toggleKbd.
-const LOCAL_KEYS = ['keyboard', 'typing'];
+// Keys this card acts on itself, never sent: they open a keyboard or a mouse pad
+// under the remote — the keyboard card's keys, a box a phone's or PC's own
+// keyboard types into, or the mouse card's pad. See _toggleKbd.
+const LOCAL_KEYS = ['keyboard', 'typing', 'touchpad'];
 const KBD_LAYOUTS = ['us', 'uk', 'de', 'be'];
-// The keyboard card, for the keys the keyboard key opens. Fetched once a style
-// draws that key, from beside this file — the URL the bundle imports it from, so
-// on a dashboard it is the copy already running. A pop-out window has only this
-// card's module, and loads its own.
+// The keyboard card, for the keys the keyboard key opens, and the mouse card for
+// the touchpad key's. Fetched once a style draws that key, from beside this file
+// — the URL the bundle imports it from, so on a dashboard it is the copy already
+// running; any other URL would load a second copy, whose define throws. A pop-out
+// window has only this card's module, and loads its own.
 let kbdLoad = null;
-const loadKeyboardCard = () => kbdLoad || (kbdLoad = import('./keyboard-card.js?v=1.17.0').catch(() => {}));
+const loadKeyboardCard = () => kbdLoad || (kbdLoad = import('./keyboard-card.js?v=1.18.0-dev').catch(() => {}));
+let padLoad = null;
+const loadMouseCard = () => padLoad || (padLoad = import('./mouse-card.js?v=1.18.0-dev').catch(() => {}));
 
 // ── Pop-out ──────────────────────────────────────────────────────────────────
 // The remote can leave the dashboard for a window of its own: one that stays
@@ -319,8 +322,9 @@ class BleRemoteCard extends HTMLElement {
     this._applyHoldAndRepeat();
     this._applyLcd();
     this._syncPop();
-    // The keyboard under the remote types through this same connection.
+    // The keyboard and the pad under the remote go through this same connection.
     if (this._kbdEl) this._kbdEl.hass = hass;
+    if (this._padEl) this._padEl.hass = hass;
   }
 
   setConfig(config) {
@@ -409,6 +413,12 @@ class BleRemoteCard extends HTMLElement {
       this._kbdEl = null;
       const panel = this.shadowRoot && this.shadowRoot.getElementById('kbd-panel');
       if (panel && !panel.hidden && panel.dataset.mode === 'keys') this._kbdKeys();
+    }
+    if (this._padEl) {
+      this._padEl.remove();
+      this._padEl = null;
+      const panel = this.shadowRoot && this.shadowRoot.getElementById('kbd-panel');
+      if (panel && !panel.hidden && panel.dataset.mode === 'pad') this._kbdPad();
     }
     // The switcher starts on the chain's first host. With no hosts of this
     // keyboard's own that is a linked keyboard's, which is what lets a card
@@ -918,13 +928,15 @@ class BleRemoteCard extends HTMLElement {
         .card.down #rmt-body { opacity: 0.4; }
         .pop-btn[hidden], .pop-msg[hidden], .out-row[hidden], .out-btn[hidden] { display: none !important; }
 
-        /* What a style's keyboard and typing keys open, under the remote: the
-           keyboard card's keys, or a box to type into. */
+        /* What a style's keyboard, typing and touchpad keys open, under the
+           remote: the keyboard card's keys, a box to type into, or the mouse
+           card's pad. */
         .kbd-panel { max-width: 460px; margin: 12px auto 0; }
-        .kbd-panel[hidden], .kbd-panel[data-mode=keys] .kbd-type,
-        .kbd-panel[data-mode=type] .kbd-keys, .card.out .kbd-panel { display: none !important; }
+        .kbd-panel[hidden], .kbd-panel:not([data-mode=keys]) .kbd-keys,
+        .kbd-panel:not([data-mode=type]) .kbd-type, .kbd-panel:not([data-mode=pad]) .kbd-pad,
+        .card.out .kbd-panel { display: none !important; }
         .card.down .kbd-panel { opacity: 0.4; }
-        .kbd-keys { font-size: 13px; line-height: 1.4; color: var(--secondary-text-color, #888); }
+        .kbd-keys, .kbd-pad { font-size: 13px; line-height: 1.4; color: var(--secondary-text-color, #888); }
         /* 16px text: a phone zooms the page in on a box with anything smaller.
            As wide as what holds it, and size="1" so it never asks a window of
            its own for more than the remote. */
@@ -986,12 +998,13 @@ class BleRemoteCard extends HTMLElement {
         <!-- Drawn by _renderStyle() from the selected remote style, using the
              same renderer the device's own web page uses. -->
         <div id="rmt-body" class="rmt-body"></div>
-        <!-- What a style's keyboard and typing keys open (_toggleKbd). -->
+        <!-- What a style's keyboard, typing and touchpad keys open (_toggleKbd). -->
         <div class="kbd-panel" id="kbd-panel" hidden>
           <div class="kbd-keys" id="kbd-keys"></div>
           <input class="kbd-type" id="kbd-type" type="text" size="1" autocomplete="off" autocorrect="off"
                  autocapitalize="off" spellcheck="false" enterkeyhint="enter"
                  placeholder="Type — it goes straight to the host" aria-label="Type to the host">
+          <div class="kbd-pad" id="kbd-pad"></div>
         </div>
         </div>
       </div>
@@ -1154,10 +1167,13 @@ class BleRemoteCard extends HTMLElement {
     const keys = this.shadowRoot.querySelector('.kbd-panel[data-mode=keys]:not([hidden])');
     const kbRows = keys && this._kbdEl && this._kbdEl.shadowRoot
       ? this._kbdEl.shadowRoot.querySelectorAll('.kb-row') : null;
+    // The pad is as wide as the remote, but no narrower than a thumb can steer on.
+    const pad = this.shadowRoot.querySelector('.kbd-panel[data-mode=pad]:not([hidden])');
     let w = 0, h = 0;
     try {
       const { bare } = docked ? this._markPop(true) : this._popAttrs();
       if (kbRows) keys.style.minWidth = `${keysSquareWidth(kbRows)}px`;
+      if (pad) pad.style.minWidth = '320px';
       // Height only. The card's own overflow stays, as it is what keeps the
       // margin of a first or last row inside it: without the border nothing
       // else does, and the window came out that margin short with a scrollbar.
@@ -1176,6 +1192,7 @@ class BleRemoteCard extends HTMLElement {
       // Whatever happened, the dashboard's card goes back to looking like one.
       if (keep === null) card.removeAttribute('style'); else card.setAttribute('style', keep);
       if (kbRows) keys.style.minWidth = '';
+      if (pad) pad.style.minWidth = '';
       if (docked) this._markPop(false);
     }
     if (!w || !h) return null;
@@ -1829,11 +1846,11 @@ class BleRemoteCard extends HTMLElement {
   // and its window grows to hold it. The device page does the same with its own
   // Keyboard card's keys.
 
-  // Opens a key's panel, switches to it from the other one, or shuts it.
+  // Opens a key's panel, switches to it from another one, or shuts it.
   _toggleKbd(action) {
     const panel = this.shadowRoot && this.shadowRoot.getElementById('kbd-panel');
     if (!panel) return;
-    const mode = action === 'typing' ? 'type' : 'keys';
+    const mode = action === 'typing' ? 'type' : action === 'touchpad' ? 'pad' : 'keys';
     if (!panel.hidden && panel.dataset.mode === mode) {
       this._closeKbd();
     } else {
@@ -1842,6 +1859,9 @@ class BleRemoteCard extends HTMLElement {
       if (mode === 'keys') {
         this._leaveBox();
         this._kbdKeys();
+      } else if (mode === 'pad') {
+        this._leaveBox();
+        this._kbdPad();
       } else {
         this._kbdBox();
         this._kbdInput.focus();
@@ -1892,6 +1912,31 @@ class BleRemoteCard extends HTMLElement {
     else loadKeyboardCard().then(make);
   }
 
+  // The mouse card's pad, buttons and scroll keys, drawn bare the same way and
+  // moving wherever this card's keys go.
+  _kbdPad() {
+    const host = this.shadowRoot && this.shadowRoot.getElementById('kbd-pad');
+    if (!host || this._padEl) return;
+    const make = () => {
+      if (this._padEl || !host.isConnected) return;
+      if (!customElements.get('ble-mouse-card')) {
+        host.textContent = 'The touchpad needs mouse-card.js beside remote-card.js, as HACS installs them.';
+        return;
+      }
+      const pad = document.createElement('ble-mouse-card');
+      pad.setAttribute('embedded', '');
+      pad._peerSource = () => this._peerName();
+      pad.setConfig({ device: this._config.device, name: ' ' });
+      host.textContent = '';
+      host.appendChild(pad);
+      this._padEl = pad;
+      if (this._hass) pad.hass = this._hass;
+      this._fitKbd();
+    };
+    if (customElements.get('ble-mouse-card')) make();
+    else loadMouseCard().then(make);
+  }
+
   // The box, wired once to the device page's own typing code. Text goes as the
   // keyboard card types it: this keyboard's send_string, which takes any text
   // whole, or a linked keyboard's string verb. Keys go as a combo action, which
@@ -1927,8 +1972,9 @@ class BleRemoteCard extends HTMLElement {
     const panel = sr && sr.getElementById('kbd-panel');
     if (!panel) return;
     if (!this._kbdEl && sr.querySelector('#rmt-body [data-action="keyboard"]')) loadKeyboardCard();
+    if (!this._padEl && sr.querySelector('#rmt-body [data-action="touchpad"]')) loadMouseCard();
     if (panel.hidden) return;
-    const a = panel.dataset.mode === 'type' ? 'typing' : 'keyboard';
+    const a = panel.dataset.mode === 'type' ? 'typing' : panel.dataset.mode === 'pad' ? 'touchpad' : 'keyboard';
     const shown = [...sr.querySelectorAll(`#rmt-body [data-action="${a}"]`)]
       .some(b => b.style.visibility !== 'hidden');
     if (!shown) {

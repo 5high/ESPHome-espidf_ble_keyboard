@@ -49,7 +49,8 @@ kb_next:'<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 
 all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1.41zM4 6v12H2V6h2z"/>',
 all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>',
 kb_show:'<path d="M20 7v10H4V7h16m0-2H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/>',
-text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>'};
+text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>',
+pad_show:'<path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/>'};
 
 const RMT_BTNS={
 remote_power:{t:'Power',i:'power',c:'power',g:0},
@@ -147,12 +148,13 @@ last_host:{t:'Last Host',i:'host_last',g:9},
 next_keyboard:{t:'Next Keyboard',i:'kb_next',g:9},
 prev_host_all:{t:'Prev Host (all)',i:'all_prev',g:9},
 next_host_all:{t:'Next Host (all)',i:'all_next',g:9},
-// Keys that open a keyboard under the remote: the on-screen keys, or a box the
-// phone's or PC's own keyboard types into. The remote acts on them itself —
-// here and on the Home Assistant card — and never sends them, and the keyboard
-// opens wherever the remote is, popped out included.
+// Keys that open a keyboard or a mouse pad under the remote: the on-screen keys,
+// a box the phone's or PC's own keyboard types into, or the Mouse card's pad.
+// The remote acts on them itself — here and on the Home Assistant card — and
+// never sends them, and the panel opens wherever the remote is, popped out included.
 keyboard:{t:'Keyboard',i:'kb_show',g:10},
-typing:{t:'Typing box',i:'text_in',g:10}};
+typing:{t:'Typing box',i:'text_in',g:10},
+touchpad:{t:'Touchpad',i:'pad_show',g:10}};
 
 const RMT_VARS={bg:'--rb-bg',border:'--rb-border',radius:'--rb-radius',pad:'--rb-pad',
 maxw:'--rb-maxw',zoom:'--rb-zoom',btn_bg:'--rb-btn-bg',btn_fg:'--rb-btn-fg',btn_border:'--rb-btn-border',
@@ -284,7 +286,7 @@ const RMT_LCD_COLOURS=['fg','bg','label','border'];
 const RMT_LCD_LABELLED=['@last','@station'];
 
 const RMT_LCD_KEYS=['@host','@slot','@mac','@state','@rssi','@battery','@layout',
-'@last','@station','@msg'];
+'@last','@station','@msg','@timer'];
 
 const RMT_HEX=/^#[0-9a-f]{3,8}$/i;
 

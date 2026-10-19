@@ -448,5 +448,82 @@ const KeyboardLayout *layout_at(size_t i) {
   return i < LAYOUT_COUNT ? &LAYOUTS[i] : nullptr;
 }
 
+// ── Characters a layout lacks ────────────────────────────────────────────────
+// What a character no layout key types turns into on a host left to plain text:
+// the typographic quotes, dashes and spaces that pasted text is full of, and
+// Latin letters without their marks. Every result is ASCII, which each layout
+// types. An empty result is a character with nothing to show — a zero-width
+// space, a soft hyphen — taken without typing anything.
+struct FoldEntry {
+  uint16_t codepoint;
+  char plain[4];
+};
+// Sorted by code point, for the binary search below. The two strings after it
+// cover the accented letters a character each.
+static const FoldEntry FOLD_TABLE[] = {
+    {0x00A0, " "},   {0x00A1, "!"},   {0x00A2, "c"},   {0x00A3, "GBP"}, {0x00A6, "|"},
+    {0x00A9, "(c)"}, {0x00AA, "a"},   {0x00AB, "\""},  {0x00AD, ""},    {0x00AE, "(R)"},
+    {0x00B1, "+/-"}, {0x00B2, "2"},   {0x00B3, "3"},   {0x00B4, "'"},   {0x00B5, "u"},
+    {0x00B7, "."},   {0x00B9, "1"},   {0x00BA, "o"},   {0x00BB, "\""},  {0x00BC, "1/4"},
+    {0x00BD, "1/2"}, {0x00BE, "3/4"}, {0x00BF, "?"},   {0x00C6, "AE"},  {0x00DE, "TH"},
+    {0x00DF, "ss"},  {0x00E6, "ae"},  {0x00FE, "th"},  {0x0132, "IJ"},  {0x0133, "ij"},
+    {0x0152, "OE"},  {0x0153, "oe"},  {0x02BC, "'"},   {0x02C6, "^"},   {0x02DC, "~"},
+    {0x2002, " "},   {0x2003, " "},   {0x2004, " "},   {0x2005, " "},   {0x2006, " "},
+    {0x2007, " "},   {0x2008, " "},   {0x2009, " "},   {0x200A, " "},   {0x200B, ""},
+    {0x200C, ""},    {0x200D, ""},    {0x2010, "-"},   {0x2011, "-"},   {0x2012, "-"},
+    {0x2013, "-"},   {0x2014, "--"},  {0x2015, "--"},  {0x2016, "||"},  {0x2018, "'"},
+    {0x2019, "'"},   {0x201A, "'"},   {0x201B, "'"},   {0x201C, "\""},  {0x201D, "\""},
+    {0x201E, "\""},  {0x201F, "\""},  {0x2022, "*"},   {0x2024, "."},   {0x2025, ".."},
+    {0x2026, "..."}, {0x2028, "\n"},  {0x2029, "\n"},  {0x202F, " "},   {0x2032, "'"},
+    {0x2033, "\""},  {0x2035, "`"},   {0x2039, "'"},   {0x203A, "'"},   {0x2044, "/"},
+    {0x205F, " "},   {0x2060, ""},    {0x20AC, "EUR"}, {0x2122, "TM"},  {0x2190, "<-"},
+    {0x2192, "->"},  {0x2212, "-"},   {0x2215, "/"},   {0x2217, "*"},   {0x2223, "|"},
+    {0x2248, "~"},   {0x2260, "!="},  {0x2264, "<="},  {0x2265, ">="},  {0x3000, " "},
+    {0xFEFF, ""},
+};
+// U+00C0..U+00FF and U+0100..U+017F, one base letter each; '*' marks the few
+// whose plain form is two letters, which the table above carries instead.
+static const char FOLD_LATIN1[] = "AAAAAA*CEEEEIIIIDNOOOOOxOUUUUY**aaaaaa*ceeeeiiiidnooooo/ouuuuy*y";
+static const char FOLD_LATIN_EXT_A[] =
+    "AaAaAaCcCcCcCcDdDdEeEeEeEeEeGgGgGgGgHhHhIiIiIiIiIi**JjKkkLlLlLlLlLlNnNnNnnNnOoOoOo**"
+    "RrRrRrSsSsSsSsTtTtTtUuUuUuUuUuUuWwYyYZzZzZzs";
+
+bool fold_codepoint(uint32_t cp, char out[4]) {
+  if (cp >= 0x00C0 && cp <= 0x017F) {
+    const char c = cp <= 0x00FF ? FOLD_LATIN1[cp - 0x00C0] : FOLD_LATIN_EXT_A[cp - 0x0100];
+    if (c != '*') {
+      out[0] = c;
+      out[1] = '\0';
+      return true;
+    }
+  }
+  const size_t n = sizeof(FOLD_TABLE) / sizeof(FOLD_TABLE[0]);
+  size_t lo = 0, hi = n;
+  while (lo < hi) {
+    const size_t mid = (lo + hi) / 2;
+    if (FOLD_TABLE[mid].codepoint < cp) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo == n || FOLD_TABLE[lo].codepoint != cp) return false;
+  memcpy(out, FOLD_TABLE[lo].plain, 4);
+  return true;
+}
+
+// Windows' Alt + numpad codes with a leading 0 are the Windows-1252 code page:
+// U+00A0..U+00FF as themselves, and these 27 in the 0x80..0x9F block — where
+// the curly quotes, dashes, ellipsis and euro sign live.
+uint8_t cp1252_byte(uint32_t cp) {
+  if (cp >= 0x00A0 && cp <= 0x00FF) return (uint8_t) cp;
+  static const uint16_t HIGH[32] = {
+      0x20AC, 0,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030, 0x0160,
+      0x2039, 0x0152, 0,      0x017D, 0,      0,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022,
+      0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,      0x017E, 0x0178,
+  };
+  if (cp == 0) return 0;
+  for (uint8_t i = 0; i < 32; i++)
+    if (HIGH[i] == cp) return (uint8_t) (0x80 + i);
+  return 0;
+}
+
 }  // namespace espidf_ble_keyboard
 }  // namespace esphome

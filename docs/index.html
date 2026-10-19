@@ -398,6 +398,7 @@
   <span class="yaml-key">id</span><span class="yaml-val">:</span> <span class="yaml-str">my_keyboard</span>
   <span class="yaml-key">device_name</span><span class="yaml-val">:</span> <span class="yaml-str">"ESP32 BLE KB"</span>  <span class="yaml-comment"># optional, max 29 chars</span>
   <span class="yaml-key">key_delay_ms</span><span class="yaml-val">:</span> <span class="yaml-str">80</span>  <span class="yaml-comment"># optional, increase if characters drop</span>
+  <span class="yaml-key">unicode_input</span><span class="yaml-val">:</span> <span class="yaml-str">fold</span>  <span class="yaml-comment"># optional: characters the layout lacks — fold, windows or linux</span>
   <span class="yaml-key">passkey</span><span class="yaml-val">:</span> <span class="yaml-str">123456</span>  <span class="yaml-comment"># optional 6-digit PIN</span>
   <span class="yaml-key">passkey_mode</span><span class="yaml-val">:</span> <span class="yaml-str">legacy</span>  <span class="yaml-comment"># use secure_connections for iOS (required)</span>
   <span class="yaml-key">web_control</span><span class="yaml-val">:</span> <span class="yaml-str">true</span>  <span class="yaml-comment"># optional, built-in web UI</span>
@@ -515,7 +516,7 @@
       <tr><td><code>"switch_host:back"</code></td><td class="desc">Return to the slot active before the last switch, however it was made — what brings a macro home after it visits another host.</td></tr>
       <tr><td><code>"prev_host"</code> / <code>"next_host"</code> / <code>"last_host"</code></td><td class="desc">The same three as remote keys a style can place, remappable per host.</td></tr>
       <tr><td><code>"next_keyboard"</code> / <code>"prev_host_all"</code> / <code>"next_host_all"</code></td><td class="desc">Web page remote only: move the tab to the next linked keyboard, or through every host of every linked keyboard.</td></tr>
-      <tr><td><code>"keyboard"</code> / <code>"typing"</code></td><td class="desc">Remote keys, on the web page and the Home Assistant remote card: open the on-screen keyboard under the remote, or a box your phone's or PC's own keyboard types into.</td></tr>
+      <tr><td><code>"keyboard"</code> / <code>"typing"</code> / <code>"touchpad"</code></td><td class="desc">Remote keys, on the web page and the Home Assistant remote card: open the on-screen keyboard under the remote, a box your phone's or PC's own keyboard types into, or a mouse pad.</td></tr>
       <tr><td><code>"peer:&lt;name&gt;:&lt;action&gt;"</code></td><td class="desc">Run an action on a linked keyboard listed under <code>peers:</code> — <code>"peer:bedroom:switch_host:1"</code>.</td></tr>
       <tr><td><code>"to:&lt;name&gt;:&lt;action&gt;"</code></td><td class="desc">Run an action on this keyboard with its keys sent to a linked keyboard's host — <code>"to:bedroom:macro:Netflix"</code>, this keyboard's macro typed over there.</td></tr>
       <tr><td><code>"back@long"</code></td><td class="desc">What a long press on a remote key sends. A Host Action with this name is that key's second action on that host; without one it does nothing.</td></tr>
@@ -524,6 +525,7 @@
       <tr><td><code>"forget_host:0"</code></td><td class="desc">Remove BLE bond for host slot 0–9 and clear the stored address.</td></tr>
       <tr><td><code>"string:hello"</code></td><td class="desc">Explicit text typing — useful in multi-step macros to distinguish text from action names.</td></tr>
       <tr><td><code>"delay:200"</code></td><td class="desc">Pause for N milliseconds (max 10000). Used between steps in multi-step macros.</td></tr>
+      <tr><td><code>"after:30m:remote_power"</code></td><td class="desc">Run an action later without holding up other keys: seconds, or <code>90s</code>, <code>30m</code>, <code>1h30m</code>, up to 24 days. <code>"after:sleep:30m:…"</code> names it so the same name replaces it; <code>"after:sleep:cancel"</code> and <code>"after:cancel"</code> cancel one or all.</td></tr>
       <tr><td><code>"a | b | c"</code></td><td class="desc">Multi-step macro — chain actions with <code>|</code>. 50ms auto-delay between steps. E.g. <code>"combo:2:6 | delay:100 | combo:2:25"</code> (Copy, wait, Paste).</td></tr>
       <tr><td><code>espidf_ble_keyboard.run_action</code></td><td class="desc">Run any action string from a YAML automation, no lambda — <code>- espidf_ble_keyboard.run_action:</code> with <code>id:</code> and <code>action:</code>. Takes macro names and multi-step sequences; <code>action:</code> is templatable.</td></tr>
       <tr><td><code>execute_action()</code></td><td class="desc">Run any action string from a lambda — <code>id(kb).execute_action("combo:2:6 | delay:100 | combo:2:25");</code>. Supports multi-step.</td></tr>

@@ -94,6 +94,15 @@ APPEARANCES = {
 # web_control.cpp, then append the id here.
 SUPPORTED_LAYOUTS = ["us", "uk", "de", "be"]
 
+# How a host gets a character its layout has no key for. Keep the numbers in
+# sync with UNICODE_FOLD/_WINDOWS/_LINUX in the header.
+CONF_UNICODE_INPUT = "unicode_input"
+UNICODE_INPUTS = {
+    "fold": 0,      # its plain equivalent: ’ → ', — → -, é → e
+    "windows": 1,   # Alt + numpad code, for everything in Windows-1252
+    "linux": 2,     # Ctrl+Shift+U + hex, any character, in IBus desktops
+}
+
 espidf_ble_keyboard_ns = cg.esphome_ns.namespace("espidf_ble_keyboard")
 EspidfBleKeyboard = espidf_ble_keyboard_ns.class_("EspidfBleKeyboard", cg.Component)
 RssiAboveTrigger = espidf_ble_keyboard_ns.class_("RssiAboveTrigger", automation.Trigger.template(cg.int_))
@@ -296,6 +305,11 @@ HOST_SCHEMA = cv.Schema({
         lower=True,
     ),
     cv.Optional(CONF_LAYOUT): cv.one_of(*SUPPORTED_LAYOUTS, lower=True),
+    # Typing on this host: its own pace, and how it gets characters its layout
+    # lacks. Unset, the top-level values apply. Host Actions can change both on
+    # the device, and what is saved there wins.
+    cv.Optional(CONF_KEY_DELAY_MS): cv.int_range(min=2, max=10000),
+    cv.Optional(CONF_UNICODE_INPUT): cv.one_of(*UNICODE_INPUTS, lower=True),
     # What this slot advertises itself as. Only the advertisement changes: a
     # watch whose Bluetooth menu lists nothing but audio devices finds an
     # "audio" slot, and once paired uses it as a keyboard, mouse and remote.
@@ -557,6 +571,7 @@ CONFIG_SCHEMA = cv.All(
         cv.Optional(CONF_MOUSE_GOTO_SCALE_Y): cv.float_range(min=0.05, max=20.0),
         cv.Optional(CONF_MONITORS): cv.ensure_list(MONITOR_SCHEMA),
         cv.Optional(CONF_KEYBOARD_LAYOUT, default="us"): cv.one_of(*SUPPORTED_LAYOUTS, lower=True),
+        cv.Optional(CONF_UNICODE_INPUT, default="fold"): cv.one_of(*UNICODE_INPUTS, lower=True),
         # Feed the BLE Battery Service, which hosts show in their Bluetooth
         # settings. Any sensor reading 0-100 will do; without this the service
         # is still advertised and reports a fixed 100%.
@@ -655,6 +670,7 @@ async def to_code(config):
     for mon in config.get(CONF_MONITORS, []):
         cg.add(var.add_monitor(mon[CONF_X], mon[CONF_Y], mon[CONF_WIDTH], mon[CONF_HEIGHT], mon[CONF_PRIMARY]))
     cg.add(var.set_keyboard_layout(config[CONF_KEYBOARD_LAYOUT]))
+    cg.add(var.set_unicode_input(UNICODE_INPUTS[config[CONF_UNICODE_INPUT]]))
 
     if CONF_BATTERY_LEVEL in config:
         battery = await cg.get_variable(config[CONF_BATTERY_LEVEL])
@@ -679,6 +695,11 @@ async def to_code(config):
                 cg.add(var.set_host_slot_layout(host[CONF_SLOT], host[CONF_LAYOUT]))
             if CONF_APPEARANCE in host:
                 cg.add(var.set_host_slot_appearance(host[CONF_SLOT], host[CONF_APPEARANCE]))
+            if CONF_KEY_DELAY_MS in host or CONF_UNICODE_INPUT in host:
+                method = host.get(CONF_UNICODE_INPUT)
+                cg.add(var.set_host_slot_typing(
+                    host[CONF_SLOT], host.get(CONF_KEY_DELAY_MS, 0),
+                    0xFF if method is None else UNICODE_INPUTS[method]))
             for name, act in host.get(CONF_ACTIONS, {}).items():
                 cg.add(var.set_host_slot_override(host[CONF_SLOT], name, act))
 

@@ -278,7 +278,7 @@ class StackHeadroomProbe {
 // part of handleRequest's frame on the 4352-byte web task.
 
 static size_t status_json_size(EspidfBleKeyboard *kb) {
-  size_t n = 512 + kb->lcd_status_json().size();
+  size_t n = 512 + kb->lcd_status_json().size() + 40 * (size_t) kb->timer_count();
 #ifdef USE_BLE_KB_PRESENCE
   n += 11 * (size_t) kb->host_slots();
 #endif
@@ -357,6 +357,9 @@ __attribute__((noinline)) static void append_status_json(std::string &json, Espi
   // page reads those lists again when it moves (see edits()).
   json += ",\"edits\":";
   json += std::to_string(kb->edits());
+  // after: timers still to fire, soonest first: [name, seconds left, host].
+  json += ",\"timers\":";
+  kb->append_timers_json(json);
   // Values for any ["lcd",…] panel the current remote style drew. On this
   // endpoint rather than its own: the page already polls it every 3 s, and
   // canHandle() pays a URL buffer and a heap string for every request the
@@ -1077,7 +1080,7 @@ class BleKbWebHandler : public AsyncWebHandler {
       // ha_action: strings would otherwise realloc its way up on the shared heap.
       // Counted exactly, escaping included, and refused when it doesn't fit.
       const std::string &on_connect = kb_->get_on_connect((uint8_t) slot);
-      size_t est = 80 + json_escaped_size(on_connect);
+      size_t est = 180 + json_escaped_size(on_connect);
       for (const auto &o : nvs) est += json_escaped_size(o.name) + json_escaped_size(o.action) + 40;
       for (const auto &o : yaml) est += json_escaped_size(o.name) + json_escaped_size(o.action) + 40;
       if (heap_short(est, "Host Actions", ""))
@@ -1113,7 +1116,18 @@ class BleKbWebHandler : public AsyncWebHandler {
       }
       json += "],\"on_connect\":\"";
       json_escape_append(json, on_connect);
-      json += "\"}";
+      // What Host Actions saved for the slot's typing (0 and "" for nothing), and
+      // what applies without it, which the page shows as the boxes' placeholders.
+      {
+        const EspidfBleKeyboard::TypingCfg own = kb_->get_slot_typing((uint8_t) slot);
+        const EspidfBleKeyboard::TypingCfg def = kb_->get_slot_typing_default((uint8_t) slot);
+        char buf[112];
+        snprintf(buf, sizeof(buf),
+                 "\",\"typing\":{\"delay\":%u,\"delay_def\":%u,\"unicode\":\"%s\",\"unicode_def\":\"%s\"}}",
+                 (unsigned) own.delay, (unsigned) def.delay, EspidfBleKeyboard::unicode_input_name(own.method),
+                 EspidfBleKeyboard::unicode_input_name(def.method));
+        json += buf;
+      }
       send_response(200, "application/json", json);
       return;
     }
@@ -1283,6 +1297,7 @@ class BleKbWebHandler : public AsyncWebHandler {
         for (const auto &h : kb_->get_hold(s)) est += h.size() + 4;
         est += 96;  // that slot's keys, calibration, style id and host entry
         est += json_escaped_size(kb_->get_on_connect(s)) + 8;
+        est += 32;  // its typing settings
       }
       // The custom styles, which nothing above covers and which are by far the
       // largest thing in here: eight of them is 12 KB stored and more once
@@ -1393,6 +1408,18 @@ class BleKbWebHandler : public AsyncWebHandler {
         json += "\"" + std::to_string(s) + "\":\"";
         json_escape_append(json, a);
         json += "\"";
+      }
+      // [delay, "method"] for slots Host Actions gave either one; 0 and "" are
+      // "not set", and an absent slot restores as neither.
+      json += "},\"typing\":{";
+      bool first_typ = true;
+      for (uint8_t s = 0; s < kb_->host_slots(); s++) {
+        const EspidfBleKeyboard::TypingCfg t = kb_->get_slot_typing(s);
+        if (t.delay == 0 && t.method == UNICODE_UNSET) continue;
+        if (!first_typ) json += ",";
+        first_typ = false;
+        json += "\"" + std::to_string(s) + "\":[" + std::to_string(t.delay) + ",\"" +
+                EspidfBleKeyboard::unicode_input_name(t.method) + "\"]";
       }
       json += "},\"remote_templates\":[";
       bool first_tpl = true;
@@ -1804,6 +1831,28 @@ class BleKbWebHandler : public AsyncWebHandler {
         send_response(400, "text/plain", "No line breaks — separate steps with |");
       } else if (!kb_->set_on_connect((uint8_t) slot, action)) {
         send_response(400, "text/plain", "Could not save the on-connect action to storage");
+      } else {
+        send_response(200, "text/plain", "OK");
+      }
+
+    } else if (path == "typing_set") {
+      // A host's own typing pace, and its way with characters its layout lacks.
+      // Either one left empty goes back to what YAML says.
+      int slot = request->hasArg("slot") ? atoi(request->arg("slot").c_str()) : -1;
+      const std::string delay_s = request->hasArg("delay") ? request->arg("delay").c_str() : "";
+      const std::string method_s = request->hasArg("unicode") ? request->arg("unicode").c_str() : "";
+      char *end = nullptr;
+      const long delay = delay_s.empty() ? 0 : strtol(delay_s.c_str(), &end, 10);
+      const uint8_t method =
+          method_s.empty() ? (uint8_t) UNICODE_UNSET : EspidfBleKeyboard::unicode_input_from(method_s);
+      if (slot < 0 || slot >= kb_->host_slots()) {
+        send_response(400, "text/plain", "Invalid slot");
+      } else if (!delay_s.empty() && (end == nullptr || *end != '\0' || delay < 2 || delay > 10000)) {
+        send_response(400, "text/plain", "Typing speed is 2 to 10000 ms a character, or empty for the default");
+      } else if (!method_s.empty() && method == UNICODE_UNSET) {
+        send_response(400, "text/plain", "unicode is fold, windows or linux, or empty for the default");
+      } else if (!kb_->set_slot_typing((uint8_t) slot, (uint16_t) delay, method)) {
+        send_response(400, "text/plain", "Could not save the typing settings to storage");
       } else {
         send_response(200, "text/plain", "OK");
       }
