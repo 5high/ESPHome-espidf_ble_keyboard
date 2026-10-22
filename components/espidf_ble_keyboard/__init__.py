@@ -7,7 +7,7 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 import esphome.final_validate as fv
 from esphome.components import binary_sensor, button, sensor, text, text_sensor
-from esphome.const import CONF_ID
+from esphome.const import CONF_ID, KEY_CORE, KEY_FRAMEWORK_VERSION
 from esphome.core import CORE, EsphomeError, HexInt
 from esphome.coroutine import coroutine_with_priority
 from esphome import automation
@@ -500,6 +500,31 @@ def _web_final_validate(config):
     return config
 
 
+# ESP-IDF 5.5.6 — what ESPHome 2026.10 builds with — wipes a paired host's keys from
+# memory every time it reconnects, so the reconnect after that is refused until the
+# keyboard restarts. bluedroid_smp_guard.cpp has the cause; these are the Bluedroid
+# functions it wraps to stop that one wipe. Still the same on esp-idf master.
+SMP_KEY_WIPE_FROM = cv.Version(5, 5, 6)
+SMP_KEY_GUARD_WRAPS = (
+    "smp_proc_pair_cmd",
+    "smp_check_auth_req",
+    "smp_proc_pairing_cmpl",
+    "btm_sec_clear_ble_keys",
+)
+
+
+def _idf_version():
+    """The ESP-IDF underneath the build, or None when it cannot be told (an
+    Arduino build on an ESPHome without esp32.idf_version())."""
+    try:
+        from esphome.components.esp32 import idf_version
+        return idf_version()
+    except (ImportError, KeyError):
+        if CORE.using_arduino:
+            return None
+        return CORE.data.get(KEY_CORE, {}).get(KEY_FRAMEWORK_VERSION)
+
+
 def _final_validate(config):
     config = _api_final_validate(config)
     return _web_final_validate(config)
@@ -820,3 +845,11 @@ async def to_code(config):
         include_builtin_idf_component("nvs_flash")
     except ImportError:
         pass
+
+    idf = _idf_version()
+    if idf is not None and idf >= SMP_KEY_WIPE_FROM:
+        cg.add_define("USE_BLE_KB_SMP_KEY_GUARD")
+        for symbol in SMP_KEY_GUARD_WRAPS:
+            cg.add_build_flag(f"-Wl,--wrap={symbol}")
+            # The wrappers live in libsrc.a, which is scanned before the IDF libraries.
+            cg.add_build_flag(f"-Wl,--undefined=__wrap_{symbol}")
