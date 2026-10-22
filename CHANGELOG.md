@@ -40,6 +40,9 @@ web control page shows the matching version badge.
 - **Text no longer loses the characters its host's layout has no key for.** Curly quotes, dashes,
   the ellipsis and accented letters on a US layout were left out of pasted and typed text; they now
   arrive as their plain equivalents.
+- **A failed pairing no longer logs that the host must be paired again when its bond survived.**
+  From ESPHome 2026.10 a host keeps its bond through a failed or interrupted pairing, and the log
+  now says so.
 
 ## v1.17.0 — 2026-10-17
 

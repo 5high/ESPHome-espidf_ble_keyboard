@@ -587,28 +587,38 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                 uint8_t fail_reason = param->ble_security.auth_cmpl.fail_reason;
                 ESP_LOGE(TAG, "GAP: Pairing Failed (0x%02X)", fail_reason);
 
-                // The bond is very probably already gone, and not because anything
-                // here removed it. Bluedroid's btc_dm_ble_auth_cmpl_evt()
-                // (btc_dm.c, the `default:` branch) calls
+                // Whether the bond survives this depends on the ESP-IDF underneath.
+                // Up to 5.5.5 (ESPHome 2026.9 and older) Bluedroid's
+                // btc_dm_ble_auth_cmpl_evt() (btc_dm.c, the `default:` branch) calls
                 // btc_dm_remove_ble_bonding_keys() on *every* pairing failure
                 // except SMP_PAIR_NOT_SUPPORT — so a procedure that merely timed
-                // out because the link went away takes the bond with it. The codes
-                // that reach here that way are all offset by
+                // out because the link went away takes the bond with it. 5.5.6
+                // (ESPHome 2026.10) keeps the bond when we are the peripheral, unless
+                // CONFIG_BT_BLE_SMP_REMOVE_BOND_ON_PAIR_FAIL_AS_PERIPHERAL brings the
+                // old way back. Either way the removal is done before this callback
+                // runs, so asking whether the bond is still there answers for both.
+                // The codes that reach here are all offset by
                 // BTA_DM_AUTH_FAIL_BASE (HCI_ERR_MAX_ERR + 10 = 0x4D):
                 //   0x66 SMP_CONN_TOUT   — link dropped mid-pairing
                 //   0x63 SMP_RSP_TIMEOUT — peer stopped answering
                 //   0x61 SMP_ENC_FAIL, 0x65 SMP_FAIL
-                // The host keeps its own copy of the key, so it does not re-pair on
-                // its own and has to be paired again by hand. This component cannot
-                // veto the removal, so record it — that record is the only trace
-                // the event leaves behind.
+                // A host whose bond went keeps its own copy of the key, so it does not
+                // re-pair on its own and has to be paired again by hand. This component
+                // cannot veto the removal, so record it — that record is the only
+                // trace the event leaves behind.
                 if (s_instance && fail_reason != 0x52) {
-                    int8_t fslot = s_instance->find_slot_for_peer(param->ble_security.auth_cmpl.bd_addr);
-                    ESP_LOGW(TAG, "GAP: The stack drops the bond after a failed pairing — "
-                                  "this host must be paired again from its own side");
-                    s_instance->queue_bond_log(BOND_LOSS_STACK, fail_reason,
-                                               fslot >= 0 ? (uint8_t) fslot : 0xFF,
-                                               param->ble_security.auth_cmpl.bd_addr);
+                    const uint8_t *faddr = param->ble_security.auth_cmpl.bd_addr;
+                    int8_t fslot = s_instance->find_slot_for_peer(faddr);
+                    bool kept = fslot >= 0 ? s_instance->host_slot_bonded((uint8_t) fslot)
+                                           : s_instance->peer_is_bonded(faddr);
+                    if (kept) {
+                        ESP_LOGI(TAG, "GAP: The bond was kept");
+                    } else {
+                        ESP_LOGW(TAG, "GAP: The stack drops the bond after a failed pairing — "
+                                      "this host must be paired again from its own side");
+                        s_instance->queue_bond_log(BOND_LOSS_STACK, fail_reason,
+                                                   fslot >= 0 ? (uint8_t) fslot : 0xFF, faddr);
+                    }
                 }
 
                 bool fb_has, fb_sc; uint32_t fb_pk;
