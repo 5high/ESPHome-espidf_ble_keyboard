@@ -15,7 +15,9 @@
 // left key-less ("Deleting unpaired device"), and the next reconnect is answered with
 // an LTK negative reply — the host cannot encrypt and gives up until the keyboard
 // restarts. Measured on a phone and a Samsung monitor (2026-10-22); the same code is
-// still on esp-idf master and release/v5.4 to v6.0.
+// still on esp-idf master and release/v5.4 to v6.0. Reported as
+// https://github.com/espressif/esp-idf/issues/19286 — once a release carries the fix,
+// cap SMP_KEY_WIPE_FROM's range in __init__.py and this can go.
 //
 // The wipe is let through here only when a Pairing Request was processed in this SMP
 // procedure, which is what Bluedroid's own SMP_PAIR_FLAG_ENC_AFTER_PAIR records. Every

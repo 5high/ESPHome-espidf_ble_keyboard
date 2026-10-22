@@ -238,6 +238,45 @@ static constexpr uint32_t SCAN_RETRY_MS = 30000;
 static constexpr uint32_t PRESENCE_GONE_MS = 60000;
 #endif
 
+// The stack's bond list, read into one kept buffer rather than a fresh heap copy
+// per question. It is asked a lot — a /hosts answer asks up to three times for
+// each slot, and every reconnect asks again — and each copy took ~100 B per bond
+// off a heap that runs ~23 KB from empty: the device ran out of memory in exactly
+// such a copy in the seconds after an upload (2026-10-22). The buffer is the size
+// of the bonds actually held, grown when a host is added and never freed, so it
+// costs what one copy did without the churn. Asked from Bluedroid's task, the
+// loop, the web server and the action task, hence the lock; it is held only
+// around the read and the scan, and nothing done under it asks again.
+static esp_ble_bond_dev_t *s_bond_list = nullptr;
+static int s_bond_list_cap = 0;
+static StaticSemaphore_t s_bond_list_lock_buf;
+static SemaphoreHandle_t s_bond_list_lock = nullptr;  // made at the top of setup()
+
+// Runs fn(list, count) over the bonds; false, without calling fn, when the list
+// cannot be read. fn must not ask for the list again — the lock is not recursive.
+template<typename F> static bool with_bond_list(F &&fn) {
+    if (s_bond_list_lock == nullptr) return false;
+    xSemaphoreTake(s_bond_list_lock, portMAX_DELAY);
+    int count = esp_ble_get_bond_device_num();  // ESP_FAIL while Bluedroid is down
+    bool ok = count >= 0;
+    if (ok && count > s_bond_list_cap) {
+        // malloc rather than new: short of memory, this answer fails instead of
+        // the whole device aborting.
+        auto *grown = static_cast<esp_ble_bond_dev_t *>(malloc(sizeof(esp_ble_bond_dev_t) * count));
+        if (grown == nullptr) {
+            ok = false;
+        } else {
+            free(s_bond_list);
+            s_bond_list = grown;
+            s_bond_list_cap = count;
+        }
+    }
+    if (ok && count > 0) ok = esp_ble_get_bond_device_list(&count, s_bond_list) == ESP_OK;
+    if (ok) fn(static_cast<const esp_ble_bond_dev_t *>(s_bond_list), count);
+    xSemaphoreGive(s_bond_list_lock);
+    return ok;
+}
+
 
 static void maybe_reset_bonds_after_security_config_change() {
     if (s_instance == nullptr) {
@@ -278,25 +317,19 @@ static void maybe_reset_bonds_after_security_config_change() {
 
     if (security_cfg_changed) {
         ESP_LOGW(TAG, "Security config changed (passkey/mode). Clearing stored BLE bonds.");
-        int dev_num = esp_ble_get_bond_device_num();
-        if (dev_num > 0) {
-            std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(dev_num));
-            int query_num = dev_num;
-            esp_err_t list_ret = esp_ble_get_bond_device_list(&query_num, bonded.data());
-            if (list_ret == ESP_OK) {
-                for (int i = 0; i < query_num; i++) {
-                    esp_err_t rm_ret = esp_ble_remove_bond_device(bonded[static_cast<size_t>(i)].bd_addr);
-                    if (rm_ret != ESP_OK) {
-                        ESP_LOGW(TAG, "Failed to remove bond #%d (%d)", i, rm_ret);
-                    } else {
-                        s_instance->bond_log_record(BOND_LOSS_CONFIG, 0, 0xFF,
-                                                    bonded[static_cast<size_t>(i)].bd_addr);
-                    }
+        // The removal is only queued to Bluedroid's task, so the list being walked
+        // stays as read.
+        const bool read = with_bond_list([](const esp_ble_bond_dev_t *list, int count) {
+            for (int i = 0; i < count; i++) {
+                esp_err_t rm_ret = esp_ble_remove_bond_device(const_cast<uint8_t *>(list[i].bd_addr));
+                if (rm_ret != ESP_OK) {
+                    ESP_LOGW(TAG, "Failed to remove bond #%d (%d)", i, rm_ret);
+                } else {
+                    s_instance->bond_log_record(BOND_LOSS_CONFIG, 0, 0xFF, list[i].bd_addr);
                 }
-            } else {
-                ESP_LOGW(TAG, "Failed to read bonded device list (%d)", list_ret);
             }
-        }
+        });
+        if (!read) ESP_LOGW(TAG, "Failed to read bonded device list");
     }
 
     nvs_set_u8(handle, "has_pk", current_has_passkey);
@@ -1168,22 +1201,19 @@ void EspidfBleKeyboard::load_host_slots_() {
 }
 
 bool EspidfBleKeyboard::peer_is_bonded(const esp_bd_addr_t addr) const {
-    int dev_num = esp_ble_get_bond_device_num();
-    if (dev_num <= 0) return false;
-    std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(dev_num));
-    int query_num = dev_num;
-    if (esp_ble_get_bond_device_list(&query_num, bonded.data()) != ESP_OK) return false;
-    for (int i = 0; i < query_num; i++) {
-        const auto &dev = bonded[static_cast<size_t>(i)];
-        // The connection address, and the identity the record was filed under —
-        // a host that rotates its address is bonded under the latter, so a peer
-        // arriving on a fresh RPA matches only the second test.
-        if (memcmp(dev.bd_addr, addr, sizeof(esp_bd_addr_t)) == 0) return true;
-        if ((dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) != 0 &&
-            memcmp(dev.bond_key.pid_key.static_addr, addr, sizeof(esp_bd_addr_t)) == 0)
-            return true;
-    }
-    return false;
+    bool found = false;
+    with_bond_list([&](const esp_ble_bond_dev_t *list, int count) {
+        for (int i = 0; i < count && !found; i++) {
+            const auto &dev = list[i];
+            // The connection address, and the identity the record was filed under —
+            // a host that rotates its address is bonded under the latter, so a peer
+            // arriving on a fresh RPA matches only the second test.
+            found = memcmp(dev.bd_addr, addr, sizeof(esp_bd_addr_t)) == 0 ||
+                    ((dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) != 0 &&
+                     memcmp(dev.bond_key.pid_key.static_addr, addr, sizeof(esp_bd_addr_t)) == 0);
+        }
+    });
+    return found;
 }
 
 bool EspidfBleKeyboard::host_slot_bonded(uint8_t slot) const {
@@ -1304,19 +1334,14 @@ std::string EspidfBleKeyboard::bond_log_json() const {
 }
 
 void EspidfBleKeyboard::bond_census_() {
-    int dev_num = esp_ble_get_bond_device_num();
-    ESP_LOGI(TAG, "Bond census: the stack holds %d bond(s)", dev_num);
-    if (dev_num > 0) {
-        std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(dev_num));
-        int query_num = dev_num;
-        if (esp_ble_get_bond_device_list(&query_num, bonded.data()) == ESP_OK) {
-            for (int i = 0; i < query_num; i++) {
-                char addr_str[18];
-                format_bd_addr(bonded[static_cast<size_t>(i)].bd_addr, addr_str);
-                ESP_LOGI(TAG, "Bond census: bonded %s", addr_str);
-            }
+    with_bond_list([](const esp_ble_bond_dev_t *list, int count) {
+        ESP_LOGI(TAG, "Bond census: the stack holds %d bond(s)", count);
+        for (int i = 0; i < count; i++) {
+            char addr_str[18];
+            format_bd_addr(list[i].bd_addr, addr_str);
+            ESP_LOGI(TAG, "Bond census: bonded %s", addr_str);
         }
-    }
+    });
 
     // An occupied slot with no bond is the signature of a bond that went away
     // while nothing was watching. If this component removed it, a record from
@@ -1343,26 +1368,23 @@ void EspidfBleKeyboard::bond_census_() {
 }
 
 bool EspidfBleKeyboard::peer_id_keys_(const esp_bd_addr_t addr, esp_ble_pid_keys_t &out) const {
-    int dev_num = esp_ble_get_bond_device_num();
-    if (dev_num <= 0) return false;
-    std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(dev_num));
-    int query_num = dev_num;
-    if (esp_ble_get_bond_device_list(&query_num, bonded.data()) != ESP_OK) return false;
-
-    for (int i = 0; i < query_num; i++) {
-        const auto &dev = bonded[static_cast<size_t>(i)];
-        // A peer sends its ID key only if it distributed one, and everything this
-        // resolves — the identity address, the IRK — lives inside that key.
-        if ((dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) == 0) continue;
-        // Match either way round: callers hold the connection address at connect
-        // time, but a stored slot may already have been matched to the identity.
-        if (memcmp(dev.bd_addr, addr, sizeof(esp_bd_addr_t)) == 0 ||
-            memcmp(dev.bond_key.pid_key.static_addr, addr, sizeof(esp_bd_addr_t)) == 0) {
-            memcpy(&out, &dev.bond_key.pid_key, sizeof(esp_ble_pid_keys_t));
-            return true;
+    bool found = false;
+    with_bond_list([&](const esp_ble_bond_dev_t *list, int count) {
+        for (int i = 0; i < count && !found; i++) {
+            const auto &dev = list[i];
+            // A peer sends its ID key only if it distributed one, and everything this
+            // resolves — the identity address, the IRK — lives inside that key.
+            if ((dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) == 0) continue;
+            // Match either way round: callers hold the connection address at connect
+            // time, but a stored slot may already have been matched to the identity.
+            if (memcmp(dev.bd_addr, addr, sizeof(esp_bd_addr_t)) == 0 ||
+                memcmp(dev.bond_key.pid_key.static_addr, addr, sizeof(esp_bd_addr_t)) == 0) {
+                memcpy(&out, &dev.bond_key.pid_key, sizeof(esp_ble_pid_keys_t));
+                found = true;
+            }
         }
-    }
-    return false;
+    });
+    return found;
 }
 
 bool EspidfBleKeyboard::peer_identity_addr(const esp_bd_addr_t addr, esp_bd_addr_t &out) const {
@@ -3211,6 +3233,8 @@ void EspidfBleKeyboard::setup() {
     s_instance = this;
     // ESPHome runs setup() and every loop() on the same task.
     loop_task_ = xTaskGetCurrentTaskHandle();
+    // Static storage, so it cannot fail; before Bluedroid can call back.
+    s_bond_list_lock = xSemaphoreCreateMutexStatic(&s_bond_list_lock_buf);
     type_mutex_ = xSemaphoreCreateMutex();
     timer_mutex_ = xSemaphoreCreateMutex();
 #ifdef USE_BLE_KB_PRESENCE
@@ -3512,31 +3536,26 @@ void EspidfBleKeyboard::presence_loop_() {
 // matched, or not, from this one on. The IRK itself is never copied out.
 void EspidfBleKeyboard::presence_refresh_() {
     uint16_t bond_mask = 0, irk_mask = 0;
-    const int n = esp_ble_get_bond_device_num();
-    if (n > 0) {
-        std::vector<esp_ble_bond_dev_t> bonded(static_cast<size_t>(n));
-        int got = n;
-        if (esp_ble_get_bond_device_list(&got, bonded.data()) == ESP_OK) {
-            for (int b = 0; b < got; b++) {
-                const auto &dev = bonded[static_cast<size_t>(b)];
-                const bool has_id = (dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) != 0;
-                // Either way round, as peer_id_keys_() matches.
-                auto filed = [&](const esp_bd_addr_t a) {
-                    return memcmp(dev.bd_addr, a, sizeof(esp_bd_addr_t)) == 0 ||
-                           (has_id && memcmp(dev.bond_key.pid_key.static_addr, a, sizeof(esp_bd_addr_t)) == 0);
-                };
-                bool irk = false;
-                for (int k = 0; has_id && k < 16 && !irk; k++) irk = dev.bond_key.pid_key.irk[k] != 0;
-                for (uint8_t i = 0; i < host_slots_; i++) {
-                    const HostSlot &h = hosts_[i];
-                    if (!h.occupied || !(filed(h.addr) || (h.has_identity && filed(h.identity)))) continue;
-                    memcpy(presence_bond_addr_[i], dev.bd_addr, sizeof(esp_bd_addr_t));
-                    bond_mask |= (uint16_t) (1u << i);
-                    if (irk) irk_mask |= (uint16_t) (1u << i);
-                }
+    with_bond_list([&](const esp_ble_bond_dev_t *list, int count) {
+        for (int b = 0; b < count; b++) {
+            const auto &dev = list[b];
+            const bool has_id = (dev.bond_key.key_mask & ESP_BLE_ID_KEY_MASK) != 0;
+            // Either way round, as peer_id_keys_() matches.
+            auto filed = [&](const esp_bd_addr_t a) {
+                return memcmp(dev.bd_addr, a, sizeof(esp_bd_addr_t)) == 0 ||
+                       (has_id && memcmp(dev.bond_key.pid_key.static_addr, a, sizeof(esp_bd_addr_t)) == 0);
+            };
+            bool irk = false;
+            for (int k = 0; has_id && k < 16 && !irk; k++) irk = dev.bond_key.pid_key.irk[k] != 0;
+            for (uint8_t i = 0; i < host_slots_; i++) {
+                const HostSlot &h = hosts_[i];
+                if (!h.occupied || !(filed(h.addr) || (h.has_identity && filed(h.identity)))) continue;
+                memcpy(presence_bond_addr_[i], dev.bd_addr, sizeof(esp_bd_addr_t));
+                bond_mask |= (uint16_t) (1u << i);
+                if (irk) irk_mask |= (uint16_t) (1u << i);
             }
         }
-    }
+    });
     // Which hosts a scan can recognise, and how, said at the start and whenever
     // the hosts or the IRK / MAC setting change. A host whose bond holds an IRK
     // can only be recognised by it; one without, only by its MAC.

@@ -43,6 +43,8 @@ web control page shows the matching version badge.
 - **Paired hosts keep reconnecting on ESPHome 2026.10.** Its ESP-IDF, 5.5.6, let a host reconnect
   once after each restart and refused it from then on. A failed or interrupted pairing also no
   longer costs a host its bond. A host that already gave up needs pairing once more.
+- **Less likely to run out of memory just after an update or while hosts reconnect.** Looking up a
+  paired host no longer copies the whole list of them each time.
 
 ## v1.17.0 — 2026-10-17
 
