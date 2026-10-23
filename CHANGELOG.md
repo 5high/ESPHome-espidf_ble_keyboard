@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
-## Unreleased
+## v1.18.0 — 2026-10-23
 
 ### Added
 - **Timers.** An action can run later — say a key that turns the monitor off in half an hour —

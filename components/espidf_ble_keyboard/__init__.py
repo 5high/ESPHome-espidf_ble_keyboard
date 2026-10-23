@@ -422,12 +422,16 @@ def _peer_url(value):
     return value
 
 
+# Masked in the dashboard and redacted from config dumps. ESPHome before
+# 2026.6.0 has no cv.sensitive and only redacts by the field's name.
+_sensitive = getattr(cv, "sensitive", lambda inner: inner)
+
 PEER_SCHEMA = cv.Schema({
     cv.Required(CONF_NAME): _peer_name,
     cv.Required(CONF_URL): _peer_url,
     # The other keyboard's web_server auth, when it has some.
     cv.Optional(CONF_USERNAME, default=""): cv.string,
-    cv.Optional(CONF_PASSWORD, default=""): cv.string,
+    cv.Optional(CONF_PASSWORD, default=""): _sensitive(cv.string),
 })
 
 
