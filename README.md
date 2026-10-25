@@ -2429,7 +2429,7 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/irk` | GET | `slot` (int, default active) | That host's Identity Resolving Key: `{"slot":N,"irk":"<32 hex chars>"}`, or `"irk":null` when the slot is empty or the host sent no key. **Refuses cross-site requests** — see [Identity key](#identity-key-irk) |
 | `/api/ble_keyboard/switch_host` | POST | `slot` (int) | Switch to host slot 0–9 |
 | `/api/ble_keyboard/forget_host` | POST | `slot` (int) | Remove bond for host slot 0–9 |
-| `/api/ble_keyboard/macro_add` | POST | `name`, `action` | Add a new macro (max 16) |
+| `/api/ble_keyboard/macro_add` | POST | `name`, `action` | Add a new macro (max 32) |
 | `/api/ble_keyboard/macro_update` | POST | `index`, `name`, `action` | Update an existing macro |
 | `/api/ble_keyboard/macro_set` | POST | `name`, `action` | Add a macro, or replace the one with that name — how a linked keyboard copies its macros here |
 | `/api/ble_keyboard/macro_delete` | POST | `index` (int) | Delete a macro by index |
@@ -3169,7 +3169,7 @@ data:
 | Method | Endpoint | Parameters | Description |
 |--------|----------|------------|-------------|
 | GET | `/api/ble_keyboard/buttons` | — | Returns all buttons and macros as JSON. Macros have `"editable":true` and `"index":N`. |
-| POST | `/api/ble_keyboard/macro_add` | `name`, `action` | Add a new macro (max 16). |
+| POST | `/api/ble_keyboard/macro_add` | `name`, `action` | Add a new macro (max 32). |
 | POST | `/api/ble_keyboard/macro_update` | `index`, `name`, `action` | Update an existing macro. |
 | POST | `/api/ble_keyboard/macro_set` | `name`, `action` | Add a macro, or replace the one with that name. |
 | POST | `/api/ble_keyboard/macro_delete` | `index` | Delete a macro by index. |
