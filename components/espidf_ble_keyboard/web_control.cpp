@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
 #include "nvs.h"
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -28,10 +29,12 @@ static const char *const TAG = "ble_kb_web";
 // Python carries. Edit the .html, not a string literal in here.
 
 
-// JSON-escape a string (handles \n, \r, \t, \, ") onto the end of `out`, so a
-// large value goes straight into the response instead of through a temporary.
-static void json_escape_append(std::string &out, const std::string &s) {
-  for (char c : s) {
+// JSON-escape `n` bytes from `p` (handles \n, \r, \t, \, ") onto the end of
+// `out`, so a large value goes straight into the response instead of through a
+// temporary — or a slice of one, for a reply sent in pieces.
+static void json_escape_append(std::string &out, const char *p, size_t n) {
+  for (const char *end = p + n; p < end; p++) {
+    const char c = *p;
     switch (c) {
       case '"':  out += "\\\""; break;
       case '\\': out += "\\\\"; break;
@@ -59,6 +62,9 @@ static void json_escape_append(std::string &out, const std::string &s) {
         break;
     }
   }
+}
+static void json_escape_append(std::string &out, const std::string &s) {
+  json_escape_append(out, s.data(), s.size());
 }
 
 static std::string json_escape(const std::string &s) {
@@ -536,6 +542,62 @@ __attribute__((noinline)) static void append_macro_digest(std::string &json, Esp
     json += tail;
   }
   json += "]";
+}
+
+// The custom styles, which only NVS holds, as {"index":i,"tpl":"…"} items: each
+// read when its turn comes, sent, and dropped before the next is read, and sent
+// as the contents of a JSON string a slice at a time — so neither the list nor a
+// style's escaped copy ever exists in one piece. Each tpl is the JSON the style
+// was stored as, wrapped in a string rather than inlined: the device never
+// parsed it, so embedding it raw would let one malformed style break the reply.
+// Stored styles hold no control characters (stage_chunk_ refuses them), so only
+// " and \ grow when escaped, and a slice at most doubles.
+__attribute__((noinline)) static void send_style_items(httpd_req_t *req, EspidfBleKeyboard *kb) {
+  static const size_t SLICE = 512;
+  std::string body, out;
+  out.reserve(2 * SLICE);
+  char head[40];
+  bool first = true;
+  for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
+    if (!kb->read_custom_template(i, body)) continue;
+    snprintf(head, sizeof(head), "%s{\"index\":%u,\"tpl\":\"", first ? "" : ",", (unsigned) i);
+    first = false;
+    httpd_resp_sendstr_chunk(req, head);
+    for (size_t at = 0; at < body.size(); at += SLICE) {
+      out.clear();
+      json_escape_append(out, body.data() + at, std::min(SLICE, body.size() - at));
+      httpd_resp_send_chunk(req, out.data(), (ssize_t) out.size());
+    }
+    httpd_resp_sendstr_chunk(req, "\"}");
+  }
+}
+
+// A reply whose `head` runs up to an opening [ of the styles: the head, then the
+// style items, then "]}". The head's own block goes back before the first style
+// is read. Out of line, like send_peers, so none of this is in handleRequest's
+// frame.
+__attribute__((noinline)) static void send_with_styles(AsyncWebServerRequest *request, EspidfBleKeyboard *kb,
+                                                       std::string &head) {
+  // Sets the status, type and ESPHome's default headers; the body follows as
+  // chunks on the same request.
+  AsyncWebServerResponse *response = request->beginResponse(200, "application/json");
+  response->addHeader("Connection", "close");
+  httpd_req_t *req = *request;
+  httpd_resp_send_chunk(req, head.data(), (ssize_t) head.size());
+  head.clear();
+  head.shrink_to_fit();
+  send_style_items(req, kb);
+  httpd_resp_sendstr_chunk(req, "]}");
+  httpd_resp_send_chunk(req, nullptr, 0);
+}
+
+// The block one style needs while it is sent: its body, read whole, and the
+// slice it is escaped into.
+static size_t style_send_need(EspidfBleKeyboard *kb) {
+  size_t biggest = 0;
+  for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++)
+    biggest = std::max<size_t>(biggest, kb->get_custom_template_size(i));
+  return biggest ? biggest + 1024 : 0;
 }
 
 #ifdef USE_BLE_KB_PEERS
@@ -1177,43 +1239,16 @@ class BleKbWebHandler : public AsyncWebHandler {
     }
 
     if (path == "remote_templates") {
-      // The user-authored styles, each handed back as the JSON *string* it was
-      // stored as rather than inlined: the device never parsed it, so embedding
-      // it raw would let one malformed style break the whole response.
-      // Reserve first: growing by += reallocs its way up, doubling and leaving
-      // holes behind in a heap that also carries the BLE stack. Sized exactly
-      // from what is stored, escaping included — this used to double each style
-      // as a guess, and six full ones asked for about 18 KB in one block.
-      //
-      // Refused rather than attempted when no block is that big — a few
-      // refreshes in a row aborted right here on 2026-09-16.
-      size_t est = 64;
-      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
-        const std::string &t = kb_->get_custom_template(i);
-        if (!t.empty()) est += json_escaped_size(t) + 24;
-      }
-      if (heap_short(est, "Styles", ""))
+      // The user-authored styles, sent one at a time from NVS (send_with_styles),
+      // so what has to fit is the largest style, not all of them: built as one
+      // block, six full styles once asked for about 18 KB, and a few refreshes in
+      // a row aborted right here on 2026-09-16. Refused rather than attempted
+      // when not even that block is free.
+      if (heap_short(style_send_need(kb_), "Styles", ""))
         return;
-      std::string json = "{\"max\":";
-      json.reserve(est);
-      json += std::to_string(EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES);
-      json += ",\"len\":";
-      json += std::to_string(EspidfBleKeyboard::MAX_TEMPLATE_LEN);
-      json += ",\"items\":[";
-      bool first = true;
-      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
-        const std::string &t = kb_->get_custom_template(i);
-        if (t.empty()) continue;
-        if (!first) json += ",";
-        first = false;
-        json += "{\"index\":";
-        json += std::to_string(i);
-        json += ",\"tpl\":\"";
-        json_escape_append(json, t);
-        json += "\"}";
-      }
-      json += "]}";
-      send_response(200, "application/json", json);
+      std::string head = "{\"max\":" + std::to_string(EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES) +
+                         ",\"len\":" + std::to_string(EspidfBleKeyboard::MAX_TEMPLATE_LEN) + ",\"items\":[";
+      send_with_styles(request, kb_, head);
       return;
     }
 
@@ -1284,8 +1319,8 @@ class BleKbWebHandler : public AsyncWebHandler {
       // NVS entries would shadow later YAML edits). The browser adds its own
       // "ui" section before saving the file.
       // The largest document this handler serves, and the one worth reserving
-      // for: built by += it reallocs about ten times on the way to 10-15 KB,
-      // doubling and leaving holes each time. Measured free heap on this device
+      // for: built by += it reallocs its way up through several KB of macros
+      // and Host Actions, doubling and leaving holes each time. Measured free heap on this device
       // troughs around 23 KB, so the churn is not free. Estimated from what is
       // actually stored rather than from the caps, since a reservation larger
       // than the document raises the peak instead of lowering it.
@@ -1302,18 +1337,10 @@ class BleKbWebHandler : public AsyncWebHandler {
         est += json_escaped_size(kb_->get_on_connect(s)) + 8;
         est += 48;  // its typing settings and layout
       }
-      // The custom styles, which nothing above covers and which are by far the
-      // largest thing in here: eight of them is 12 KB stored and more once
-      // escaped, because every key, token and colour in a style is quoted.
-      // Counted exactly, as /remote_templates does. Without this the reserve
-      // came out a couple of KB for a document of twenty, and the += chain
-      // reallocated its way up through exactly the heap this estimate exists
-      // to protect.
-      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
-        const std::string &t = kb_->get_custom_template(i);
-        if (!t.empty()) est += json_escaped_size(t) + 24;
-      }
-      if (heap_short(est, "Backup", ""))
+      // The custom styles, by far the largest part of a backup, are not counted:
+      // they go last, one at a time from NVS, once this part has been sent and
+      // its block given back (send_with_styles). Whichever needs more must fit.
+      if (heap_short(std::max(est, style_send_need(kb_)), "Backup", ""))
         return;
       std::string json = "{\"schema\":1,\"device\":\"";
       json.reserve(est);
@@ -1425,20 +1452,7 @@ class BleKbWebHandler : public AsyncWebHandler {
         json += "\"" + std::to_string(s) + "\":[" + std::to_string(t.delay) + ",\"" +
                 EspidfBleKeyboard::unicode_input_name(t.method) + "\",\"" + (lay != nullptr ? lay->id : "") + "\"]";
       }
-      json += "},\"remote_templates\":[";
-      bool first_tpl = true;
-      for (uint8_t i = 0; i < EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES; i++) {
-        const std::string &t = kb_->get_custom_template(i);
-        if (t.empty()) continue;
-        if (!first_tpl) json += ",";
-        first_tpl = false;
-        json += "{\"index\":";
-        json += std::to_string(i);
-        json += ",\"tpl\":\"";
-        json_escape_append(json, t);
-        json += "\"}";
-      }
-      json += "],\"goto_scale\":{";
+      json += "},\"goto_scale\":{";
       bool first_scale = true;
       for (uint8_t s = 0; s < kb_->host_slots(); s++) {
         float gx = 0, gy = 0;
@@ -1467,8 +1481,9 @@ class BleKbWebHandler : public AsyncWebHandler {
         first_host = false;
         json += buf;
       }
-      json += "]}";
-      send_response(200, "application/json", json);
+      // The styles last, read and sent one at a time after everything above.
+      json += "],\"remote_templates\":[";
+      send_with_styles(request, kb_, json);
       return;
     }
 
@@ -2064,8 +2079,8 @@ class BleKbWebHandler : public AsyncWebHandler {
       if (seq < 0 || seq > 65535) {
         send_response(400, "text/plain", "Invalid chunk number");
       } else if (!kb_->stage_template_chunk((uint16_t) seq, data)) {
-        send_response(400, "text/plain",
-                      "Chunk rejected — start the upload again (styles are capped at 1500 characters)");
+        send_response(400, "text/plain", "Chunk rejected — start the upload again (styles are capped at " +
+                                         std::to_string(EspidfBleKeyboard::MAX_TEMPLATE_LEN) + " characters)");
       } else {
         send_response(200, "text/plain", "OK");
       }
@@ -2074,10 +2089,18 @@ class BleKbWebHandler : public AsyncWebHandler {
       int index = request->hasArg("index") ? atoi(request->arg("index").c_str()) : -1;
       if (index < 0 || index >= EspidfBleKeyboard::MAX_CUSTOM_TEMPLATES) {
         send_response(400, "text/plain", "Invalid style slot");
-      } else if (!kb_->commit_template((uint8_t) index)) {
-        send_response(400, "text/plain", "Nothing uploaded to save");
       } else {
-        send_response(200, "text/plain", "OK");
+        switch (kb_->commit_template((uint8_t) index)) {
+          case EspidfBleKeyboard::TplSave::OK:
+            send_response(200, "text/plain", "OK");
+            break;
+          case EspidfBleKeyboard::TplSave::NOTHING_STAGED:
+            send_response(400, "text/plain", "Nothing uploaded to save");
+            break;
+          case EspidfBleKeyboard::TplSave::WRITE_FAILED:
+            send_response(400, "text/plain", "The keyboard could not store the style — its storage refused the write");
+            break;
+        }
       }
 
     } else if (path == "remote_tpl_delete") {

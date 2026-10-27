@@ -604,6 +604,7 @@ espidf_ble_keyboard:
 | `"prev_host"` / `"next_host"` / `"last_host"` | Remote keys for `switch_host:prev`, `switch_host:next` and `switch_host:back` below. |
 | `"next_keyboard"` / `"prev_host_all"` / `"next_host_all"` | Web page remote only: move the tab to the next [linked keyboard](#linking-a-second-keyboard), or step through every host of every linked keyboard. Anywhere else they do nothing. |
 | `"keyboard"` / `"typing"` / `"touchpad"` | Remote keys, on the web page and the Home Assistant remote card: open the on-screen keyboard under the remote, a box your phone's or PC's own keyboard types into, or a mouse pad. See [Typing from the remote](#typing-from-the-remote) and [A touchpad on the remote](#a-touchpad-on-the-remote). Anywhere else they do nothing. |
+| `"group:<name>"` | A remote key, on the web page and the Home Assistant remote card: opens that [group of keys](#groups-of-keys) over the remote. Anywhere else it does nothing. |
 | `"spare1"` … `"spare32"` | Send **nothing** on their own. They exist as names to hang a [per-host override](#host-actions-per-host-overrides) on, for remote keys with no standard HID usage worth guessing — an app launcher, a set-top box's Input, a vendor's own menu. Pressing an unmapped one logs a hint and does nothing. |
 | `"left_click"` | Mouse left click. |
 | `"right_click"` | Mouse right click. |
@@ -1222,7 +1223,7 @@ The [Media Remote Card](#media-remote-card-for-home-assistant) draws from the sa
 
 #### Making your own
 
-Press **Export** to drop the style currently shown into the box below as JSON, edit it, and press **Import**. Importing over an id that already exists replaces it; a new id adds a style. The device holds **8** custom styles of up to **1500 characters** each.
+Press **Export** to drop the style currently shown into the box below as JSON, edit it, and press **Import**. Importing over an id that already exists replaces it; a new id adds a style. The device holds **8** custom styles of up to **4000 characters** each.
 
 **No JSON needed.** Remote Style also draws the style being edited. Press **Start from** for the style the host uses, ✎ on one of your own, or **New** for a style with a single key, then click a key or a section in the drawing, and change it with plain fields: what a key does, its label, size, colour and icon; a section's settings, keys and order. **Add section** puts in a working one of any kind, **Colours and size** sets the theme, and **Undo** steps back. **Save** keeps it on the keyboard — the same as Import — and **Exit** stops editing, asking first if there is anything unsaved. Every change is written into the JSON box, and whatever is typed there is drawn, so the two work together.
 
@@ -1294,7 +1295,7 @@ An unknown token is refused on import rather than ignored, so a typo shows up ra
 
 Labels are 1–16 characters. A round key fits about four; the wide app pill fits more. Spares are the natural partner here — they send nothing until you give them an override on that host.
 
-Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `do_not_disturb`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `touchpad`, `spare1`–`spare32`). An unknown name is refused on import rather than rendering a dead button.
+Buttons are named by action — any name from the [Action Reference](#action-reference) table below that the remote knows (`remote_power`, `search`, `info`, `mute`, `do_not_disturb`, `home`, `back`, the D-pad five, `volume_*`, `channel_*`, `brightness_*`, the seven transport keys plus `play` and `pause`, `color_*`, `app_*`, `menu`, `guide`, `voice`, `captions`, `tv`, `num0`–`num9`, `backspace`, `prev_host`, `next_host`, `last_host`, `next_keyboard`, `prev_host_all`, `next_host_all`, `keyboard`, `typing`, `touchpad`, `spare1`–`spare32`), or `group:<name>` to open one of the style's [groups](#groups-of-keys). An unknown name is refused on import rather than rendering a dead button.
 
 **Shaping the body.** `theme` is optional. Colours: `bg`, `border`, `btn_bg`, `btn_fg`, `btn_border`, `ok_bg`, `ok_fg`, `ring_bg`, `ring_fg`, `light_bg`, `light_fg`, `label`, `divider`, for a [panel](#lcd-panels) `lcd_bg`, `lcd_fg`, `lcd_label`, `lcd_border`, for a `lit:` button `lit_bg`, `lit_fg`, and `level` for the track of a [level pot](#pots) or a [slider](#sliders) — green unless set. Geometry: `pad`, `maxw`, `radius`, `btn_radius`, `shadow`, `clip`, `zoom`, `lcd_radius`. Anything else is ignored, so an imported style cannot restyle the rest of the page.
 
@@ -1315,6 +1316,24 @@ Three of those do more than they look:
 > `ring_fg` exists because a nav ring is often the opposite tone to the rest of the remote — a white ring on a black body, a black one on alloy. Without it the arrows inherit `btn_fg` and disappear.
 
 Deleting a custom style leaves the hosts using it on the full remote; re-importing it under the same id puts them all back.
+
+#### Groups of keys
+
+Keys you only need now and then — a number pad, app launchers, inputs — can wait behind one key. List them under `"groups"`, written like `sections`, and open one with a key named `group:<name>` anywhere a key goes:
+
+```json
+"sections": [
+  ["row", "remote_power", "|", ["group:apps", "Apps"], ["group:num", "123"]],
+  ["ring"]
+],
+"groups": {
+  "apps": {"sections": [["grid", {"cols": 3}, ["spare1", "Netflix"], ["spare2", "Plex"], ["spare3", "Kodi"]]]},
+  "num": {"stay": true, "sections": [["grid", {"cols": 3}, "num1", "num2", "num3", "num4", "num5", "num6",
+                                      "num7", "num8", "num9", "|", "num0", "backspace"]]}
+}
+```
+
+A group opens as a small panel over the key that opens it, in the remote's colours, with the rest of the remote dimmed. Its keys sit on top of the remote's own where they are the same size. A new group starts with two keys that look like the key that opens it, so they line up. With `"full": true` it covers the whole remote instead, like a page of its own. It shuts once one of its keys is pressed, or with a tap on the dimmed remote, or Esc. `"stay": true` keeps it up for a run of presses, such as a channel number. A panel that stays dims nothing, so the rest of the remote keeps working while it is up. A group that stays, or covers the whole remote, also has a ×. A group takes any section but another group's key. Its keys keep their Host Actions, holds and long presses, a host's hidden keys stay hidden in it, and a group key disappears when all its keys are hidden. In the builder, choose **New group…** as a key's action. Each group is drawn under the remote, and its keys are changed where they are. Clicking its name gives **Name**, **Stays open**, **Whole remote** and **Delete group**. A style holds up to 16 groups, within its 4000 characters.
 
 #### Logos on buttons
 
@@ -1572,7 +1591,7 @@ The `id` below is deliberately not `style6` — a built-in's id is reserved, so 
 
 The eight logo keys are app tiles — `lg squircle` — and [spare actions](#action-reference): they send nothing until you give each one a per-host override, which is what lets the same key launch a different app on each machine. Each names an icon with `icon:` — see [Logos on buttons](#logos-on-buttons) — and shows its label until that icon is imported. Rename them to whatever you point them at.
 
-The panel is a deliberate 16 characters wide, so it sits inside the 280px body as a screen rather than a banner, and `rows: 2` holds its height steady as the host name changes length. Its colours are its own, overriding the style's — swap `fg` to `#ffb000` on `#1a1206` for an amber display instead. Compact, this style is 1066 characters of the 1500 a custom style may use.
+The panel is a deliberate 16 characters wide, so it sits inside the 280px body as a screen rather than a banner, and `rows: 2` holds its height steady as the host name changes length. Its colours are its own, overriding the style's — swap `fg` to `#ffb000` on `#1a1206` for an amber display instead. Compact, this style is 1066 characters of the 4000 a custom style may use.
 
 ### Action Reference
 
@@ -2446,7 +2465,7 @@ The web control page uses these local HTTP endpoints (useful for custom integrat
 | `/api/ble_keyboard/hold` | GET | `slot` (int, default `style_slot`) | That host's press-and-hold set, plus its repeat set so a UI can grey out conflicts: `{"slot":N,"buttons":["ok"],"repeat":["volume_up"]}` |
 | `/api/ble_keyboard/hold_set` | POST | `slot`, `names` (comma-separated) | Replace a host's press-and-hold set; empty `names` clears it (max 96). Rejected with `400` if a name is already in that host's repeat set |
 | `/api/ble_keyboard/remote_style_set` | POST | `slot`, `id` | Set that host's [remote style](#remote-style-per-host); empty `id` returns it to the full remote. The id is stored, never interpreted, so a style only the page knows about still round-trips |
-| `/api/ble_keyboard/remote_templates` | GET | — | The custom styles held on the device: `{"max":6,"len":1500,"items":[{"index":0,"tpl":"{…}"}]}`. Each `tpl` is the style's JSON as a string |
+| `/api/ble_keyboard/remote_templates` | GET | — | The custom styles held on the device: `{"max":8,"len":4000,"items":[{"index":0,"tpl":"{…}"}]}`. Each `tpl` is the style's JSON as a string |
 | `/api/ble_keyboard/remote_tpl_chunk` | POST | `seq` (int), `data` (string) | Upload one piece of a custom style; `seq=0` starts a fresh upload. Chunked because a request carries only ~512 bytes of URL |
 | `/api/ble_keyboard/remote_tpl_save` | POST | `index` (int) | Commit the uploaded chunks into custom style slot 0–5 |
 | `/api/ble_keyboard/remote_tpl_delete` | POST | `index` (int) | Delete a custom style. Hosts pointing at it fall back to the full remote |

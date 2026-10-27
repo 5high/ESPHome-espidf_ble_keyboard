@@ -108,7 +108,8 @@
 import {
   RMT_BUILTIN, RMT_BTNS, RMT_VARS, RMT_CSS, RMT_VER, RMT_LCD_LABELLED, lcdLabel,
   sectionHtml, validateTpl, themeValueBad, useIcons, knobWire, knobLevel, typeWire, keysSquareWidth,
-} from './remote-styles.js?v=1.18.0';
+  groupsHtml, groupWire, groupOf,
+} from './remote-styles.js?v=1.19.0-dev';
 
 // Which build of this file the browser actually loaded, read from the ?v= its
 // importer wrote rather than from a constant that has to be remembered at
@@ -143,9 +144,9 @@ const KBD_LAYOUTS = ['us', 'uk', 'de', 'be'];
 // running; any other URL would load a second copy, whose define throws. A pop-out
 // window has only this card's module, and loads its own.
 let kbdLoad = null;
-const loadKeyboardCard = () => kbdLoad || (kbdLoad = import('./keyboard-card.js?v=1.18.0').catch(() => {}));
+const loadKeyboardCard = () => kbdLoad || (kbdLoad = import('./keyboard-card.js?v=1.19.0-dev').catch(() => {}));
 let padLoad = null;
-const loadMouseCard = () => padLoad || (padLoad = import('./mouse-card.js?v=1.18.0').catch(() => {}));
+const loadMouseCard = () => padLoad || (padLoad = import('./mouse-card.js?v=1.19.0-dev').catch(() => {}));
 
 // ── Pop-out ──────────────────────────────────────────────────────────────────
 // The remote can leave the dashboard for a window of its own: one that stays
@@ -598,6 +599,9 @@ class BleRemoteCard extends HTMLElement {
       '.rmt-knob-cap .rmt-knob-val, .rmt-slider:not(.off), .rmt-slider[data-level]') &&
       ![...el.querySelectorAll('[data-action]')]
         .some(b => b.style.visibility !== 'hidden');
+    // Before anything collapses: a group key goes with the last key in its group,
+    // and can leave its own row empty.
+    if (this._grp) this._grp.hideEmpty(empty);
     this.shadowRoot.querySelectorAll('.rmt-strip-group, .rmt-rocker-col')
       .forEach(g => { g.style.display = empty(g) ? 'none' : ''; });
     this.shadowRoot.querySelectorAll('.rmt-section')
@@ -1768,14 +1772,22 @@ class BleRemoteCard extends HTMLElement {
     // A key with a long action, between its press and the decision: where it
     // went down and when, and whether the long action has already gone.
     let longEl = null, longAt = 0, longFired = false, sx = 0, sy = 0;
-    // A keyboard key, between its press and its release.
+    // A keyboard or group key, between its press and its release.
     let kbdEl = null;
+    // A key whose press has gone, until the gesture ends — which shuts the group
+    // it is in, as the device page does.
+    let sentEl = null;
     const LONG_MS = 500;
     const longPress = (el, action) => {
       el.classList.add('long');
       setTimeout(() => el.classList.remove('long'), 300);
       this._runAction(action + '@long');
+      sentEl = el;
     };
+    // The style's groups, opened over the remote by its group keys, with the
+    // device page's own code. A window around the remote grows for a tall one.
+    this._grp = groupWire(card, shadow.getElementById('rmt-body'), () => this._fitKbd());
+    const shut = () => { const el = sentEl; sentEl = null; if (el) this._grp.done(el); };
     const stopRepeat = () => {
       if (interval) { clearInterval(interval); interval = null; }
       if (timer) { clearTimeout(timer); timer = null; }
@@ -1794,10 +1806,10 @@ class BleRemoteCard extends HTMLElement {
       activeEl = el;
       this._press(el);
 
-      // The keyboard keys are this card's own and send nothing. They act on the
-      // release: the moment a phone will bring its keyboard up for the box, and
-      // after a drag has had its chance to call the press off.
-      if (LOCAL_KEYS.includes(action)) {
+      // The keyboard and group keys are this card's own and send nothing. They
+      // act on the release: the moment a phone will bring its keyboard up for the
+      // box, and after a drag has had its chance to call the press off.
+      if (LOCAL_KEYS.includes(action) || groupOf(action)) {
         kbdEl = el; sx = e.clientX; sy = e.clientY;
         return;
       }
@@ -1809,6 +1821,7 @@ class BleRemoteCard extends HTMLElement {
         this._heldEl = el;
         el.classList.add('held');
         this._runAction('hold:' + action);
+        sentEl = el;
         return;
       }
 
@@ -1827,6 +1840,7 @@ class BleRemoteCard extends HTMLElement {
       }
 
       this._runAction(action);
+      sentEl = el;
       if (!this._repeats(action)) return;
       // The first repeat waits out the configured delay, so a quick tap stays
       // one press. Matches the web remote's timing for this host.
@@ -1840,14 +1854,20 @@ class BleRemoteCard extends HTMLElement {
       if (longEl && !longFired) {
         const action = longEl.dataset.action;
         if (Date.now() - longAt >= LONG_MS) longPress(longEl, action);
-        else this._runAction(action);
+        else { this._runAction(action); sentEl = longEl; }
       }
-      if (kbdEl) this._toggleKbd(kbdEl.dataset.action);
+      if (kbdEl) {
+        const g = groupOf(kbdEl.dataset.action);
+        if (g) this._grp.open(g, kbdEl);
+        else { this._toggleKbd(kbdEl.dataset.action); sentEl = kbdEl; }
+      }
       longEl = null; kbdEl = null;
       end();
+      shut();
     });
-    // Leaving, a cancelled gesture or a drag past 10 px sends nothing.
-    const abandon = () => { longEl = null; kbdEl = null; end(); };
+    // Leaving, a cancelled gesture or a drag past 10 px sends nothing more — but
+    // a press already gone still shuts its group.
+    const abandon = () => { longEl = null; kbdEl = null; end(); shut(); };
     card.addEventListener('pointerleave', abandon);
     card.addEventListener('pointercancel', abandon);
     card.addEventListener('pointermove', (e) => {
@@ -2163,14 +2183,17 @@ class BleRemoteCard extends HTMLElement {
 
     // Redraw only when the outcome actually changes. The key covers the pasted
     // JSON too, so editing a custom style under the same id still redraws.
-    const key = error || (style.id + '|' + (style.keyboard || '') + '|' + JSON.stringify(style.sections).length +
+    const key = error || (style.id + '|' + (style.keyboard || '') + '|' +
+                          JSON.stringify([style.sections, style.groups || null]).length +
                           '|' + (this._config.remote_style === 'custom' ? this._config.remote_style_json : ''));
     if (key === this._drawnStyleKey) return;
     this._drawnStyleKey = key;
 
     // Never redraw under a finger: a held key would be stranded down on the
     // host, and a running repeat would hammer a button that no longer exists.
+    // An open group goes with the body it was drawn in.
     this._endHold();
+    if (this._grp) this._grp.reset();
 
     if (error) {
       body.innerHTML = '';
@@ -2197,7 +2220,8 @@ class BleRemoteCard extends HTMLElement {
     // them, and this card has no other way to reach them on an https dashboard.
     // Replaced on every draw, so one style's logo never lands on another's key.
     useIcons(style.icons || {});
-    body.innerHTML = style.sections.map(sectionHtml).join('');
+    // Its groups first, hidden until a group key opens one, as the page draws them.
+    body.innerHTML = groupsHtml(style) + style.sections.map(sectionHtml).join('');
     // Kept for _applyLcd: @last and @station arrive as an action, and this
     // is the only thing that knows the style calls it something.
     this._drawnStyle = style;
@@ -2469,7 +2493,8 @@ class BleRemoteCardEditor extends HTMLElement {
       const picked = RMT_BUILTIN.find(t => t.id === config.remote_style)
         || pastedStylesOf(config.remote_style_json || '').styles.find(t => t.id === config.remote_style);
       if (picked) {
-        const flat = JSON.stringify(picked.sections);
+        // Its groups too: a number pad kept behind a key is still its number pad.
+        const flat = JSON.stringify([picked.sections, picked.groups || null]);
         if (/"num[0-9]"/.test(flat)) config.show_numpad = true;
         if (/"color_/.test(flat)) config.show_color = true;
         if (/"apps"/.test(flat)) config.show_apps = true;

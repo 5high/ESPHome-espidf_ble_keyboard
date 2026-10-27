@@ -50,7 +50,8 @@ all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1
 all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>',
 kb_show:'<path d="M20 7v10H4V7h16m0-2H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/>',
 text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>',
-pad_show:'<path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/>'};
+pad_show:'<path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/>',
+grp_show:'<path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>'};
 
 const RMT_BTNS={
 remote_power:{t:'Power',i:'power',c:'power',g:0},
@@ -277,6 +278,10 @@ const RMT_SLIDER=[30,480],RMT_SLIDER_W=[10,120],RMT_SLIDER_T=[8,120];
 
 const RMT_SIDE_GAP=[0,200];
 
+const RMT_GROUP_NAME=/^[a-z0-9][a-z0-9_]{0,14}$/;
+
+const RMT_GROUP_MAX=16;
+
 const KNOB_SET={};
 
 const RMT_LCD_OPTS=['sm','lg','xl','left','center','centre','right'];
@@ -337,6 +342,17 @@ function useIcons(map){
     if(RMT_ICON_NAME.test(k))RMT_ICONS[k]=map[k];
 }
 
+function groupOf(a){
+  return typeof a==='string'&&a.indexOf('group:')===0&&RMT_GROUP_NAME.test(a.slice(6))?a.slice(6):'';
+}
+
+function tplGroups(t){
+  const g=t&&t.groups;
+  if(!g||typeof g!=='object'||Array.isArray(g))return [];
+  return Object.keys(g).filter(n=>RMT_GROUP_NAME.test(n)&&g[n]&&typeof g[n]==='object'&&
+    Array.isArray(g[n].sections)).map(n=>[n,g[n]]);
+}
+
 function iconNames(t){
   const out=[];
   if(!t||!Array.isArray(t.sections))return out;
@@ -357,6 +373,7 @@ function iconNames(t){
     }
   };
   for(const s of t.sections)sec(s,false);
+  for(const [,g] of tplGroups(t))for(const s of g.sections)sec(s,false);
   return out;
 }
 
@@ -781,6 +798,141 @@ function knobWire(root,send){
   });
 }
 
+function groupWire(root,body,fit){
+  let open=null,from=null;
+  // Focus lives in the shadow root on the card, where document only sees the card.
+  const focused=()=>body.getRootNode().activeElement;
+  function shut(){
+    const was=open,back=from;
+    open=null;from=null;
+    if(!was)return null;
+    was.hidden=true;
+    body.classList.remove('rmt-popping','rmt-popfull','rmt-poppin');
+    body.style.minHeight=body.style.minWidth='';
+    return {was,back};
+  }
+  function close(){
+    const r=shut();
+    if(!r)return;
+    // Back to the key that opened it, if focus had gone into the group.
+    if(r.back&&r.back.isConnected&&r.was.contains(focused()))r.back.focus({preventScroll:true});
+    if(fit)fit();
+  }
+  // A panel goes over the key that opened it, with one of its keys right on top
+  // of that key — whichever lines up the most of the rest on the remote's own
+  // keys beneath them, the first in reading order on a tie — so a group of keys
+  // like the row it opens from sits in that row's places. Kept inside the
+  // remote, or failing that with the frame round its keys hanging over the edge;
+  // only a panel too big for either is simply centred on its key. Its ✕ then
+  // goes on whichever corner has room. Put there by measuring rather than by
+  // sums: a style's zoom and the page's own scale both stand between a pixel on
+  // screen and a pixel of the panel's position, and browsers disagree about which
+  // of them their numbers include — so where the panel lands at two positions
+  // gives the ratio, whatever it is.
+  function place(p,el){
+    const st=p.style;
+    st.left=st.top='0px';
+    const b=body.getBoundingClientRect(),r0=p.getBoundingClientRect();
+    st.left=st.top='100px';
+    const r1=p.getBoundingClientRect();
+    const kx=(r1.left-r0.left)/100||1,ky=(r1.top-r0.top)/100||1;
+    const mid=q=>({x:q.left+q.width/2,y:q.top+q.height/2});
+    // Its keys' centres from its corner, and the remote's own on screen.
+    const keys=[...p.querySelectorAll('.rmt-btn')].filter(x=>x.style.visibility!=='hidden')
+      .map(x=>{const c=mid(x.getBoundingClientRect());return {x:c.x-r1.left,y:c.y-r1.top}});
+    const under=[...body.querySelectorAll(':scope>.rmt-section .rmt-btn')]
+      .filter(x=>x.style.visibility!=='hidden'&&x.getClientRects().length).map(x=>mid(x.getBoundingClientRect()));
+    const k=mid(el&&el.isConnected&&el.getClientRects().length?el.getBoundingClientRect():b);
+    if(r0.height>b.height)body.style.minHeight=Math.ceil(r0.height/ky)+'px';
+    const bb=body.getBoundingClientRect();
+    const lined=(x,y)=>keys.filter(o=>under.some(u=>Math.abs(u.x-x-o.x)<3*kx&&Math.abs(u.y-y-o.y)<3*ky)).length;
+    // One of its keys on the key that opened it, within `m` of the remote's edge.
+    const find=m=>{
+      const mx=m*kx,my=m*ky;
+      const fits=(x,y)=>x>=bb.left+mx-1&&x+r0.width<=bb.right-mx+1&&y>=bb.top+my-1&&y+r0.height<=bb.bottom-my+1;
+      let best=null;
+      for(const c of keys){
+        const x=k.x-c.x,y=k.y-c.y;
+        if(!fits(x,y))continue;
+        const n=lined(x,y);
+        if(!best||n>best.n)best={x,y,n};
+      }
+      return best;
+    };
+    const best=find(0)||find(-9);
+    const x=best?best.x:Math.max(bb.left,Math.min(k.x-r0.width/2,bb.right-r0.width));
+    const y=best?best.y:Math.max(bb.top,Math.min(k.y-r0.height/2,bb.bottom-r0.height));
+    st.left=(x-r0.left)/kx+'px';
+    st.top=(y-r0.top)/ky+'px';
+    // The ✕ sticks out of a corner: the top right, unless the remote's edge is
+    // too close there, then the next corner with room, else just inside its own.
+    if(p.querySelector('.rmt-pop-x')){
+      const need=13*kx,r=p.getBoundingClientRect();
+      const R=bb.right-r.right>=need,L=r.left-bb.left>=need,T=r.top-bb.top>=need,B=bb.bottom-r.bottom>=need;
+      p.dataset.x=T&&R?'':T&&L?'tl':B&&R?'br':B&&L?'bl':'in';
+    }
+  }
+  function show(name,el){
+    const p=[...body.querySelectorAll('.rmt-pop')].find(x=>x.dataset.group===name);
+    if(!p)return;
+    // Its key again, which only a panel that stays leaves in reach: shut it.
+    if(p===open){close();return}
+    const had=el&&focused()===el;
+    shut();
+    const full=p.classList.contains('full');
+    if(full){
+      // Held at the remote's size, the width too: a window sized around the
+      // remote measures it at its widest content, and a group of grid keys has none.
+      const cs=body.ownerDocument.defaultView.getComputedStyle(body);
+      body.style.minHeight=cs.height;
+      body.style.minWidth=cs.width;
+      body.classList.add('rmt-popping','rmt-popfull');
+      p.hidden=false;
+    }else{
+      body.classList.add('rmt-popping');
+      if(p.hasAttribute('data-stay'))body.classList.add('rmt-poppin');
+      p.hidden=false;
+      place(p,el);
+    }
+    open=p;from=el||null;
+    // Into the group, for whoever opened it from the keyboard.
+    const first=[...p.querySelectorAll('.rmt-btn')].find(b=>b.style.visibility!=='hidden');
+    if(had&&first)first.focus({preventScroll:true});
+    if(fit)fit();
+  }
+  root.addEventListener('click',e=>{
+    if(!open)return;
+    const t=e.target;
+    // The dimmed remote is the body itself (its shade is a ::after); a full
+    // group's own empty part is the group. Around a panel that stays, nothing is
+    // dimmed, and a tap there is a tap on the remote.
+    const dim=t===body&&!body.classList.contains('rmt-poppin');
+    if(dim||(t===open&&open.classList.contains('full'))||(t.closest&&t.closest('.rmt-pop-x')))close();
+  });
+  root.addEventListener('keydown',e=>{
+    if(!open||e.key!=='Escape')return;
+    e.preventDefault();e.stopPropagation();
+    close();
+  });
+  return {
+    open:show,
+    close,
+    // Quietly, for a redraw that replaces what the body holds anyway.
+    reset:shut,
+    // A key's press is over: the group it is in shuts, unless that one stays up.
+    done(el){if(open&&el&&open.contains(el)&&!open.hasAttribute('data-stay'))close()},
+    // A group key goes with the last key in its group — opened, it would show
+    // nothing — and a group that empties while it is open shuts.
+    hideEmpty(empty){
+      body.querySelectorAll('.rmt-pop').forEach(p=>{
+        if(!empty(p))return;
+        body.querySelectorAll('[data-action="group:'+p.dataset.group+'"]').forEach(b=>{b.style.visibility='hidden'});
+        if(p===open)close();
+      });
+    }
+  };
+}
+
 function typeWire(input,send,ctl){
   // HID usages. Named keys by name; the rest by where the key is (code), which is
   // what a usage numbers anyway, so a shortcut needs no layout.
@@ -988,12 +1140,15 @@ function themeValueBad(k,v){
 function btnHtml(item,inner){
     const arr=Array.isArray(item);
     const a=arr?item[0]:item, lab=arr?item[1]:null, opt=arr?item[2]:null;
+    // A group key opens one of the style's groups (groupWire) and sends nothing.
+    // Its name passed groupOf's pattern, so it can go into the markup as it is.
+    const grp=groupOf(a);
     // Own properties only, for the reason validateTpl gives. Repeated inline
     // rather than shared: that helper lives in the other IIFE, and hoisting one
     // across is its own job (see the note about esc()).
-    const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
+    const b=grp?{t:'Opens group '+grp,i:'grp_show'}:Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
-    const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
+    const tip=(lab!=null&&lab!=='')?esc(lab)+(grp?' — opens group '+grp:' — runs '+a):b.t;
     let cls='',css='',lit='',ic='',hgt=0,ih=0,sz=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
@@ -1060,12 +1215,15 @@ function lcdLabel(t,action){
     if(!action)return '';
     // A long press: the key's own label, marked, since the style names only the key.
     if(/.@long$/.test(action))return lcdLabel(t,action.slice(0,-5))+' (long)';
-    // A side section's parts are sections, looked through as if they stood alone.
+    // A side section's parts are sections, looked through as if they stood alone,
+    // and so are a group's — its keys are pressed like any other.
     const all=[];
-    if(t&&Array.isArray(t.sections))for(const s of t.sections){
+    const add=list=>{for(const s of list){
       if(Array.isArray(s)&&s[0]==='side')all.push(...s.slice(1).filter(Array.isArray));
       else all.push(s);
-    }
+    }};
+    if(t&&Array.isArray(t.sections))add(t.sections);
+    for(const [,g] of tplGroups(t))add(g.sections);
     for(const s of all){
       // An lcd line is [label, key], the opposite order, and its key is not an
       // action at all — scanning it would match the wrong half.
@@ -1374,6 +1532,17 @@ function sectionHtml(s){
     return '<div class="rmt-section">'+inner+'</div>';
   }
 
+function groupsHtml(t){
+    return tplGroups(t).map(([n,g])=>{
+      const stay=g.stay===true,full=g.full===true;
+      return '<div class="rmt-pop'+(full?' full':'')+'" data-group="'+n+'"'+(stay?' data-stay="1"':'')+
+        ' role="dialog" aria-label="'+n+'" hidden>'+
+        (stay||full?'<button type="button" class="rmt-pop-x" title="Close" aria-label="Close">&times;</button>':'')+
+        '<div class="rmt-pop-in">'+
+        g.sections.map(s=>Array.isArray(s)&&typeof s[0]==='string'?sectionHtml(s):'').join('')+'</div></div>';
+    }).join('');
+  }
+
 function validateTpl(t){
     // A button's option string, which a grid's settings carry as well: every
     // token checked, '' when they all pass. Refused rather than ignored — a
@@ -1461,9 +1630,31 @@ function validateTpl(t){
         if(JSON.stringify(t.icons[n]).length>RMT_ICON_LEN)return 'Icon "'+n+'" is over '+RMT_ICON_LEN+' characters';
       }
     }
+    // Groups: keys kept off the remote until a group key opens them. Each is
+    // {"sections":[…]}, checked below as the remote's own are; "stay" keeps one
+    // up after a key in it is pressed, and "full" opens it over the whole remote
+    // rather than as a panel by its key.
+    let groupNames=[];
+    if(t.groups!==undefined){
+      if(!t.groups||typeof t.groups!=='object'||Array.isArray(t.groups))
+        return 'groups must be an object of name: {"sections": […]}';
+      groupNames=Object.keys(t.groups);
+      if(groupNames.length>RMT_GROUP_MAX)return 'A style can have up to '+RMT_GROUP_MAX+' groups';
+      for(const n of groupNames){
+        if(!RMT_GROUP_NAME.test(n))
+          return 'Group names are 1-15 characters of a-z, 0-9 or _, starting with a letter or digit — "'+n+'"';
+        const g=t.groups[n];
+        if(!g||typeof g!=='object'||Array.isArray(g))return 'Group "'+n+'" is an object: {"sections": […]}';
+        for(const k in g)if(k!=='sections'&&k!=='stay'&&k!=='full')
+          return 'A group takes sections, stay and full — "'+k+'" is none of them';
+        for(const k of ['stay','full'])if(g[k]!==undefined&&typeof g[k]!=='boolean')return 'group "'+k+'" is true or false';
+        if(!Array.isArray(g.sections)||!g.sections.length)
+          return 'Group "'+n+'" needs sections, as a style has: {"sections": [["row","mute"]]}';
+      }
+    }
     // One section, '' when it is fine. A side section's parts are sections too,
-    // checked by this same function, one level deep.
-    const sectionBad=(s,inSide)=>{
+    // checked by this same function, one level deep — and so is a group's.
+    const sectionBad=(s,inSide,inGroup)=>{
       if(!Array.isArray(s)||typeof s[0]!=='string')return 'Each section is an array starting with its kind';
       if(RMT_KINDS.indexOf(s[0])<0)return 'Unknown section kind "'+s[0]+'" — use '+RMT_KINDS.join(', ');
       if(s[0]==='side'){
@@ -1483,7 +1674,7 @@ function validateTpl(t){
         if(parts.length<2)return 'A side section puts two or more sections side by side — ["side",["strip",…],["pot"]]';
         for(const p of parts){
           if(Array.isArray(p)&&p[0]==='-')return 'A divider cannot go in a side section';
-          const bad=sectionBad(p,true);
+          const bad=sectionBad(p,true,inGroup);
           if(bad)return bad;
         }
         return '';
@@ -1627,6 +1818,10 @@ function validateTpl(t){
         if(!sets)for(const it of keys.slice(0,2))
           if(Array.isArray(it)&&it.length!==2)
             return 'A pot turns by "action" or ["action","Label"] — '+JSON.stringify(it)+' is neither';
+        // A turn sends something; a group key only opens its group, so it can be
+        // the key in the middle and nothing else.
+        if(!sets&&keys.slice(0,2).some(it=>groupOf(Array.isArray(it)?it[0]:it)))
+          return 'A pot cannot turn by a group key — put it in the middle, or on a key of its own';
         items=keys;
       }else if(s[0]==='slider'){
         // Dragged to a value: sent to "set" once, or as presses of its two
@@ -1687,6 +1882,9 @@ function validateTpl(t){
         if(cfg.set===undefined)for(const it of keys.slice(0,2))
           if(Array.isArray(it)&&it.length!==2)
             return 'A slider steps by "action" or ["action","Label"] — '+JSON.stringify(it)+' is neither';
+        // Its thumb is pressed through its own path, which only sends.
+        if(keys.some(it=>groupOf(Array.isArray(it)?it[0]:it)))
+          return 'A slider cannot carry a group key — put it on a key of its own';
         items=keys;
       }else if(s[0]==='lcd'){
         // Lines are ["Label","key"], label first — the way a strip or rocker
@@ -1802,6 +2000,13 @@ function validateTpl(t){
           if(bad)return bad;
         }
         const a=arr?it[0]:it;
+        // group:<name> opens one of this style's groups, and only from the remote.
+        const g=groupOf(a);
+        if(g){
+          if(inGroup)return 'A group cannot open another group — "'+a+'" is in one';
+          if(groupNames.indexOf(g)<0)return 'No group "'+g+'" — add it under "groups", or check the spelling';
+          continue;
+        }
         // hasOwnProperty rather than a truthiness test: RMT_BTNS is an object
         // literal, so RMT_BTNS['constructor'] and ['__proto__'] are inherited and
         // truthy. ["row",["constructor","Hi"]] used to pass a check that claims
@@ -1814,6 +2019,10 @@ function validateTpl(t){
     for(const s of t.sections){
       const bad=sectionBad(s,false);
       if(bad)return bad;
+    }
+    for(const n of groupNames)for(const s of t.groups[n].sections){
+      const bad=sectionBad(s,false,true);
+      if(bad)return 'Group "'+n+'": '+bad;
     }
     return '';
   }
@@ -1855,6 +2064,24 @@ export const RMT_CSS = `
 .rmt-strip-group{display:flex;flex-direction:column;align-items:center;gap:4px}
 .rmt-strip-label{font-size:10px;color:var(--rb-label,var(--muted));font-weight:600;text-transform:uppercase}
 .rmt-divider{height:1px;background:var(--rb-divider,var(--border));margin:10px 0}
+.rmt-popping{position:relative}
+.rmt-popping:not(.rmt-popfull):not(.rmt-poppin)::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;z-index:2;background:rgba(0,0,0,.35);border-radius:inherit}
+.rmt-pop{position:absolute;z-index:3;width:max-content;max-width:calc(100% - 28px);padding:8px;border:1px solid var(--rb-btn-border,var(--border));border-radius:16px;background:var(--rb-bg,var(--card));box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.rmt-pop[hidden]{display:none}
+.rmt-pop:not(.full) .rmt-grid .rmt-btn{min-width:48px}
+.rmt-pop-x{position:absolute;top:-12px;right:-12px;width:30px;height:30px;padding:0;border:1px solid var(--rb-btn-border,var(--border));border-radius:50%;background:var(--rb-btn-bg,var(--bg));color:var(--rb-btn-fg,var(--fg));font:inherit;font-size:20px;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.rmt-pop-x::before{content:"";position:absolute;top:-8px;right:-8px;bottom:-8px;left:-8px;border-radius:50%}
+.rmt-pop[data-x=tl] .rmt-pop-x{right:auto;left:-12px}
+.rmt-pop[data-x=br] .rmt-pop-x{top:auto;bottom:-12px}
+.rmt-pop[data-x=bl] .rmt-pop-x{top:auto;bottom:-12px;right:auto;left:-12px}
+.rmt-pop[data-x=in] .rmt-pop-x{top:2px;right:2px}
+.rmt-popfull{display:flex;flex-direction:column}
+.rmt-popfull>.rmt-section,.rmt-popfull>.rmt-divider{display:none!important}
+.rmt-pop.full{position:static;display:flex;flex-direction:column;flex:1 1 auto;width:auto;max-width:none;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+.rmt-pop.full[hidden]{display:none}
+.rmt-pop.full .rmt-pop-in{margin:auto 0}
+.rmt-pop.full .rmt-pop-x{position:relative;top:auto;right:auto;align-self:flex-end;width:40px;height:40px;margin:0 0 4px;border:0;background:transparent;color:var(--rb-label,var(--muted));font-size:28px;box-shadow:none}
+.rmt-pop-x:hover{filter:brightness(1.3)}
 .rmt-media-row{display:flex;justify-content:center;gap:8px}
 .rmt-btn.media{width:42px;height:42px}
 .rmt-btn.rec{background:#c62828;color:#fff;border-color:#c62828}
@@ -2036,4 +2263,4 @@ export const RMT_CSS = `
 .rmt-head .macro-edit-btn{margin-left:0}
 `;
 
-export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_KEY_H, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl, knobWire, knobLevel, typeWire, keysSquareWidth };
+export { RI, RMT_BTNS, RMT_VARS, RMT_BUILTIN, RMT_KINDS, RMT_OPTS, RMT_KEY_H, RMT_LCD_OPTS, RMT_LCD_COLOURS, RMT_LCD_KEYS, RMT_LCD_LABELLED, lcdLabel, RMT_HEX, RMT_CLIP, RMT_FETCH, icon, esc, RMT_ICON_NAME, RMT_ICON_LEN, RMT_ICON_MAX, RMT_ICONS, iconBad, useIcons, iconNames, themeValueBad, btnHtml, sectionHtml, validateTpl, knobWire, knobLevel, typeWire, keysSquareWidth, RMT_GROUP_NAME, groupOf, tplGroups, groupsHtml, groupWire };

@@ -203,7 +203,11 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 /* The drawing lays out exactly as the remote does: it is a .rmt-body drawn by the
    same renderer. Only its margin is the builder's. */
 .sb .sb-canvas{margin:10px auto;cursor:pointer}
-.sb-canvas>*:hover{outline:1px dashed var(--muted);outline-offset:3px}
+.sb-canvas>*:hover,.sb-glist>*:hover{outline:1px dashed var(--muted);outline-offset:3px}
+.sb-canvas>.sb-group:hover{outline:none}
+.sb-group{margin-top:14px;padding-top:8px;border-top:1px dashed var(--rb-divider,var(--border))}
+.sb-ghead{font-size:11px;font-weight:600;color:var(--rb-label,var(--muted));margin:0 0 8px}
+.sb-ghead:hover{text-decoration:underline}
 .sb-canvas .sb-on{outline:2px dashed var(--accent);outline-offset:3px}
 .sb-canvas .sb-key{outline:2px solid var(--accent);outline-offset:2px}
 /* While the box holds JSON that won't read, the builder shows its last good state
@@ -390,6 +394,35 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
    the page's own --muted is tuned for a dark card and vanishes on one. */
 .rmt-strip-label{font-size:10px;color:var(--rb-label,var(--muted));font-weight:600;text-transform:uppercase}
 .rmt-divider{height:1px;background:var(--rb-divider,var(--border));margin:10px 0}
+/* An open group (groupWire). As a rule a panel over the key that opened it, the
+   rest of the remote dimmed by a shade that is the body's own ::after — so a tap
+   on the shade lands on the body and shuts the group, never on a key under it.
+   A panel that stays has no shade (rmt-poppin): the remote around it still works.
+   A "full" group takes the remote's place instead, in the same body and at least
+   the remote's size: its ✕ at the top, its keys centred in what is left, in a
+   block of their own so their margins collapse as they do on the remote. */
+.rmt-popping{position:relative}
+.rmt-popping:not(.rmt-popfull):not(.rmt-poppin)::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;z-index:2;background:rgba(0,0,0,.35);border-radius:inherit}
+.rmt-pop{position:absolute;z-index:3;width:max-content;max-width:calc(100% - 28px);padding:8px;border:1px solid var(--rb-btn-border,var(--border));border-radius:16px;background:var(--rb-bg,var(--card));box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.rmt-pop[hidden]{display:none}
+/* A panel is only as wide as its keys, which a grid's would shrink to their
+   labels: a key's width at the least. */
+.rmt-pop:not(.full) .rmt-grid .rmt-btn{min-width:48px}
+.rmt-pop-x{position:absolute;top:-12px;right:-12px;width:30px;height:30px;padding:0;border:1px solid var(--rb-btn-border,var(--border));border-radius:50%;background:var(--rb-btn-bg,var(--bg));color:var(--rb-btn-fg,var(--fg));font:inherit;font-size:20px;line-height:1;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+/* A finger's worth to hit, more than it shows. */
+.rmt-pop-x::before{content:"";position:absolute;top:-8px;right:-8px;bottom:-8px;left:-8px;border-radius:50%}
+/* The corner it goes on when the remote's edge leaves no room at the top right. */
+.rmt-pop[data-x=tl] .rmt-pop-x{right:auto;left:-12px}
+.rmt-pop[data-x=br] .rmt-pop-x{top:auto;bottom:-12px}
+.rmt-pop[data-x=bl] .rmt-pop-x{top:auto;bottom:-12px;right:auto;left:-12px}
+.rmt-pop[data-x=in] .rmt-pop-x{top:2px;right:2px}
+.rmt-popfull{display:flex;flex-direction:column}
+.rmt-popfull>.rmt-section,.rmt-popfull>.rmt-divider{display:none!important}
+.rmt-pop.full{position:static;display:flex;flex-direction:column;flex:1 1 auto;width:auto;max-width:none;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+.rmt-pop.full[hidden]{display:none}
+.rmt-pop.full .rmt-pop-in{margin:auto 0}
+.rmt-pop.full .rmt-pop-x{position:relative;top:auto;right:auto;align-self:flex-end;width:40px;height:40px;margin:0 0 4px;border:0;background:transparent;color:var(--rb-label,var(--muted));font-size:28px;box-shadow:none}
+.rmt-pop-x:hover{filter:brightness(1.3)}
 .rmt-media-row{display:flex;justify-content:center;gap:8px}
 .rmt-btn.media{width:42px;height:42px}
 .rmt-btn.rec{background:#c62828;color:#fff;border-color:#c62828}
@@ -791,7 +824,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <!-- Carries the release tag, and `-dev` while main is ahead of the last one. Drop
      the suffix when tagging; append a letter (v1.7.0-dev-b) to tell two dev builds
      apart when chasing a "my edit didn't reach the device" problem. -->
-<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.18.0</span>
+<span id="webver" style="font-size:11px;color:var(--muted);margin-left:6px;letter-spacing:.3px">v1.19.0-dev</span>
 </div>
 <div class="toolbar-right">
 <div class="section-toggles" id="toggle-bar">
@@ -1177,6 +1210,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <dt><code>["slider",…]</code></dt><dd>A track to press or drag to a value, as an analogue pot is turned to one: <code>["slider",{"set":"spare12","label":"Lamp"}]</code> sends <code>spare12=&lt;value&gt;</code> once when let go, and <code>{"level":"tv_volume"}</code> sends the presses of <code>"volume_up","volume_down"</code> (or two actions you list) from that reading. Upright unless <code>"horizontal":true</code> (or <code>"vertical":false</code>); <code>length</code> 30&ndash;480 pixels and <code>width</code> 10&ndash;120 (how thick), <code>thumb</code> 8&ndash;120 (its size, apart from the width), <code>"thumb_shape":"line"</code> for a fader cap, <code>min</code> <code>max</code> <code>inc</code>, <code>show</code>, <code>label</code>, <code>label_at</code> and <code>marks</code> as on a pot. A pot&rsquo;s settings and actions carry over, so changing <code>"pot"</code> to <code>"slider"</code> is all a swap takes: <code>size</code> is the length, and a third action is pressed by a tap on the thumb, as a pot&rsquo;s middle key is.</dd>
 <dt><code>["side",…]</code></dt><dd>Sections side by side instead of one under another: <code>["side",["strip",["Vol","volume_up","volume_down"]],["pot",{"size":100}],["strip",["Ch","channel_up","channel_down"]]]</code> puts a knob between two columns. <code>["side",{"gap":24},…]</code> sets the room between them, 0&ndash;200 pixels (12 unless set).</dd>
 <dt><code>["-"]</code></dt><dd>A divider.</dd>
+<dt><code>"groups"</code></dt><dd>Keys kept off the remote until a key opens them over it: <code>"groups":{"apps":{"sections":[["grid",{"cols":3},["spare1","Netflix"],["spare2","Plex"],["spare3","Kodi"]]]}}</code>, opened by a key written <code>"group:apps"</code> or <code>["group:apps","Apps"]</code>, which goes anywhere a key does. A group takes any section the remote does, but not another group&rsquo;s key. It opens as a panel over the key that opens it, its keys on top of the remote&rsquo;s own where they are the same size, the rest of the remote dimmed &mdash; or over the whole remote with <code>"full":true</code> &mdash; and shuts once one of its keys is pressed, or with a tap on the dimmed remote, or Esc. <code>"stay":true</code> keeps it up for a run of presses, such as a channel number; a panel that stays dims nothing, so the rest of the remote goes on working while it is up. A group that stays, or covers the whole remote, has a &times; too.</dd>
 <dt><code>"keyboard"</code></dt><dd>The layout of the keys its <code>keyboard</code> key opens: <code>"us"</code>, <code>"uk"</code>, <code>"de"</code> or <code>"be"</code>. Left out, the keyboard&rsquo;s own here, and the card&rsquo;s <code>keyboard_layout</code> in Home Assistant.</dd>
 <dt><code>"theme"</code></dt><dd>Size and colour, e.g. <code>"maxw": "250px", "zoom": "1.25",</code> &mdash; <code>maxw</code> is how wide the remote may draw, <code>zoom</code> scales all of it at once: buttons, their icons and labels, the gaps, the d&#8209;pad and the rockers. <code>maxw</code> is measured before the zoom, so it grows too &mdash; halve one to hold the width while the buttons get bigger.</dd>
 </dl>
@@ -1790,7 +1824,8 @@ all_prev:'<path d="M12.41 7.41L8.83 11H23v2H8.83l3.59 3.59L11 18l-6-6 6-6 1.41 1
 all_next:'<path d="M11.59 7.41L15.17 11H1v2h14.17l-3.59 3.59L13 18l6-6-6-6-1.41 1.41zM20 6v12h2V6h-2z"/>',
 kb_show:'<path d="M20 7v10H4V7h16m0-2H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2zm0 3h2v2h-2zM8 8h2v2H8zm0 3h2v2H8zm-3 0h2v2H5zm0-3h2v2H5zm3 6h8v2H8zm6-3h2v2h-2zm0-3h2v2h-2zm3 3h2v2h-2zm0-3h2v2h-2z"/>',
 text_in:'<path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/>',
-pad_show:'<path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/>'};
+pad_show:'<path d="M12 2C8.14 2 5 5.14 5 9v6c0 3.86 3.14 7 7 7s7-3.14 7-7V9c0-3.86-3.14-7-7-7zm0 2c2.76 0 5 2.24 5 5v2h-4V5h-2v6H7V9c0-2.76 2.24-5 5-5z"/>',
+grp_show:'<path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z"/>'};
 // Every action the remote can show. t=title, i=icon id, x=text label,
 // c=extra classes, r=repeats by default, g=group in the Host Actions grids.
 const RMT_BTNS={
@@ -1968,6 +2003,11 @@ const RMT_KNOB=[32,320],RMT_KNOB_C=[16,280],RMT_KNOB_ROOM=8,RMT_KNOB_STEP=[10,90
 const RMT_SLIDER=[30,480],RMT_SLIDER_W=[10,120],RMT_SLIDER_T=[8,120];
 // The room between a side section's parts, in pixels.
 const RMT_SIDE_GAP=[0,200];
+// A style's groups: keys kept off the remote until a key written group:<name>
+// opens them over it. A name starts with a letter or a digit, so none can be
+// __proto__, and a style holds this many at most.
+const RMT_GROUP_NAME=/^[a-z0-9][a-z0-9_]{0,14}$/;
+const RMT_GROUP_MAX=16;
 // The same two things for an lcd line: what a line may carry, and the values
 // this firmware can resolve on its own. A built-in is spelled with a leading @
 // so the two namespaces cannot collide — a key naming a `sources:` entry
@@ -2035,9 +2075,21 @@ function useIcons(map){
   if(map&&typeof map==='object')for(const k of Object.keys(map))
     if(RMT_ICON_NAME.test(k))RMT_ICONS[k]=map[k];
 }
+// The group a key opens — group:apps opens "apps" — or '' for any other key.
+function groupOf(a){
+  return typeof a==='string'&&a.indexOf('group:')===0&&RMT_GROUP_NAME.test(a.slice(6))?a.slice(6):'';
+}
+// A style's groups that can be drawn, as [name, group] pairs in their order: own
+// properties only, each holding a list of sections.
+function tplGroups(t){
+  const g=t&&t.groups;
+  if(!g||typeof g!=='object'||Array.isArray(g))return [];
+  return Object.keys(g).filter(n=>RMT_GROUP_NAME.test(n)&&g[n]&&typeof g[n]==='object'&&
+    Array.isArray(g[n].sections)).map(n=>[n,g[n]]);
+}
 // The icon: names a style uses, in the order it uses them. Walks buttons the
 // way the renderer reaches them — strip and rocker hold theirs one level down,
-// and an lcd section has none.
+// and an lcd section has none. A group's sections are walked as the remote's.
 function iconNames(t){
   const out=[];
   if(!t||!Array.isArray(t.sections))return out;
@@ -2058,6 +2110,7 @@ function iconNames(t){
     }
   };
   for(const s of t.sections)sec(s,false);
+  for(const [,g] of tplGroups(t))for(const s of g.sections)sec(s,false);
   return out;
 }
 // An icon's markup: one of ours by id, or an imported record. Top level because
@@ -2507,6 +2560,152 @@ function knobWire(root,send){
     if(e.target.closest&&e.target.closest('.rmt-knob-ring,.rmt-slider-track,.rmt-slider-mk'))e.preventDefault();
   });
 }
+// A style's groups, which groupsHtml draws hidden in the remote's body. A group
+// key opens its group as a panel over itself, the rest of the remote dimmed —
+// or, with "full", in place of the remote's own sections, in the same body and
+// at least the remote's size, so a small one doesn't make the remote jump. A key
+// in it shuts it again once pressed (done), unless the group has "stay"; a tap
+// on the dimmed remote (or the empty part of a full one), its ✕ or Esc shut it
+// too. A panel that stays dims nothing: the remote around it goes on working,
+// and only its ✕, Esc or its own key again shut it. Either way a group taller
+// than the remote grows it. One open at a time.
+// The page and the Home Assistant card both wire their remote with this, so a
+// group behaves the same on both; fit() is told whenever the remote changes
+// size, for a window sized around it.
+function groupWire(root,body,fit){
+  let open=null,from=null;
+  // Focus lives in the shadow root on the card, where document only sees the card.
+  const focused=()=>body.getRootNode().activeElement;
+  function shut(){
+    const was=open,back=from;
+    open=null;from=null;
+    if(!was)return null;
+    was.hidden=true;
+    body.classList.remove('rmt-popping','rmt-popfull','rmt-poppin');
+    body.style.minHeight=body.style.minWidth='';
+    return {was,back};
+  }
+  function close(){
+    const r=shut();
+    if(!r)return;
+    // Back to the key that opened it, if focus had gone into the group.
+    if(r.back&&r.back.isConnected&&r.was.contains(focused()))r.back.focus({preventScroll:true});
+    if(fit)fit();
+  }
+  // A panel goes over the key that opened it, with one of its keys right on top
+  // of that key — whichever lines up the most of the rest on the remote's own
+  // keys beneath them, the first in reading order on a tie — so a group of keys
+  // like the row it opens from sits in that row's places. Kept inside the
+  // remote, or failing that with the frame round its keys hanging over the edge;
+  // only a panel too big for either is simply centred on its key. Its ✕ then
+  // goes on whichever corner has room. Put there by measuring rather than by
+  // sums: a style's zoom and the page's own scale both stand between a pixel on
+  // screen and a pixel of the panel's position, and browsers disagree about which
+  // of them their numbers include — so where the panel lands at two positions
+  // gives the ratio, whatever it is.
+  function place(p,el){
+    const st=p.style;
+    st.left=st.top='0px';
+    const b=body.getBoundingClientRect(),r0=p.getBoundingClientRect();
+    st.left=st.top='100px';
+    const r1=p.getBoundingClientRect();
+    const kx=(r1.left-r0.left)/100||1,ky=(r1.top-r0.top)/100||1;
+    const mid=q=>({x:q.left+q.width/2,y:q.top+q.height/2});
+    // Its keys' centres from its corner, and the remote's own on screen.
+    const keys=[...p.querySelectorAll('.rmt-btn')].filter(x=>x.style.visibility!=='hidden')
+      .map(x=>{const c=mid(x.getBoundingClientRect());return {x:c.x-r1.left,y:c.y-r1.top}});
+    const under=[...body.querySelectorAll(':scope>.rmt-section .rmt-btn')]
+      .filter(x=>x.style.visibility!=='hidden'&&x.getClientRects().length).map(x=>mid(x.getBoundingClientRect()));
+    const k=mid(el&&el.isConnected&&el.getClientRects().length?el.getBoundingClientRect():b);
+    if(r0.height>b.height)body.style.minHeight=Math.ceil(r0.height/ky)+'px';
+    const bb=body.getBoundingClientRect();
+    const lined=(x,y)=>keys.filter(o=>under.some(u=>Math.abs(u.x-x-o.x)<3*kx&&Math.abs(u.y-y-o.y)<3*ky)).length;
+    // One of its keys on the key that opened it, within `m` of the remote's edge.
+    const find=m=>{
+      const mx=m*kx,my=m*ky;
+      const fits=(x,y)=>x>=bb.left+mx-1&&x+r0.width<=bb.right-mx+1&&y>=bb.top+my-1&&y+r0.height<=bb.bottom-my+1;
+      let best=null;
+      for(const c of keys){
+        const x=k.x-c.x,y=k.y-c.y;
+        if(!fits(x,y))continue;
+        const n=lined(x,y);
+        if(!best||n>best.n)best={x,y,n};
+      }
+      return best;
+    };
+    const best=find(0)||find(-9);
+    const x=best?best.x:Math.max(bb.left,Math.min(k.x-r0.width/2,bb.right-r0.width));
+    const y=best?best.y:Math.max(bb.top,Math.min(k.y-r0.height/2,bb.bottom-r0.height));
+    st.left=(x-r0.left)/kx+'px';
+    st.top=(y-r0.top)/ky+'px';
+    // The ✕ sticks out of a corner: the top right, unless the remote's edge is
+    // too close there, then the next corner with room, else just inside its own.
+    if(p.querySelector('.rmt-pop-x')){
+      const need=13*kx,r=p.getBoundingClientRect();
+      const R=bb.right-r.right>=need,L=r.left-bb.left>=need,T=r.top-bb.top>=need,B=bb.bottom-r.bottom>=need;
+      p.dataset.x=T&&R?'':T&&L?'tl':B&&R?'br':B&&L?'bl':'in';
+    }
+  }
+  function show(name,el){
+    const p=[...body.querySelectorAll('.rmt-pop')].find(x=>x.dataset.group===name);
+    if(!p)return;
+    // Its key again, which only a panel that stays leaves in reach: shut it.
+    if(p===open){close();return}
+    const had=el&&focused()===el;
+    shut();
+    const full=p.classList.contains('full');
+    if(full){
+      // Held at the remote's size, the width too: a window sized around the
+      // remote measures it at its widest content, and a group of grid keys has none.
+      const cs=body.ownerDocument.defaultView.getComputedStyle(body);
+      body.style.minHeight=cs.height;
+      body.style.minWidth=cs.width;
+      body.classList.add('rmt-popping','rmt-popfull');
+      p.hidden=false;
+    }else{
+      body.classList.add('rmt-popping');
+      if(p.hasAttribute('data-stay'))body.classList.add('rmt-poppin');
+      p.hidden=false;
+      place(p,el);
+    }
+    open=p;from=el||null;
+    // Into the group, for whoever opened it from the keyboard.
+    const first=[...p.querySelectorAll('.rmt-btn')].find(b=>b.style.visibility!=='hidden');
+    if(had&&first)first.focus({preventScroll:true});
+    if(fit)fit();
+  }
+  root.addEventListener('click',e=>{
+    if(!open)return;
+    const t=e.target;
+    // The dimmed remote is the body itself (its shade is a ::after); a full
+    // group's own empty part is the group. Around a panel that stays, nothing is
+    // dimmed, and a tap there is a tap on the remote.
+    const dim=t===body&&!body.classList.contains('rmt-poppin');
+    if(dim||(t===open&&open.classList.contains('full'))||(t.closest&&t.closest('.rmt-pop-x')))close();
+  });
+  root.addEventListener('keydown',e=>{
+    if(!open||e.key!=='Escape')return;
+    e.preventDefault();e.stopPropagation();
+    close();
+  });
+  return {
+    open:show,
+    close,
+    // Quietly, for a redraw that replaces what the body holds anyway.
+    reset:shut,
+    // A key's press is over: the group it is in shuts, unless that one stays up.
+    done(el){if(open&&el&&open.contains(el)&&!open.hasAttribute('data-stay'))close()},
+    // A group key goes with the last key in its group — opened, it would show
+    // nothing — and a group that empties while it is open shuts.
+    hideEmpty(empty){
+      body.querySelectorAll('.rmt-pop').forEach(p=>{
+        if(!empty(p))return;
+        body.querySelectorAll('[data-action="group:'+p.dataset.group+'"]').forEach(b=>{b.style.visibility='hidden'});
+        if(p===open)close();
+      });
+    }
+  };
+}
 // The box the remote's typing key opens — this page's and the Lovelace card's,
 // wired once onto its input. Whatever the box receives goes to the host as it
 // happens, from a phone's own keyboard, a PC's or a paste. Each change is
@@ -2816,7 +3015,7 @@ const RMT_BUILTIN=[
 // RMT_CUSTOM_LOADED says whether the device has been asked yet, which is what
 // separates "this style hasn't arrived" from "this style is gone" — see the
 // unknown-id branch in applyTemplate.
-let RMT_CUSTOM=[],RMT_CUSTOM_MAX=6,RMT_CUSTOM_LEN=1500,RMT_CUSTOM_LOADED=false;
+let RMT_CUSTOM=[],RMT_CUSTOM_MAX=8,RMT_CUSTOM_LEN=4000,RMT_CUSTOM_LOADED=false;
 function allTemplates(){return RMT_BUILTIN.concat(RMT_CUSTOM)}
 function tplById(id){
   for(const t of allTemplates())if(t.id===id)return t;
@@ -5119,13 +5318,31 @@ function insertStep(el,val){
     const ss=p.sections||[];
     out.push('  "sections": [');
     ss.forEach((s,i)=>out.push(tplSectionText(s)+(i<ss.length-1?',':'')));
+    let end='  ]';   // what closes the block above
+    // A group's sections one to a line as the style's are, a step further in,
+    // with its stay and full ahead of them.
+    const gk=p.groups&&typeof p.groups==='object'&&!Array.isArray(p.groups)?Object.keys(p.groups):[];
+    if(gk.length){
+      out.push(end+',','  "groups": {');
+      gk.forEach((n,i)=>{
+        const g=p.groups[n]&&typeof p.groups[n]==='object'?p.groups[n]:{};
+        const gs=Array.isArray(g.sections)?g.sections:[];
+        out.push('    '+JSON.stringify(n)+': {'+['stay','full'].filter(k=>g[k]!==undefined)
+          .map(k=>JSON.stringify(k)+': '+JSON.stringify(g[k])+', ').join('')+'"sections": [');
+        gs.forEach((s,j)=>out.push(tplSectionText(s).replace(/^/gm,'  ')+(j<gs.length-1?',':'')));
+        out.push('    ]}'+(i<gk.length-1?',':''));
+      });
+      end='  }';
+    }
     // One icon to a line: each is a single long record nobody edits by hand, and
     // on a line of its own it can at least be deleted whole.
     const ik=Object.keys(p.icons||{});
-    if(!ik.length){out.push('  ]','}');return out.join('\n')}
-    out.push('  ],','  "icons": {');
-    ik.forEach((k,i)=>out.push('    '+JSON.stringify(k)+': '+JSON.stringify(p.icons[k])+(i<ik.length-1?',':'')));
-    out.push('  }','}');
+    if(ik.length){
+      out.push(end+',','  "icons": {');
+      ik.forEach((k,i)=>out.push('    '+JSON.stringify(k)+': '+JSON.stringify(p.icons[k])+(i<ik.length-1?',':'')));
+      end='  }';
+    }
+    out.push(end,'}');
     return out.join('\n');
   }
   // A copy of a style with the imported icons it names attached, so an export is
@@ -5352,9 +5569,31 @@ function insertStep(el,val){
         if(JSON.stringify(t.icons[n]).length>RMT_ICON_LEN)return 'Icon "'+n+'" is over '+RMT_ICON_LEN+' characters';
       }
     }
+    // Groups: keys kept off the remote until a group key opens them. Each is
+    // {"sections":[…]}, checked below as the remote's own are; "stay" keeps one
+    // up after a key in it is pressed, and "full" opens it over the whole remote
+    // rather than as a panel by its key.
+    let groupNames=[];
+    if(t.groups!==undefined){
+      if(!t.groups||typeof t.groups!=='object'||Array.isArray(t.groups))
+        return 'groups must be an object of name: {"sections": […]}';
+      groupNames=Object.keys(t.groups);
+      if(groupNames.length>RMT_GROUP_MAX)return 'A style can have up to '+RMT_GROUP_MAX+' groups';
+      for(const n of groupNames){
+        if(!RMT_GROUP_NAME.test(n))
+          return 'Group names are 1-15 characters of a-z, 0-9 or _, starting with a letter or digit — "'+n+'"';
+        const g=t.groups[n];
+        if(!g||typeof g!=='object'||Array.isArray(g))return 'Group "'+n+'" is an object: {"sections": […]}';
+        for(const k in g)if(k!=='sections'&&k!=='stay'&&k!=='full')
+          return 'A group takes sections, stay and full — "'+k+'" is none of them';
+        for(const k of ['stay','full'])if(g[k]!==undefined&&typeof g[k]!=='boolean')return 'group "'+k+'" is true or false';
+        if(!Array.isArray(g.sections)||!g.sections.length)
+          return 'Group "'+n+'" needs sections, as a style has: {"sections": [["row","mute"]]}';
+      }
+    }
     // One section, '' when it is fine. A side section's parts are sections too,
-    // checked by this same function, one level deep.
-    const sectionBad=(s,inSide)=>{
+    // checked by this same function, one level deep — and so is a group's.
+    const sectionBad=(s,inSide,inGroup)=>{
       if(!Array.isArray(s)||typeof s[0]!=='string')return 'Each section is an array starting with its kind';
       if(RMT_KINDS.indexOf(s[0])<0)return 'Unknown section kind "'+s[0]+'" — use '+RMT_KINDS.join(', ');
       if(s[0]==='side'){
@@ -5374,7 +5613,7 @@ function insertStep(el,val){
         if(parts.length<2)return 'A side section puts two or more sections side by side — ["side",["strip",…],["pot"]]';
         for(const p of parts){
           if(Array.isArray(p)&&p[0]==='-')return 'A divider cannot go in a side section';
-          const bad=sectionBad(p,true);
+          const bad=sectionBad(p,true,inGroup);
           if(bad)return bad;
         }
         return '';
@@ -5518,6 +5757,10 @@ function insertStep(el,val){
         if(!sets)for(const it of keys.slice(0,2))
           if(Array.isArray(it)&&it.length!==2)
             return 'A pot turns by "action" or ["action","Label"] — '+JSON.stringify(it)+' is neither';
+        // A turn sends something; a group key only opens its group, so it can be
+        // the key in the middle and nothing else.
+        if(!sets&&keys.slice(0,2).some(it=>groupOf(Array.isArray(it)?it[0]:it)))
+          return 'A pot cannot turn by a group key — put it in the middle, or on a key of its own';
         items=keys;
       }else if(s[0]==='slider'){
         // Dragged to a value: sent to "set" once, or as presses of its two
@@ -5578,6 +5821,9 @@ function insertStep(el,val){
         if(cfg.set===undefined)for(const it of keys.slice(0,2))
           if(Array.isArray(it)&&it.length!==2)
             return 'A slider steps by "action" or ["action","Label"] — '+JSON.stringify(it)+' is neither';
+        // Its thumb is pressed through its own path, which only sends.
+        if(keys.some(it=>groupOf(Array.isArray(it)?it[0]:it)))
+          return 'A slider cannot carry a group key — put it on a key of its own';
         items=keys;
       }else if(s[0]==='lcd'){
         // Lines are ["Label","key"], label first — the way a strip or rocker
@@ -5693,6 +5939,13 @@ function insertStep(el,val){
           if(bad)return bad;
         }
         const a=arr?it[0]:it;
+        // group:<name> opens one of this style's groups, and only from the remote.
+        const g=groupOf(a);
+        if(g){
+          if(inGroup)return 'A group cannot open another group — "'+a+'" is in one';
+          if(groupNames.indexOf(g)<0)return 'No group "'+g+'" — add it under "groups", or check the spelling';
+          continue;
+        }
         // hasOwnProperty rather than a truthiness test: RMT_BTNS is an object
         // literal, so RMT_BTNS['constructor'] and ['__proto__'] are inherited and
         // truthy. ["row",["constructor","Hi"]] used to pass a check that claims
@@ -5705,6 +5958,10 @@ function insertStep(el,val){
     for(const s of t.sections){
       const bad=sectionBad(s,false);
       if(bad)return bad;
+    }
+    for(const n of groupNames)for(const s of t.groups[n].sections){
+      const bad=sectionBad(s,false,true);
+      if(bad)return 'Group "'+n+'": '+bad;
     }
     return '';
   }
@@ -5797,12 +6054,13 @@ function insertStep(el,val){
     });
   });
 
-  // The keys the device keeps of a style, in this order. keyboard only when set,
-  // so a style without one is stored as it always was.
+  // The keys the device keeps of a style, in this order. keyboard and groups only
+  // when set, so a style without them is stored as it always was.
   function tplStored(t){
     const o={id:t.id,name:String(t.name).trim()};
     if(t.keyboard)o.keyboard=t.keyboard;
     o.theme=t.theme||{};o.sections=t.sections;
+    if(t.groups&&Object.keys(t.groups).length)o.groups=t.groups;
     return o;
   }
   // What Import writes for one style, and the check that it can be written: the
@@ -5983,6 +6241,10 @@ function insertStep(el,val){
   // Whether the builder is open. The box can hold a style without it — from Export,
   // or typed — and then the builder stays shut until Start, ✎ or New.
   let sbOpen=false;
+  // The list the selection is in: a group's name, or '' for the remote's own
+  // sections. Every change to a section is made in that list (sbList); the
+  // drawing shows them all, the groups under the remote.
+  let sbGrp='';
 
   // Each kind by a plain name — with the JSON one beside it where they differ, so
   // the box and the README can be matched up — and what Add section puts in: a
@@ -6057,11 +6319,20 @@ function insertStep(el,val){
   const sbCfg=s=>(s[1]&&typeof s[1]==='object'&&!Array.isArray(s[1]))?s[1]:null;
   const sbO=s=>sbCfg(s)?2:1;   // where a section's own items start
   const sbHas=a=>typeof a==='string'&&Object.prototype.hasOwnProperty.call(RMT_BTNS,a);
+  // What btnHtml draws a key for: an action, or a key that opens a group.
+  const sbKnown=a=>sbHas(a)||!!groupOf(a);
   const sbClone=v=>JSON.parse(JSON.stringify(v));
   const sbGet=(v,path)=>path.reduce((x,k)=>x==null?x:x[k],v);
   function sbPut(v,path,val){for(let n=0;n<path.length-1;n++)v=v[path[n]];v[path[path.length-1]]=val}
+  // The style's groups by name, and the sections the drawing shows: the group's
+  // being drawn, else the remote's own.
+  const sbGroup=(t,n)=>n&&t.groups&&Object.prototype.hasOwnProperty.call(t.groups,n)?t.groups[n]:null;
+  const sbList=t=>{const g=sbGroup(t,sbGrp);return g&&Array.isArray(g.sections)?g.sections:t.sections};
+  // The groups a key may open, for the action lists: none while a group is drawn,
+  // since a group cannot open another.
+  const sbGrpOffer=t=>sbGrp?null:tplGroups(t).map(e=>e[0]);
   // The section a selection is in.
-  const sbSec=(t,p)=>p.length>1?t.sections[p[0]][p[1]]:t.sections[p[0]];
+  const sbSec=(t,p)=>p.length>1?sbList(t)[p[0]][p[1]]:sbList(t)[p[0]];
   // A side section's parts, as indexes into it.
   function sbParts(s){
     const o=[];
@@ -6075,11 +6346,14 @@ function insertStep(el,val){
                             :{a:it,l:'',o:''};
   }
   const sbKeyOut=k=>k.o?[k.a,k.l,k.o]:k.l?[k.a,k.l]:k.a;
-  function sbKeyName(it){const k=sbKey(it);return k.l||(sbHas(k.a)?RMT_BTNS[k.a].t:String(k.a))}
-  // The n-th spare the style leaves unused, so a new key does not double up on
-  // one that already does something.
+  function sbKeyName(it){
+    const k=sbKey(it),g=groupOf(k.a);
+    return k.l||(g?'Group “'+g+'”':sbHas(k.a)?RMT_BTNS[k.a].t:String(k.a));
+  }
+  // The n-th spare the style leaves unused, its groups included, so a new key
+  // does not double up on one that already does something.
   function sbSpare(t,n){
-    const used=JSON.stringify(t.sections);
+    const used=JSON.stringify([t.sections,t.groups||null]);
     for(let i=1;i<=32;i++)if(used.indexOf('"spare'+i+'"')<0&&n--<=0)return 'spare'+i;
     return 'spare1';
   }
@@ -6095,7 +6369,7 @@ function insertStep(el,val){
   // the drawing finds its key. It has to follow the renderer exactly, so the
   // builder's suite checks it against every built-in and catalogue style.
   function sbKeys(s){
-    const k=s[0],o=sbO(s),out=[],known=it=>sbHas(Array.isArray(it)?it[0]:it);
+    const k=s[0],o=sbO(s),out=[],known=it=>sbKnown(Array.isArray(it)?it[0]:it);
     if(k==='row'||k==='media'||k==='apps'||k==='grid'){
       for(let j=o;j<s.length;j++)if(s[j]!=='|'&&known(s[j]))out.push({item:[j]});
     }else if(k==='dpad'||k==='ring'){
@@ -6122,31 +6396,54 @@ function insertStep(el,val){
   }
   // Whether a selection still points at something, after the style changed under it.
   function sbSelOk(t,q){
-    const top=t.sections[q.sec[0]];
+    if(q.head)return !!sbGroup(t,sbGrp);
+    const top=sbList(t)[q.sec[0]];
     if(!Array.isArray(top))return false;
     if(q.sec.length>1&&(top[0]!=='side'||sbParts(top).indexOf(q.sec[1])<0))return false;
     const s=sbSec(t,q.sec),c=sbCfg(s);
     if(q.slot!=null)return s.length===sbO(s)&&['dpad','ring','pot'].indexOf(s[0])>=0&&!(c&&c.set);
     if(!q.item)return true;
     const v=sbGet(s,q.item);
-    return v==='|'||sbHas(Array.isArray(v)?v[0]:v);
+    return v==='|'||sbKnown(Array.isArray(v)?v[0]:v);
+  }
+  // Every key in a list of sections that opens group `from`, pointed at group `to`
+  // instead — or taken out, with no `to`. A row, media, apps or grid section left
+  // with no keys goes too; anything else that no longer adds up is validateTpl's
+  // to refuse, and the reason is shown.
+  function sbRegroup(list,from,to){
+    for(let i=list.length-1;i>=0;i--){
+      const top=list[i];
+      if(!Array.isArray(top))continue;
+      let took=false;
+      // Last first, so taking one out leaves the paths before it where they were.
+      for(const e of sbKeys(top).reverse()){
+        if(!e.item)continue;
+        const S=e.part!=null?top[e.part]:top,k=sbKey(sbGet(S,e.item));
+        if(groupOf(k.a)!==from)continue;
+        if(to){k.a='group:'+to;sbPut(S,e.item,sbKeyOut(k));continue}
+        (e.item.length>1?S[e.item[0]]:S).splice(e.item[e.item.length-1],1);
+        took=true;
+      }
+      if(took&&['row','media','apps','grid'].indexOf(top[0])>=0&&top.slice(sbO(top)).every(x=>x==='|'))list.splice(i,1);
+    }
   }
 
   // Every change comes through here. It is made on a copy and checked by
   // validateTpl before anything is written, so a change the importer would
   // refuse never reaches the box — the reason is shown instead. fn edits the copy
   // and returns the selection to have afterwards, or nothing to keep this one.
+  // Says whether the change was taken.
   function sbDo(fn){
-    if(!sbT||!sbState||!sbState.t)return;
+    if(!sbT||!sbState||!sbState.t)return false;
     const t=sbClone(sbT);
     let sel;
-    try{sel=fn(t)}catch(e){sbWhy=e.message;sbRenderSoon();return}
+    try{sel=fn(t)}catch(e){sbWhy=e.message;sbRenderSoon();return false}
     const why=validateTpl(t);
-    if(why){sbWhy=why;sbRenderSoon();return}
+    if(why){sbWhy=why;sbRenderSoon();return false}
     sbWhy='';
     if(sel!==undefined)sbSel=sel;
     const text=tplText(t);
-    if(text===tplJson.value){sbRenderSoon();return}
+    if(text===tplJson.value){sbRenderSoon();return true}
     sbPush(tplJson.value);
     const top=tplJson.scrollTop;
     tplJson.value=text;
@@ -6154,6 +6451,7 @@ function insertStep(el,val){
     // Draws the remote card, says the style is unsaved, and brings the builder
     // round to the box — the one way it is redrawn after a change.
     tplPreview();
+    return true;
   }
   function sbPush(text){
     if(!text.trim()||text===sbUndoList[sbUndoList.length-1])return;
@@ -6165,7 +6463,7 @@ function insertStep(el,val){
   function sbLoad(text,open){
     sbPush(tplJson.value);
     tplJson.value=text;
-    sbSel=null;sbWhy='';sbOpen=!!open;
+    sbSel=null;sbWhy='';sbOpen=!!open;sbGrp='';
     // The remote goes back to the host's own style; the first change previews this one.
     tplEndPreview();
     sbFromBox();
@@ -6173,8 +6471,14 @@ function insertStep(el,val){
   // Brings the builder round to what the box holds.
   function sbShow(st){
     sbState=st;
-    if(!st){sbT=null;sbOpen=false}
-    else if(st.t){sbT=st.t;if(sbSel&&!sbSelOk(sbT,sbSel))sbSel=null}
+    if(!st){sbT=null;sbOpen=false;sbGrp=''}
+    else if(st.t){
+      sbT=st.t;
+      // A group the box no longer has — undone, or renamed in the JSON — puts
+      // the drawing back on the remote.
+      if(sbGrp&&!sbGroup(sbT,sbGrp)){sbGrp='';sbSel=null}
+      if(sbSel&&!sbSelOk(sbT,sbSel))sbSel=null;
+    }
     sbRenderSoon();
   }
   // The same without drawing on the remote: for the panel opening onto a box
@@ -6195,7 +6499,8 @@ function insertStep(el,val){
     if(!sbOpen||!sbState)return true;
     if(sbState.t){
       const t=sbState.t,was=RMT_CUSTOM.find(c=>c.id===t.id);
-      const flat=x=>JSON.stringify({id:x.id,name:String(x.name).trim(),theme:x.theme||{},sections:x.sections});
+      const flat=x=>JSON.stringify({id:x.id,name:String(x.name).trim(),theme:x.theme||{},sections:x.sections,
+                                    keyboard:x.keyboard||null,groups:x.groups||null});
       return (was&&flat(was)===flat(t))||confirm('Leave "'+t.name+'" without saving it?');
     }
     return !exit||!sbState.err||confirm('Exit and empty the JSON box?');
@@ -6307,9 +6612,17 @@ function insertStep(el,val){
     return sbEl('span',{class:'sb-col'+(val?'':' unset')},kids);
   }
   // Every action the remote has, grouped as the Remote Buttons panel groups them.
-  function sbActSel(f,val,put,none){
+  // With grps, the style's groups to open come first — and, with fresh, a new one,
+  // which puts '+group'.
+  function sbActSel(f,val,put,none,grps,fresh){
     const s=sbEl('select',{f:f});
     if(none!=null)s.appendChild(sbEl('option',{value:''},[none]));
+    if(grps&&(grps.length||fresh)){
+      const og=sbEl('optgroup',{label:'Opens a group'});
+      grps.forEach(n=>og.appendChild(sbEl('option',{value:'group:'+n},['Group “'+n+'”'])));
+      if(fresh)og.appendChild(sbEl('option',{value:'+group'},['New group…']));
+      s.appendChild(og);
+    }
     const groups={};
     remoteButtons().forEach(b=>{(groups[b.group]=groups[b.group]||[]).push(b)});
     Object.keys(groups).sort((x,y)=>x-y).forEach(g=>{
@@ -6320,6 +6633,45 @@ function insertStep(el,val){
     s.value=val||'';
     s.addEventListener('change',()=>put(s.value));
     return s;
+  }
+  // A group, selected by its heading in the drawing: its name, whether it stays
+  // up, and Delete. Its keys and sections are clicked and changed where they
+  // are drawn, under the remote, as the remote's are.
+  function sbGroupInsp(t){
+    const from=sbGrp,g=sbGroup(t,from);
+    if(!g)return;
+    sbInsp.appendChild(sbEl('div',{class:'sb-row'},[sbEl('span',{class:'sb-title'},['Group “'+from+'”']),
+      sbBtn('Delete group','Remove this group and every key that opens it — Undo brings them back','g-del',()=>{
+        if(sbDo(x=>{
+          sbRegroup(x.sections,from,'');
+          delete x.groups[from];
+          if(!Object.keys(x.groups).length)delete x.groups;
+          return null;
+        })){sbGrp='';sbRenderSoon()}
+      })]));
+    sbInsp.appendChild(sbEl('div',{class:'sb-row'},[
+      // A new name is written as an id is, and its keys follow it.
+      sbText('Name','g-name',from,v=>{
+        const to=v.trim().toLowerCase().replace(/[^a-z0-9_]+/g,'_').replace(/^_+|_+$/g,'');
+        if(!to||to===from)return sbRenderSoon();
+        if(sbGroup(sbT,to)){sbWhy='There is a group “'+to+'” already.';return sbRenderSoon()}
+        if(sbDo(x=>{
+          const out={};
+          for(const n of Object.keys(x.groups))out[n===from?to:n]=x.groups[n];
+          x.groups=out;
+          sbRegroup(x.sections,from,to);
+          return null;
+        })){sbGrp=to;sbSel={head:true};sbRenderSoon()}
+      },{max:15,w:'110px'}),
+      sbCheck('Stays open','g-stay',g.stay===true,on=>sbDo(x=>{
+        if(on)x.groups[from].stay=true;else delete x.groups[from].stay;
+      })),
+      sbCheck('Whole remote','g-full',g.full===true,on=>sbDo(x=>{
+        if(on)x.groups[from].full=true;else delete x.groups[from].full;
+      }))]));
+    sbInsp.appendChild(sbEl('div',{class:'sb-hint'},['A key whose action is this group opens it: by that key, over the '+
+      'dimmed remote, or over the whole remote with Whole remote. It shuts again once one of its keys is pressed — '+
+      'unless it stays open, when a panel leaves the rest of the remote working. Add section adds to it.']));
   }
   // Suggestions for the fields that name a value or an icon: the @ values and this
   // device's sources: keys as its last /status reported them, and every icon this
@@ -6358,21 +6710,31 @@ function insertStep(el,val){
     if(t.theme)for(const k of Object.keys(RMT_VARS))
       if(typeof t.theme[k]==='string'&&!themeValueBad(k,t.theme[k]))sbCanvas.style.setProperty(RMT_VARS[k],t.theme[k]);
     useIcons(Object.assign({},ICON_CACHE,t.icons||{}));
-    sbCanvas.innerHTML=window.rmtSectionHtml?t.sections.map(s=>window.rmtSectionHtml(s)).join(''):'';
+    // The remote, then each of its groups under it with its name over it, so a
+    // group is changed with the remote still in sight. The remote's sections
+    // stay the drawing's first children, a section's index into its list.
+    const draw=list=>window.rmtSectionHtml?list.map(s=>window.rmtSectionHtml(s)).join(''):'';
+    sbCanvas.innerHTML=draw(t.sections)+tplGroups(t).map(([n,g])=>'<div class="sb-group" data-g="'+n+'">'+
+      '<div class="sb-ghead" title="Select the group: its name, how it opens, Delete">Group “'+n+'”'+
+      (g.full===true?' · whole remote':'')+(g.stay===true?' · stays open':'')+'</div><div class="sb-glist">'+
+      draw(g.sections)+'</div></div>').join('');
     wantIcons(t);
-    const q=sbSel;
-    const top=q&&sbCanvas.children[q.sec[0]];
+    const q=sbSel,L=sbList(t);
+    const block=sbGrp?sbCanvas.querySelector('.sb-group[data-g="'+sbGrp+'"]'):null;
+    if(q&&q.head){if(block)block.classList.add('sb-on');return}
+    const host=sbGrp?block&&block.querySelector('.sb-glist'):sbCanvas;
+    const top=q&&host&&host.children[q.sec[0]];
     if(!top)return;
     if(q.item||q.slot!=null){
       const part=q.sec.length>1?q.sec[1]:undefined,id=q.item?q.item.join():'';
-      const n=sbKeys(t.sections[q.sec[0]]).findIndex(e=>e.part===part&&
+      const n=sbKeys(L[q.sec[0]]).findIndex(e=>e.part===part&&
         (q.item?!!e.item&&e.item.join()===id:e.slot===q.slot));
       const b=n>=0?top.querySelectorAll('.rmt-btn')[n]:null;
       if(b){b.classList.add('sb-key');return}
     }
     let el=top;
     if(q.sec.length>1){
-      const ps=top.querySelectorAll('.rmt-side>.rmt-section'),j=sbParts(t.sections[q.sec[0]]).indexOf(q.sec[1]);
+      const ps=top.querySelectorAll('.rmt-side>.rmt-section'),j=sbParts(L[q.sec[0]]).indexOf(q.sec[1]);
       if(ps[j])el=ps[j];
     }
     el.classList.add('sb-on');
@@ -6405,21 +6767,24 @@ function insertStep(el,val){
     if(sbSel)sbInsp.appendChild(sbBtn('✕','Done — put the fields away (Esc)','close',()=>{sbSel=null;sbWhy='';sbRenderSoon()}));
     if(sbWhy)sbInsp.appendChild(sbEl('div',{class:'sb-msg'},[sbWhy]));
     if(!sbSel){
-      sbInsp.appendChild(sbEl('div',{class:'sb-hint'},['Click a key or a section in the drawing to change it.']));
+      sbInsp.appendChild(sbEl('div',{class:'sb-hint'},[tplGroups(t).length?
+        'Click a key or a section in the drawing to change it, or a group’s name for the group.':
+        'Click a key or a section in the drawing to change it.']));
       return;
     }
-    if(sbSel.item||sbSel.slot!=null)sbKeyInsp(t);else sbSecInsp(t);
+    if(sbSel.head)sbGroupInsp(t);
+    else if(sbSel.item||sbSel.slot!=null)sbKeyInsp(t);else sbSecInsp(t);
   }
   // A section, or a side section's part, one place along.
   function sbMove(p,d){
     sbDo(t=>{
       if(p.length===1){
-        const a=t.sections,j=p[0]+d;
+        const a=sbList(t),j=p[0]+d;
         if(j<0||j>=a.length)return;
         [a[p[0]],a[j]]=[a[j],a[p[0]]];
         return {sec:[j]};
       }
-      const s=t.sections[p[0]],ps=sbParts(s),m=ps.indexOf(p[1])+d;
+      const s=sbList(t)[p[0]],ps=sbParts(s),m=ps.indexOf(p[1])+d;
       if(m<0||m>=ps.length)return;
       const j=ps[m];
       [s[p[1]],s[j]]=[s[j],s[p[1]]];
@@ -6488,13 +6853,13 @@ function insertStep(el,val){
   }
 
   function sbSecInsp(t){
-    const p=sbSel.sec,s=sbSec(t,p),k=s[0],i=p[0],n=t.sections.length;
+    const p=sbSel.sec,s=sbSec(t,p),k=s[0],i=p[0],n=sbList(t).length;
     const fam=SB_FAM.find(x=>x.indexOf(k)>=0);
     const head=sbEl('div',{class:'sb-row'},[fam?
       sbSelect('','kind',k,fam.map(x=>[x,SB_KIND[x][0]]),v=>sbDo(x=>{sbKindTo(sbSec(x,p),v)})):
       sbEl('span',{class:'sb-title'},[SB_KIND[k]?SB_KIND[k][0]:k])]);
     if(p.length>1){
-      const ps=sbParts(t.sections[i]),at=ps.indexOf(p[1]);
+      const ps=sbParts(sbList(t)[i]),at=ps.indexOf(p[1]);
       head.appendChild(sbEl('span',null,['part '+(at+1)+' of '+ps.length]));
       head.appendChild(sbBtn('‹ Side by side','Select the section this is part of','up',()=>{sbSel={sec:[i]};sbWhy='';sbRenderSoon()}));
       head.appendChild(sbBtn('◀','Move it left','mv-l',()=>sbMove(p,-1),at===0));
@@ -6507,14 +6872,14 @@ function insertStep(el,val){
       head.appendChild(sbBtn('▼','Move it down','mv-d',()=>sbMove(p,1),i===n-1));
     }
     head.appendChild(sbBtn('Duplicate','Add a copy after it','dup',()=>sbDo(x=>{
-      const a=p.length>1?x.sections[i]:x.sections,j=p[p.length-1];
+      const a=p.length>1?sbList(x)[i]:sbList(x),j=p[p.length-1];
       a.splice(j+1,0,sbClone(a[j]));
       return {sec:p.length>1?[i,j+1]:[j+1]};
     })));
     // What takes its place is selected next, so a run of them goes one press each.
     head.appendChild(sbBtn('Delete','Remove it','del',()=>sbDo(x=>{
-      (p.length>1?x.sections[i]:x.sections).splice(p[p.length-1],1);
-      return p.length>1?{sec:[i]}:{sec:[Math.min(i,x.sections.length-1)]};
+      (p.length>1?sbList(x)[i]:sbList(x)).splice(p[p.length-1],1);
+      return p.length>1?{sec:[i]}:{sec:[Math.min(i,sbList(x).length-1)]};
     })));
     sbInsp.appendChild(head);
     if(SB_HINT[k])sbInsp.appendChild(sbEl('div',{class:'sb-hint'},[SB_HINT[k]]));
@@ -6542,7 +6907,7 @@ function insertStep(el,val){
       const row=sbEl('div',{class:'sb-chips'},[sbEl('span',null,['Keys:'])]);
       for(let j=o;j<s.length;j++)
         row.appendChild(sbBtn(s[j]==='|'?(k==='grid'?'empty cell':'gap'):sbKeyName(s[j]),'Select it','it'+j,pick({sec:p,item:[j]})));
-      row.appendChild(sbActSel('add-key','',a=>{if(a)sbDo(x=>{const S=sbSec(x,p);S.push(a);return {sec:p,item:[S.length-1]}})},'Add key…'));
+      row.appendChild(sbActSel('add-key','',a=>{if(a)sbDo(x=>{const S=sbSec(x,p);S.push(a);return {sec:p,item:[S.length-1]}})},'Add key…',sbGrpOffer(t)));
       if(k==='row'||k==='grid')row.appendChild(sbBtn(k==='row'?'+ gap':'+ empty cell',
         k==='row'?'A gap that pushes the keys either side of it apart':'A cell left empty','add-gap',
         ()=>sbDo(x=>{const S=sbSec(x,p);S.push('|');return {sec:p,item:[S.length-1]}})));
@@ -6562,7 +6927,7 @@ function insertStep(el,val){
         for(let j=1;j<G.length;j++)row.appendChild(sbBtn(sbKeyName(G[j]),'Select it','g'+g+'-'+j,pick({sec:p,item:[g,j]})));
         if(k==='strip'||G.length<3)row.appendChild(sbActSel('g'+g+'-a','',a=>{if(a)sbDo(x=>{
           const H=sbSec(x,p)[g];H.push(a);return {sec:p,item:[g,H.length-1]};
-        })},'Add key…'));
+        })},'Add key…',sbGrpOffer(t)));
         row.appendChild(sbBtn('▲','Move this group up','g'+g+'-u',()=>sbDo(x=>{const S=sbSec(x,p);[S[g-1],S[g]]=[S[g],S[g-1]]}),g===o));
         row.appendChild(sbBtn('▼','Move this group down','g'+g+'-d',()=>sbDo(x=>{const S=sbSec(x,p);[S[g+1],S[g]]=[S[g],S[g+1]]}),g===s.length-1));
         row.appendChild(sbBtn('✕','Remove this group','g'+g+'-x',()=>sbDo(x=>{sbSec(x,p).splice(g,1)})));
@@ -6614,7 +6979,7 @@ function insertStep(el,val){
       const cur=S[O+at]!==undefined?sbKey(S[O+at]):{a:'',l:'',o:''};
       cur.a=a;
       S[O+at]=sbKeyOut(cur);
-    }),'nothing')]));
+    }),'nothing',k==='pot'?sbGrpOffer(sbT):null)]));
     sbInsp.appendChild(row);
     // The middle of a pot is a key like any other, so it has a key's fields.
     if(k==='pot'&&mid!==undefined)sbInsp.appendChild(sbEl('div',{class:'sb-chips'},[sbBtn('Middle key’s look…',
@@ -6737,8 +7102,10 @@ function insertStep(el,val){
     }
     const K=sbKey(it);
     // Every change to the key, made on the copy — with a default key written
-    // out first, so the one clicked is the one that changes.
-    const put=fn=>sbDo(x=>{
+    // out first, so the one clicked is the one that changes. pre(copy) runs
+    // first, for a change that needs something else in place.
+    const put=(fn,pre)=>sbDo(x=>{
+      if(pre)pre(x);
       const S=sbSec(x,p);
       let path=q.item;
       if(virt){sbMaterial(S);path=[sbO(S)+q.slot]}
@@ -6747,7 +7114,26 @@ function insertStep(el,val){
       sbPut(S,path,sbKeyOut(cur));
       return {sec:p,item:path};
     });
+    // Group keys go on the remote only: a group cannot open another. A new group
+    // starts with two keys, drawn under the remote, and is selected, ready to name.
+    // They take the look of the key that opens them, its icon and light aside, so
+    // they line up with the keys around it when the group opens over them.
+    const grps=sbGrpOffer(t);
+    const newGroup=()=>{
+      let n=1;
+      while(sbGroup(t,'group'+n))n++;
+      const name='group'+n;
+      const look=K.o.split(/\s+/).filter(x=>x&&!/^(icon|lit):/.test(x)).join(' ');
+      const starter=(a,l)=>look?[a,l,look]:[a,l];
+      if(put(c=>{c.a='group:'+name},x=>{
+        x.groups=x.groups||{};
+        x.groups[name]={sections:[['row',starter(sbSpare(x,0),'Key 1'),starter(sbSpare(x,1),'Key 2')]]};
+      })){sbGrp=name;sbSel={head:true};sbRenderSoon()}
+    };
+    const og=groupOf(K.a);
     const head=sbEl('div',{class:'sb-row'},[back,sbEl('span',{class:'sb-title'},[sbKeyName(it)]),sbEl('code',null,[String(K.a)])]);
+    if(og&&sbGroup(t,og))head.appendChild(sbBtn('Its group','Select group “'+og+'”, drawn under the remote','k-grp',
+      ()=>{sbGrp=og;sbSel={head:true};sbWhy='';sbRenderSoon()}));
     // A rocker group holds one key or two.
     const rk=k==='rocker'&&grp;
     if(!fixed){
@@ -6765,13 +7151,15 @@ function insertStep(el,val){
     })));
     sbInsp.appendChild(head);
     const row=sbEl('div',{class:'sb-row'},[
-      sbEl('label',null,['Action',sbActSel('k-act',K.a,a=>{if(a)put(c=>{c.a=a})})]),
+      sbEl('label',null,['Action',sbActSel('k-act',K.a,a=>{if(a==='+group')newGroup();else if(a)put(c=>{c.a=a})},null,grps,true)]),
       sbText('Label','k-lab',K.l,v=>put(c=>{c.l=v}),{max:16,w:'100px',
              ph:sbHas(K.a)&&RMT_BTNS[K.a].x?RMT_BTNS[K.a].x:'its icon'})]);
     if(!fixed&&!(rk&&list.length>2))row.appendChild(sbActSel('k-add','',a=>{if(a)sbDo(x=>{
       holder(x).splice(idx+1,0,a);return at(idx+1);
-    })},'Add a key after it…'));
+    })},'Add a key after it…',grps));
     sbInsp.appendChild(row);
+    if(og)sbInsp.appendChild(sbEl('div',{class:'sb-hint'},
+      ['Opens its group over the remote, which shuts again once one of its keys is pressed — unless the group stays open.']));
     sbInsp.appendChild(sbEl('div',{class:'sb-row'},sbLook(sbOpts(K.o),fn=>put(c=>{
       const r=sbOpts(c.o);fn(r);c.o=sbOptsOut(r);
     }),'k-')));
@@ -6791,13 +7179,20 @@ function insertStep(el,val){
 
   if(sbCanvas)sbCanvas.addEventListener('click',e=>{
     if(!sbT||!sbState||!sbState.t)return;
-    let top=e.target;
-    while(top&&top.parentElement!==sbCanvas)top=top.parentElement;
-    const i=top?[...sbCanvas.children].indexOf(top):-1;
     sbWhy='';
+    // A group under the remote: its name selects the group itself, and a click
+    // among its sections finds them in its list as one on the remote does in the
+    // remote's.
+    const gb=e.target.closest('.sb-group'),gl=gb&&gb.querySelector('.sb-glist');
+    if(gb&&!gl.contains(e.target)){sbGrp=gb.dataset.g;sbSel={head:true};sbRenderSoon();return}
+    const host=gb?gl:sbCanvas;
+    let top=e.target;
+    while(top&&top.parentElement!==host)top=top.parentElement;
+    const i=top?[...host.children].indexOf(top):-1;
     // The body around the sections: nothing.
-    if(i<0){sbSel=null;sbRenderSoon();return}
-    const s=sbT.sections[i];
+    if(i<0){sbSel=null;sbGrp='';sbRenderSoon();return}
+    sbGrp=gb?gb.dataset.g:'';
+    const s=sbList(sbT)[i];
     const btn=e.target.closest('.rmt-btn');
     if(btn&&top.contains(btn)){
       const k=sbKeys(s)[[...top.querySelectorAll('.rmt-btn')].indexOf(btn)];
@@ -6860,9 +7255,12 @@ function insertStep(el,val){
       const k=sbAdd.value;
       sbAdd.value='';
       if(!Object.prototype.hasOwnProperty.call(SB_KIND,k))return;
+      // Into the list the selection is in — a group's while the group or any of
+      // it is selected — and the remote's when nothing is.
+      if(!sbSel)sbGrp='';
       sbDo(t=>{
-        const at=sbSel?sbSel.sec[0]+1:t.sections.length;
-        t.sections.splice(at,0,SB_KIND[k][1](t));
+        const L=sbList(t),at=sbSel&&sbSel.sec?sbSel.sec[0]+1:L.length;
+        L.splice(at,0,SB_KIND[k][1](t));
         return {sec:[at]};
       });
     });
@@ -8158,7 +8556,10 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     const p=peerLock();if(p!==null)return 'peer:'+p+':'+a;
     const h=hostLock();return h===null?a:'host_action:'+h+':'+a;
   }
-  function press(a){
+  function press(a,el){
+    // A group key opens its group over the remote, and is never sent either.
+    const g=groupOf(a);
+    if(g){grp.open(g,el);return}
     // A key that moves this tab between keyboards, or opens the keyboard under
     // the remote, is acted on here and never sent.
     if(RMT_PAGE_KEYS.indexOf(a)>=0){
@@ -8180,6 +8581,9 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     return api('press',{action:peerLock()!==null||hostLock()===null?onPage(run+a):run+onPage(a)});
   }
   knobWire(card,knobSend);
+  // The style's groups, opened by its group keys over the remote. A window sized
+  // around the remote follows a group taller than it, as it does the keyboard.
+  const grp=groupWire(card,body,kbdFit);
 
   // ── Keyboard panel ──
   // What the keyboard, typing and touchpad keys open under the remote: the
@@ -8313,14 +8717,18 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
   card.addEventListener('pointermove',e=>{if(ok&&(Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy))>10){ok=false;if(ab)ab.classList.remove('p');stopRepeat()}});
   card.addEventListener('pointerup',()=>{
     if(ab)ab.classList.remove('p');
+    // Whether this press went — now, or already as a hold or a repeat — which is
+    // what shuts the group the key is in. One a drag called off leaves it up.
+    const el=ab,sent=!!(ab&&(ok||fired));
     if(ok&&ab&&!fired){
       const act=ab.dataset.action;
       // The elapsed time too, not just the timer: a picture-in-picture window's
       // opener can have its timers held back, and a long press is still one.
       if(longs(act)&&Date.now()-downAt>=LONG_MS)longPress(ab,act);
-      else press(act);
+      else press(act,ab);
     }
     ok=false;ab=null;fired=false;stopRepeat();endHold();
+    if(sent)grp.done(el);
   });
   const abort=()=>{if(ab)ab.classList.remove('p');ok=false;ab=null;fired=false;stopRepeat();endHold()};
   card.addEventListener('pointercancel',abort);
@@ -8376,17 +8784,20 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     }
     // Sent on the way down, unlike the pointer path: a key press has no drag
     // to cancel it with, so there is nothing to wait for.
-    press(act);
+    press(act,el);
     if(!repeats(el,act))return;
     rt=setTimeout(()=>{rt=null;ri=setInterval(()=>press(act),rptRate)},rptDelay);
   });
   card.addEventListener('keyup',e=>{
     if(e.key!==kbKey)return;
+    const el=kbEl;
     if(kbEl&&kbLong&&!kbFired){
       const act=kbEl.dataset.action;
-      if(Date.now()-kbAt>=LONG_MS)longPress(kbEl,act);else press(act);
+      if(Date.now()-kbAt>=LONG_MS)longPress(kbEl,act);else press(act,kbEl);
     }
     kbEnd();
+    // Let go: the group the key is in shuts, as on the pointer path.
+    if(el)grp.done(el);
   });
   // Alt-tabbing or clicking elsewhere with the key still down never delivers
   // keyup, which would leave a repeat running or a key held on the host.
@@ -8509,6 +8920,9 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
       const empty=el=>!el.querySelector('.rmt-lcd,.rmt-knob:not(.off),.rmt-knob[data-level],.rmt-knob-cap .rmt-knob-val,'+
                                         '.rmt-slider:not(.off),.rmt-slider[data-level]')&&
         ![...el.querySelectorAll('[data-action]')].some(b=>b.style.visibility!=='hidden');
+      // Before anything collapses: a group key hidden here can leave its own row
+      // empty, and a group's keys are hidden by visibility alone, as these are.
+      grp.hideEmpty(empty);
       // A rocker or its lone key is a group too, as on the card: an empty pill
       // would be a shape with nothing in it.
       card.querySelectorAll('.rmt-strip-group,.rmt-rocker-col').forEach(g=>{g.style.display=empty(g)?'none':''});
@@ -8553,12 +8967,15 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
   function btnHtml(item,inner){
     const arr=Array.isArray(item);
     const a=arr?item[0]:item, lab=arr?item[1]:null, opt=arr?item[2]:null;
+    // A group key opens one of the style's groups (groupWire) and sends nothing.
+    // Its name passed groupOf's pattern, so it can go into the markup as it is.
+    const grp=groupOf(a);
     // Own properties only, for the reason validateTpl gives. Repeated inline
     // rather than shared: that helper lives in the other IIFE, and hoisting one
     // across is its own job (see the note about esc()).
-    const b=Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
+    const b=grp?{t:'Opens group '+grp,i:'grp_show'}:Object.prototype.hasOwnProperty.call(RMT_BTNS,a)?RMT_BTNS[a]:null;
     if(!b)return '';   // a style naming a button this firmware doesn't have
-    const tip=(lab!=null&&lab!=='')?esc(lab)+' — runs '+a:b.t;
+    const tip=(lab!=null&&lab!=='')?esc(lab)+(grp?' — opens group '+grp:' — runs '+a):b.t;
     let cls='',css='',lit='',ic='',hgt=0,ih=0,sz=0;
     if(typeof opt==='string'){
       for(const tok of opt.split(/\s+/)){
@@ -8629,12 +9046,15 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     if(!action)return '';
     // A long press: the key's own label, marked, since the style names only the key.
     if(/.@long$/.test(action))return lcdLabel(t,action.slice(0,-5))+' (long)';
-    // A side section's parts are sections, looked through as if they stood alone.
+    // A side section's parts are sections, looked through as if they stood alone,
+    // and so are a group's — its keys are pressed like any other.
     const all=[];
-    if(t&&Array.isArray(t.sections))for(const s of t.sections){
+    const add=list=>{for(const s of list){
       if(Array.isArray(s)&&s[0]==='side')all.push(...s.slice(1).filter(Array.isArray));
       else all.push(s);
-    }
+    }};
+    if(t&&Array.isArray(t.sections))add(t.sections);
+    for(const [,g] of tplGroups(t))add(g.sections);
     for(const s of all){
       // An lcd line is [label, key], the opposite order, and its key is not an
       // action at all — scanning it would match the wrong half.
@@ -8941,6 +9361,22 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     }
     return '<div class="rmt-section">'+inner+'</div>';
   }
+  // A style's groups, each drawn hidden into the remote's body until a group key
+  // opens it (groupWire): its sections, drawn as the remote's are, and a ✕ for a
+  // group nothing else shuts — one that stays up, or one that covers the whole
+  // remote and so may leave no dimmed part to tap. They go ahead of the remote's
+  // sections, so the last of those stays the body's last child, which is what
+  // takes its bottom margin away.
+  function groupsHtml(t){
+    return tplGroups(t).map(([n,g])=>{
+      const stay=g.stay===true,full=g.full===true;
+      return '<div class="rmt-pop'+(full?' full':'')+'" data-group="'+n+'"'+(stay?' data-stay="1"':'')+
+        ' role="dialog" aria-label="'+n+'" hidden>'+
+        (stay||full?'<button type="button" class="rmt-pop-x" title="Close" aria-label="Close">&times;</button>':'')+
+        '<div class="rmt-pop-in">'+
+        g.sections.map(s=>Array.isArray(s)&&typeof s[0]==='string'?sectionHtml(s):'').join('')+'</div></div>';
+    }).join('');
+  }
   let curTplId=null,curTplKey=null;
   // Whatever drawTemplate last put on screen — the host's style, a preview, or the
   // remembered one on load — so an icon arriving later redraws that and not a
@@ -8959,13 +9395,14 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
   };
   // What is actually drawn, not just which style it came from. A style edited in
   // place keeps its id, so an id-only check would leave the old body on screen.
-  const tplKey=t=>JSON.stringify([t.sections,t.theme||null,t.keyboard||null]);
+  const tplKey=t=>JSON.stringify([t.sections,t.theme||null,t.keyboard||null,t.groups||null]);
   // Draws a style object. Split out of applyTemplate so the style editor can
   // show what it is about to save while that style exists nowhere but the box.
   function drawTemplate(t){
     // A style change mid-press would strand the key that is down on the host
-    // and leave an interval hammering a button that no longer exists.
-    endHold();stopRepeat();
+    // and leave an interval hammering a button that no longer exists. An open
+    // group goes with the body it was drawn in.
+    endHold();stopRepeat();grp.reset();
     // Object.keys, not for-in: for-in would also walk anything enumerable that
     // ended up on Object.prototype and hand its value to setProperty. The theme
     // side is already safe — k only ever takes RMT_VARS's own names, so a style
@@ -8984,7 +9421,7 @@ if(!POPOUT)addMouseRoot(document.getElementById('mouse-card'));
     // The device's icons as this browser has them, with any the style carries
     // itself on top — a pasted style being previewed brings its own.
     useIcons(Object.assign({},ICON_CACHE,t.icons||{}));
-    body.innerHTML=t.sections.map(sectionHtml).join('');
+    body.innerHTML=groupsHtml(t)+t.sections.map(sectionHtml).join('');
     lastDrawnTpl=t;
     kbdLayout(t.keyboard);
     wantIcons(t);

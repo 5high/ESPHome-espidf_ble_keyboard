@@ -4,6 +4,19 @@ All notable changes to this project are documented here. This project follows
 [semantic versioning](https://semver.org/); releases are tagged `vX.Y.Z` and the
 web control page shows the matching version badge.
 
+## Unreleased
+
+### Added
+- **Groups of keys on the remote.** A key opens a group of keys as a small panel where it sits, or
+  over the whole remote, and the group shuts again once one of them is pressed — or stays up for a
+  run of presses, such as a channel number. On the web page and the Home Assistant remote card,
+  popped out included, and in the style builder.
+
+### Changed
+- **A remote style can be up to 4000 characters**, up from 1500, so there is room for its
+  groups. Styles now stay in the keyboard's flash until a page asks for them, which frees up to
+  12 KB of its memory.
+
 ## v1.18.0 — 2026-10-23
 
 ### Added

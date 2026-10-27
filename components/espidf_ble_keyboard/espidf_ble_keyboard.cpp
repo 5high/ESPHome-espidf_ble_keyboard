@@ -2384,9 +2384,42 @@ void EspidfBleKeyboard::save_remote_style_(uint8_t slot) {
     nvs_close(handle);
 }
 
-const std::string &EspidfBleKeyboard::get_custom_template(uint8_t index) const {
-    static const std::string none;
-    return index < MAX_CUSTOM_TEMPLATES ? custom_templates_[index] : none;
+// ── Custom remote styles (NVS-persisted, sizes only in RAM) ────────
+//
+// Blobs under "cst<index>", for the reason icons are: NVS caps a string at 4000
+// bytes, terminator included, and a long one needs a whole free page to itself,
+// while a blob may span pages. Older firmware saved strings under
+// "ctpl<index>". Those are read as they are, and become blobs the next time
+// they are saved.
+
+uint16_t EspidfBleKeyboard::get_custom_template_size(uint8_t index) const {
+    return index < MAX_CUSTOM_TEMPLATES ? custom_template_sizes_[index] : 0;
+}
+
+bool EspidfBleKeyboard::read_custom_template(uint8_t index, std::string &out) const {
+    out.clear();
+    if (index >= MAX_CUSTOM_TEMPLATES || custom_template_sizes_[index] == 0) return false;
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READONLY, &handle) != ESP_OK) return false;
+    char key[12];
+    snprintf(key, sizeof(key), "cst%u", (unsigned) index);
+    size_t len = 0;
+    bool ok = false;
+    if (nvs_get_blob(handle, key, nullptr, &len) == ESP_OK && len > 0 && len <= MAX_TEMPLATE_LEN) {
+        out.resize(len);
+        ok = nvs_get_blob(handle, key, &out[0], &len) == ESP_OK;
+    } else {
+        snprintf(key, sizeof(key), "ctpl%u", (unsigned) index);
+        // The length nvs_get_str reports counts the terminator it writes.
+        if (nvs_get_str(handle, key, nullptr, &len) == ESP_OK && len > 1 && len <= MAX_TEMPLATE_LEN + 1u) {
+            out.resize(len);
+            ok = nvs_get_str(handle, key, &out[0], &len) == ESP_OK;
+            if (ok) out.resize(len - 1);
+        }
+    }
+    nvs_close(handle);
+    if (!ok) out.clear();
+    return ok;
 }
 
 bool EspidfBleKeyboard::stage_chunk_(uint16_t seq, const std::string &data, uint16_t cap,
@@ -2421,63 +2454,76 @@ bool EspidfBleKeyboard::stage_template_chunk(uint16_t seq, const std::string &da
     return stage_chunk_(seq, data, MAX_TEMPLATE_LEN, STAGED_STYLE);
 }
 
-bool EspidfBleKeyboard::commit_template(uint8_t index) {
+EspidfBleKeyboard::TplSave EspidfBleKeyboard::commit_template(uint8_t index) {
     if (index >= MAX_CUSTOM_TEMPLATES || staging_kind_ != STAGED_STYLE || tpl_staging_.empty())
-        return false;
-    custom_templates_[index] = tpl_staging_;
+        return TplSave::NOTHING_STAGED;
+    const size_t size = tpl_staging_.size();
+    nvs_handle_t handle;
+    bool ok = nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) == ESP_OK;
+    if (ok) {
+        char key[12];
+        snprintf(key, sizeof(key), "cst%u", (unsigned) index);
+        ok = nvs_set_blob(handle, key, tpl_staging_.data(), size) == ESP_OK;
+        // The string older firmware kept goes only once the blob is written: a
+        // failed write leaves whatever was there before, readable as it was.
+        if (ok) {
+            snprintf(key, sizeof(key), "ctpl%u", (unsigned) index);
+            nvs_erase_key(handle, key);
+            ok = nvs_commit(handle) == ESP_OK;
+        }
+        nvs_close(handle);
+    }
     clear_staging_();
-    save_template_(index);
-    ESP_LOGI(TAG, "Saved custom remote style %u (%u bytes)", (unsigned) index,
-             (unsigned) custom_templates_[index].size());
-    return true;
+    if (!ok) {
+        ESP_LOGW(TAG, "Could not save custom remote style %u — NVS write failed", (unsigned) index);
+        return TplSave::WRITE_FAILED;
+    }
+    custom_template_sizes_[index] = (uint16_t) size;
+    ESP_LOGI(TAG, "Saved custom remote style %u (%u bytes)", (unsigned) index, (unsigned) size);
+    return TplSave::OK;
 }
 
 bool EspidfBleKeyboard::delete_template(uint8_t index) {
     if (index >= MAX_CUSTOM_TEMPLATES) return false;
-    custom_templates_[index].clear();
-    custom_templates_[index].shrink_to_fit();
-    save_template_(index);
+    nvs_handle_t handle;
+    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) == ESP_OK) {
+        char key[12];
+        snprintf(key, sizeof(key), "cst%u", (unsigned) index);
+        nvs_erase_key(handle, key);
+        snprintf(key, sizeof(key), "ctpl%u", (unsigned) index);
+        nvs_erase_key(handle, key);
+        nvs_commit(handle);
+        nvs_close(handle);
+    }
+    custom_template_sizes_[index] = 0;
     return true;
 }
 
 void EspidfBleKeyboard::load_templates_() {
     nvs_handle_t handle;
     if (nvs_open("espidf_ble_kb", NVS_READONLY, &handle) != ESP_OK) return;
-
+    unsigned found = 0;
     for (uint8_t i = 0; i < MAX_CUSTOM_TEMPLATES; i++) {
         char key[12];
-        snprintf(key, sizeof(key), "ctpl%u", i);
-
+        // A null buffer asks for the length alone, so no body is read here.
+        snprintf(key, sizeof(key), "cst%u", (unsigned) i);
         size_t len = 0;
-        if (nvs_get_str(handle, key, nullptr, &len) != ESP_OK || len == 0) continue;
-        if (len > MAX_TEMPLATE_LEN + 1) {
+        if (nvs_get_blob(handle, key, nullptr, &len) != ESP_OK) {
+            snprintf(key, sizeof(key), "ctpl%u", (unsigned) i);
+            size_t with_nul = 0;
+            len = nvs_get_str(handle, key, nullptr, &with_nul) == ESP_OK && with_nul > 1 ? with_nul - 1 : 0;
+        }
+        if (len == 0) continue;
+        if (len > MAX_TEMPLATE_LEN) {
             ESP_LOGW(TAG, "Custom remote style %u is oversized (%u bytes) — ignoring",
                      (unsigned) i, (unsigned) len);
             continue;
         }
-        std::vector<char> buf(len);
-        if (nvs_get_str(handle, key, buf.data(), &len) != ESP_OK) continue;
-        custom_templates_[i] = buf.data();
-        ESP_LOGI(TAG, "Loaded custom remote style %u (%u bytes)", (unsigned) i,
-                 (unsigned) custom_templates_[i].size());
+        custom_template_sizes_[i] = (uint16_t) len;
+        found++;
     }
     nvs_close(handle);
-}
-
-void EspidfBleKeyboard::save_template_(uint8_t index) {
-    if (index >= MAX_CUSTOM_TEMPLATES) return;
-    nvs_handle_t handle;
-    if (nvs_open("espidf_ble_kb", NVS_READWRITE, &handle) != ESP_OK) return;
-
-    char key[12];
-    snprintf(key, sizeof(key), "ctpl%u", index);
-    if (custom_templates_[index].empty()) {
-        nvs_erase_key(handle, key);
-    } else {
-        nvs_set_str(handle, key, custom_templates_[index].c_str());
-    }
-    nvs_commit(handle);
-    nvs_close(handle);
+    if (found) ESP_LOGI(TAG, "Found %u custom remote style(s)", found);
 }
 
 // ── Imported icons (NVS-persisted, names only in RAM) ──────────────
@@ -6286,13 +6332,15 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
     else if (action == "prev_host")    cycle_host_(-1);
     else if (action == "last_host")    return_to_last_host_();
     // Keys a remote acts on itself and never sends: the web page's, to move a
-    // tab across linked keyboards, and the keyboard, typing and touchpad keys,
-    // which open a keyboard or a mouse pad under the remote on the page and the
-    // Home Assistant card alike. Arriving from anywhere else — a macro, a Host
-    // Action — there is nothing for them to do here, and falling through would
-    // type their names on the host.
+    // tab across linked keyboards, the keyboard, typing and touchpad keys, which
+    // open a keyboard or a mouse pad under the remote on the page and the Home
+    // Assistant card alike, and a style's group:<name> keys, which open a group of
+    // keys over it. Arriving from anywhere else — a macro, a Host Action — there
+    // is nothing for them to do here, and falling through would type their names
+    // on the host.
     else if (action == "next_keyboard" || action == "prev_host_all" || action == "next_host_all" ||
-             action == "keyboard" || action == "typing" || action == "touchpad")
+             action == "keyboard" || action == "typing" || action == "touchpad" ||
+             action.rfind("group:", 0) == 0)
         ESP_LOGI(TAG, "%s only does something on a remote's screen", action.c_str());
     else if (action == "left_click")   send_mouse_click(0x01);
     else if (action == "right_click")  send_mouse_click(0x02);

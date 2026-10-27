@@ -64,6 +64,8 @@ const PARTS = [
   ['const RMT_KNOB=', () => oneLine('const RMT_KNOB=')],
   ['const RMT_SLIDER=', () => oneLine('const RMT_SLIDER=')],
   ['const RMT_SIDE_GAP=', () => oneLine('const RMT_SIDE_GAP=')],
+  ['const RMT_GROUP_NAME=', () => oneLine('const RMT_GROUP_NAME=')],
+  ['const RMT_GROUP_MAX=', () => oneLine('const RMT_GROUP_MAX=')],
   ['const KNOB_SET=', () => oneLine('const KNOB_SET=')],
   ['const RMT_LCD_OPTS=', () => oneLine('const RMT_LCD_OPTS=')],
   ['const RMT_LCD_COLOURS=', () => oneLine('const RMT_LCD_COLOURS=')],
@@ -82,6 +84,8 @@ const PARTS = [
   ['const RMT_ICONS=', () => oneLine('const RMT_ICONS=')],
   ['function iconBad(', () => balanced('function iconBad(')],
   ['function useIcons(', () => balanced('function useIcons(')],
+  ['function groupOf(', () => balanced('function groupOf(')],
+  ['function tplGroups(', () => balanced('function tplGroups(')],
   ['function iconNames(', () => balanced('function iconNames(')],
   ['function icon(', () => balanced('function icon(')],
   // The knob's gestures. The card wires its own remote with it, so a knob turns
@@ -92,6 +96,8 @@ const PARTS = [
   ['function knobSettle(', () => balanced('function knobSettle(')],
   ['function knobLevel(', () => balanced('function knobLevel(')],
   ['function knobWire(', () => balanced('function knobWire(')],
+  // A group's opening, shutting and sizing, which the card wires its remote with.
+  ['function groupWire(', () => balanced('function groupWire(')],
   // The typing key's box, so it sends exactly the same on both surfaces.
   ['function typeWire(', () => balanced('function typeWire(')],
   // And the width that makes the keyboard key's keys square, for a pop-out.
@@ -103,6 +109,7 @@ const PARTS = [
   ['function btnHtml(', () => balanced('function btnHtml(')],
   ['function lcdLabel(', () => balanced('function lcdLabel(')],
   ['function sectionHtml(', () => balanced('function sectionHtml(')],
+  ['function groupsHtml(', () => balanced('function groupsHtml(')],
   ['function validateTpl(', () => balanced('function validateTpl(')],
 ];
 const js = PARTS.map(([, take]) => take()).join('\n\n');
@@ -113,7 +120,8 @@ const js = PARTS.map(([, take]) => take()).join('\n\n');
 const EXPORTS = ['RI', 'RMT_BTNS', 'RMT_VARS', 'RMT_BUILTIN', 'RMT_KINDS', 'RMT_OPTS', 'RMT_KEY_H',
   'RMT_LCD_OPTS', 'RMT_LCD_COLOURS', 'RMT_LCD_KEYS', 'RMT_LCD_LABELLED', 'lcdLabel', 'RMT_HEX', 'RMT_CLIP', 'RMT_FETCH', 'icon', 'esc',
   'RMT_ICON_NAME', 'RMT_ICON_LEN', 'RMT_ICON_MAX', 'RMT_ICONS', 'iconBad', 'useIcons', 'iconNames',
-  'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl', 'knobWire', 'knobLevel', 'typeWire', 'keysSquareWidth'];
+  'themeValueBad', 'btnHtml', 'sectionHtml', 'validateTpl', 'knobWire', 'knobLevel', 'typeWire', 'keysSquareWidth',
+  'RMT_GROUP_NAME', 'groupOf', 'tplGroups', 'groupsHtml', 'groupWire'];
 const defined = new Set([...js.matchAll(/(?:^|\n)\s*(?:const|function)\s+([A-Za-z_$][\w$]*)/g)]
   .map(m => m[1]));
 for (const name of EXPORTS) {
@@ -310,6 +318,37 @@ if (!sideProbe[0].startsWith('<div class="rmt-section"><div class="rmt-side"><di
     !sideProbe[6].includes('<div class="rmt-side" style="gap:30px"><div class="rmt-section"><div class="rmt-row">') ||
     !sideProbe[7].includes('<div class="rmt-side"><div') || !/two or more/.test(sideProbe[8]) || sideProbe[9] !== '') {
   throw new Error(`side renders incorrectly:\n${sideProbe.join('\n')}`);
+}
+// Groups: drawn hidden, a stay one marked, a ✕ only on one that stays or covers
+// the whole remote (full), a group key with its tooltip and the default icon, the walkers reaching into groups, and the refusals — an unknown
+// group, a group's key inside another, a group key turned by a pot, a bad name
+// and a stay that is not a boolean — beside a pot's middle, which may be one.
+const groupProbe = new Function(`${js}
+const t={id:'g',name:'G',sections:[['row',['group:apps','Apps'],'group:num']],
+  groups:{apps:{sections:[['row',['spare1','Netflix','icon:logo']]]},num:{stay:true,sections:[['grid',{cols:3},'num1','num2']]},
+    page:{full:true,sections:[['row','mute']]}}};
+const one=s=>({id:'g',name:'G',sections:s,groups:{a:{sections:[['row','mute']]}}});
+return [groupsHtml(t), sectionHtml(t.sections[0]), validateTpl(t),
+  validateTpl({id:'g',name:'G',sections:[['row','group:nope']]}),
+  validateTpl({id:'g',name:'G',sections:[['row','group:a']],groups:{a:{sections:[['row','group:a']]}}}),
+  validateTpl(one([['pot','group:a','volume_down']])),
+  validateTpl({id:'g',name:'G',sections:[['row','mute']],groups:{_x:{sections:[['row','mute']]}}}),
+  validateTpl({id:'g',name:'G',sections:[['row','mute']],groups:{a:{stay:1,sections:[['row','mute']]}}}),
+  iconNames(t).join(), lcdLabel(t,'spare1'), groupOf('group:apps'), groupOf('group:__proto__'),
+  validateTpl(one([['pot','volume_up','volume_down','group:a']])), validateTpl(one([['slider',{set:'spare1'},'group:a']])),
+  validateTpl({id:'g',name:'G',sections:[['row','mute']],groups:{a:{full:'yes',sections:[['row','mute']]}}})];`)();
+if (!groupProbe[0].startsWith('<div class="rmt-pop" data-group="apps" role="dialog" aria-label="apps" hidden><div class="rmt-pop-in">') ||
+    !groupProbe[0].includes('<div class="rmt-pop" data-group="num" data-stay="1" role="dialog" aria-label="num" hidden><button type="button" class="rmt-pop-x"') ||
+    !groupProbe[0].includes('<div class="rmt-pop full" data-group="page" role="dialog" aria-label="page" hidden><button type="button" class="rmt-pop-x"') ||
+    !groupProbe[0].includes('data-action="spare1"') || !groupProbe[0].includes('data-action="num2"') ||
+    !groupProbe[1].includes('data-action="group:apps" title="Apps — opens group apps">Apps</button>') ||
+    !/data-action="group:num" title="Opens group num"><svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4z/.test(groupProbe[1]) ||
+    groupProbe[2] !== '' || !/No group "nope"/.test(groupProbe[3]) || !/cannot open another group/.test(groupProbe[4]) ||
+    !/cannot turn by a group key/.test(groupProbe[5]) || !/Group names/.test(groupProbe[6]) ||
+    !/true or false/.test(groupProbe[7]) || groupProbe[8] !== 'logo' || groupProbe[9] !== 'Netflix' ||
+    groupProbe[10] !== 'apps' || groupProbe[11] !== '' || groupProbe[12] !== '' || !/cannot carry a group key/.test(groupProbe[13]) ||
+    !/group "full" is true or false/.test(groupProbe[14])) {
+  throw new Error(`groups render or validate incorrectly:\n${groupProbe.join('\n')}`);
 }
 const builtins = new Function(`${js}\nreturn RMT_BUILTIN.map(t=>t.id);`)();
 

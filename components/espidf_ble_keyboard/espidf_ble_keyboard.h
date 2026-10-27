@@ -522,22 +522,30 @@ class EspidfBleKeyboard : public Component
   // Opaque too: the browser validates the structure (it is the only thing that
   // can — it owns the button catalogue), the device guards size and character
   // range. Uploaded in chunks because the web server takes 512 bytes of URL.
-  // Eight: each costs RAM only once used (up to 1.5 KB), and the style list and
-  // backup are built in one block — about 15 KB with all eight full, refused
-  // rather than attempted when the heap has no block that size.
+  // Kept in NVS only, as icons are: the device never needs the bytes itself, so
+  // a style is read when a page asks for the list and dropped once it is sent,
+  // and the list goes out one style at a time rather than built in one block.
+  // That is what lets a style run to 4000 characters — a style with groups of
+  // keys takes room — when eight of them held in RAM, at 1500 each, already
+  // stood against the ~23 KB free-heap trough. What a read needs is one block
+  // the size of the largest style.
   static const uint8_t MAX_CUSTOM_TEMPLATES = 8;
-  static const uint16_t MAX_TEMPLATE_LEN = 1500;
-  const std::string &get_custom_template(uint8_t index) const;
+  static const uint16_t MAX_TEMPLATE_LEN = 4000;
+  /// Stored length of the style in slot `index`; 0 when that slot is free.
+  uint16_t get_custom_template_size(uint8_t index) const;
+  /// One style's JSON, straight from NVS. False = a free slot, or a read failure.
+  bool read_custom_template(uint8_t index, std::string &out) const;
   /// Append one chunk of an upload; seq 0 starts a new one. False = out of
   /// order, too long, or contains characters that can't survive the JSON trip.
   bool stage_template_chunk(uint16_t seq, const std::string &data);
-  bool commit_template(uint8_t index);   // staged bytes -> storage slot
+  enum class TplSave : uint8_t { OK, NOTHING_STAGED, WRITE_FAILED };
+  TplSave commit_template(uint8_t index);   // staged bytes -> storage slot
   bool delete_template(uint8_t index);
 
   // Imported button artwork: a logo pasted into the web page and converted there
   // into a small JSON record of path data. Opaque here for the same reason
   // styles are — the browser owns the validator, and re-applies it on every
-  // draw. Unlike styles, the bodies are NOT kept in RAM. A logo runs to a few KB,
+  // draw. The bodies are not kept in RAM either. A logo runs to a few KB,
   // sixteen of them would sit against the ~23 KB free-heap trough, and the
   // device never needs the bytes itself; only a browser does. So the names live
   // here and a body is read from NVS when one is asked for, then dropped.
@@ -1383,9 +1391,10 @@ class EspidfBleKeyboard : public Component
   bool on_connect_checked_{false};
   uint32_t on_connect_ran_ms_[MAX_HOST_SLOTS]{};
 
-  // Custom remote styles (NVS key "ctpl<index>"), and the buffer a chunked
-  // upload fills before commit_template() moves it into one of the slots.
-  std::string custom_templates_[MAX_CUSTOM_TEMPLATES];
+  // Custom remote styles: their sizes only, the bodies staying in NVS (blobs
+  // "cst<index>", or strings "ctpl<index>" as older firmware saved them) — and
+  // the buffer a chunked upload fills before commit_template() writes it there.
+  uint16_t custom_template_sizes_[MAX_CUSTOM_TEMPLATES]{};
   std::string tpl_staging_;
   uint16_t tpl_next_seq_{0};
   // What tpl_staging_ holds. Styles and icons share the buffer, and an upload of
@@ -1396,7 +1405,6 @@ class EspidfBleKeyboard : public Component
   bool stage_chunk_(uint16_t seq, const std::string &data, uint16_t cap, uint8_t kind);
   void clear_staging_();
   void load_templates_();
-  void save_template_(uint8_t index);
 
   // Imported icons (NVS keys "icn<index>" for the body, "icnm<index>" for the
   // name). Names and sizes only — see MAX_ICONS for why the bodies stay in flash.
