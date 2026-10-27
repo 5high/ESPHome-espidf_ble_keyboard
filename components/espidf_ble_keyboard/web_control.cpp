@@ -7,6 +7,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
+#include "esp_image_format.h"
+#include "esp_ota_ops.h"
 #include "nvs.h"
 #include <algorithm>
 #include <cctype>
@@ -19,6 +21,10 @@ namespace esphome {
 namespace espidf_ble_keyboard {
 
 static const char *const TAG = "ble_kb_web";
+
+// The running firmware's size and its partition's, for /memory; set once by
+// read_firmware_size() at setup.
+static uint32_t fw_used = 0, fw_total = 0;
 
 // ── Embedded HTML/JS page ───────────────────
 // The page itself lives in web_page.html, next to this file. __init__.py reads
@@ -930,7 +936,8 @@ class BleKbWebHandler : public AsyncWebHandler {
       // all share, and the one that runs short. The lowest figure is since boot,
       // so a device that came near the edge still says so after it recovered.
       // Storage is NVS: entries are 32 bytes, and available_entries already
-      // leaves out the page NVS keeps free for itself.
+      // leaves out the page NVS keeps free for itself. Firmware is the running
+      // image against its partition, read once at setup (read_firmware_size).
       std::string json = "{\"free\":";
       json.reserve(128);
       json += std::to_string(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -944,6 +951,12 @@ class BleKbWebHandler : public AsyncWebHandler {
         json += std::to_string(nvs.available_entries * 32);
         json += ",\"store_total\":";
         json += std::to_string(nvs.total_entries * 32);
+      }
+      if (fw_total) {
+        json += ",\"fw\":";
+        json += std::to_string(fw_used);
+        json += ",\"fw_total\":";
+        json += std::to_string(fw_total);
       }
       json += "}";
       send_response(200, "application/json", json);
@@ -2230,7 +2243,25 @@ class BleKbWebHandler : public AsyncWebHandler {
 
 // ── Setup ──────────────────────────────────────────────────────────
 
+// The running firmware's size and the partition it runs from: the figure a build
+// prints as "Flash". Read once here, on the main task — the image cannot change
+// while it runs, walking its headers takes more stack than the web task has to
+// spare, and an OTA under way unloads the partition table. Left at 0 when it
+// cannot be read, and /memory then leaves it out.
+static void read_firmware_size() {
+  const esp_partition_t *part = esp_ota_get_running_partition();
+  if (part == nullptr)
+    return;
+  esp_partition_pos_t pos{.offset = part->address, .size = part->size};
+  esp_image_metadata_t meta{};
+  if (esp_image_get_metadata(&pos, &meta) != ESP_OK || meta.image_len == 0 || meta.image_len > part->size)
+    return;
+  fw_used = meta.image_len;
+  fw_total = part->size;
+}
+
 void BleKeyboardWebControl::setup() {
+  read_firmware_size();
   auto *handler = new BleKbWebHandler(this->keyboard_);
   this->base_->add_handler(handler);
   ESP_LOGI(TAG, "Web control registered at /ble_keyboard");

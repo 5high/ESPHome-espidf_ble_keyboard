@@ -1084,7 +1084,7 @@ h2 svg{width:18px;height:18px;fill:var(--accent)}
 <div class="card" id="hostact-card">
 <h2><svg viewBox="0 0 24 24"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>Host Actions<button class="macro-edit-btn" id="bk-save" title="Download all settings as a JSON file">Backup</button><button class="macro-edit-btn" id="bk-load" title="Restore settings from a backup file">Restore</button></h2>
 <input type="file" id="bk-file" accept="application/json,.json" style="display:none">
-<div id="mem-status" style="font-size:11px;color:var(--muted);margin-bottom:6px" hidden title="RAM: free now, the lowest it has been since the keyboard started, and the largest single piece free. Bluetooth, the web server and stored styles all share it, and it is the one that can run short.&#10;&#10;Storage: space left for macros, overrides, styles, icons and pairing keys."></div>
+<div id="mem-status" style="font-size:11px;color:var(--muted);margin-bottom:6px" hidden title="RAM: free now, the lowest it has been since the keyboard started, and the largest single piece free. Bluetooth, the web server and stored styles all share it, and it is the one that can run short.&#10;&#10;Storage: space left for macros, overrides, styles, icons and pairing keys.&#10;&#10;Firmware: how much of its space the program itself takes. Updates add to it; one that would pass 100% cannot be installed."></div>
 <div id="bk-status" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
 <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Remap a <strong>named</strong> action for one host, so the same button suits each machine &mdash; e.g. <code>record</code> &rarr; <code>combo:0x0C:0x15</code> (Game Bar) on a Windows host, while a TV host keeps HID Record. Saved per host; YAML rows come from your config and are restored when you delete the override on top.</div>
 <div class="macro-form" style="margin-top:0;margin-bottom:8px">
@@ -1770,9 +1770,11 @@ function pollMemory(){
   if(!mem)return;
   fetch('api/ble_keyboard/memory').then(r=>r.ok?r.json():null).then(m=>{
     if(!m||typeof m.free!=='number'){mem.hidden=true;return}
-    const kb=n=>Math.round(n/1024)+' KB';
-    mem.textContent='RAM '+kb(m.free)+' free · lowest '+kb(m.min)+' · largest block '+kb(m.block)+
-      (typeof m.store_free==='number'?' · Storage '+kb(m.store_free)+' free of '+kb(m.store_total):'');
+    // Kept short enough for one line; what each figure means is in the tooltip.
+    const kb=n=>Math.round(n/1024);
+    mem.textContent='RAM '+kb(m.free)+' KB free (lowest '+kb(m.min)+' KB, largest block '+kb(m.block)+' KB)'+
+      (typeof m.store_free==='number'?' · Storage '+kb(m.store_free)+'/'+kb(m.store_total)+' KB free':'')+
+      (m.fw_total>0?' · Firmware '+kb(m.fw)+'/'+kb(m.fw_total)+' KB ('+Math.round(m.fw*100/m.fw_total)+'%)':'');
     mem.hidden=false;
   }).catch(()=>{});
 }

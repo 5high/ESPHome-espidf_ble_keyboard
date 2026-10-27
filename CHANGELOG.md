@@ -11,11 +11,13 @@ web control page shows the matching version badge.
   over the whole remote, and the group shuts again once one of them is pressed — or stays up for a
   run of presses, such as a channel number. On the web page and the Home Assistant remote card,
   popped out included, and in the style builder.
+- **The memory line in Host Actions shows the firmware too**: how much of its space the program
+  takes, so you can see how close an update is to not fitting.
 
 ### Changed
 - **A remote style can be up to 4000 characters**, up from 1500, so there is room for its
-  groups. Styles now stay in the keyboard's flash until a page asks for them, which frees up to
-  12 KB of its memory.
+  groups. Styles are no longer copied into the keyboard's working memory (RAM) at start-up — they
+  are read from its storage only when a page asks — which frees up to 12 KB of RAM.
 
 ## v1.18.0 — 2026-10-23
 
