@@ -12,7 +12,8 @@ web control page shows the matching version badge.
   run of presses, such as a channel number. On the web page and the Home Assistant remote card,
   popped out included, and in the style builder.
 - **The memory line in Host Actions shows the firmware too**: how much of its space the program
-  takes, so you can see how close an update is to not fitting.
+  takes, so you can see how close an update is to not fitting — and, on a board with more flash
+  than its YAML names, how much of the chip is going unused.
 
 ### Changed
 - **A remote style can be up to 4000 characters**, up from 1500, so there is room for its

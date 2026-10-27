@@ -6,6 +6,7 @@
 #include "esphome/core/log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_image_format.h"
 #include "esp_ota_ops.h"
@@ -22,9 +23,10 @@ namespace espidf_ble_keyboard {
 
 static const char *const TAG = "ble_kb_web";
 
-// The running firmware's size and its partition's, for /memory; set once by
-// read_firmware_size() at setup.
-static uint32_t fw_used = 0, fw_total = 0;
+// The running firmware's size and its partition's, and the flash chip's real size
+// and the size the firmware was built for, for /memory; set once by
+// read_flash_sizes() at setup.
+static uint32_t fw_used = 0, fw_total = 0, flash_chip = 0, flash_set = 0;
 
 // ── Embedded HTML/JS page ───────────────────
 // The page itself lives in web_page.html, next to this file. __init__.py reads
@@ -937,7 +939,8 @@ class BleKbWebHandler : public AsyncWebHandler {
       // so a device that came near the edge still says so after it recovered.
       // Storage is NVS: entries are 32 bytes, and available_entries already
       // leaves out the page NVS keeps free for itself. Firmware is the running
-      // image against its partition, read once at setup (read_firmware_size).
+      // image against its partition, and chip the flash chip against what the
+      // firmware was built for, both read once at setup (read_flash_sizes).
       std::string json = "{\"free\":";
       json.reserve(128);
       json += std::to_string(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -957,6 +960,12 @@ class BleKbWebHandler : public AsyncWebHandler {
         json += std::to_string(fw_used);
         json += ",\"fw_total\":";
         json += std::to_string(fw_total);
+      }
+      if (flash_chip) {
+        json += ",\"chip\":";
+        json += std::to_string(flash_chip);
+        json += ",\"chip_set\":";
+        json += std::to_string(flash_set);
       }
       json += "}";
       send_response(200, "application/json", json);
@@ -2243,12 +2252,21 @@ class BleKbWebHandler : public AsyncWebHandler {
 
 // ── Setup ──────────────────────────────────────────────────────────
 
-// The running firmware's size and the partition it runs from: the figure a build
-// prints as "Flash". Read once here, on the main task — the image cannot change
-// while it runs, walking its headers takes more stack than the web task has to
-// spare, and an OTA under way unloads the partition table. Left at 0 when it
-// cannot be read, and /memory then leaves it out.
-static void read_firmware_size() {
+// The running firmware's size and the partition it runs from — the figure a build
+// prints as "Flash" — and the flash chip's real size, from its ID, beside the size
+// the firmware was built for: a board whose YAML names less flash than it has
+// leaves the rest unused, which only the chip can say. Read once here, on the main
+// task — none of it changes while the firmware runs, walking the image's headers
+// takes more stack than the web task has to spare, and an OTA under way unloads
+// the partition table. Each is left at 0 when it cannot be read, and /memory then
+// leaves it out.
+static void read_flash_sizes() {
+  uint32_t chip = 0, set = 0;
+  if (esp_flash_get_physical_size(esp_flash_default_chip, &chip) == ESP_OK &&
+      esp_flash_get_size(esp_flash_default_chip, &set) == ESP_OK) {
+    flash_chip = chip;
+    flash_set = set;
+  }
   const esp_partition_t *part = esp_ota_get_running_partition();
   if (part == nullptr)
     return;
@@ -2261,7 +2279,7 @@ static void read_firmware_size() {
 }
 
 void BleKeyboardWebControl::setup() {
-  read_firmware_size();
+  read_flash_sizes();
   auto *handler = new BleKbWebHandler(this->keyboard_);
   this->base_->add_handler(handler);
   ESP_LOGI(TAG, "Web control registered at /ble_keyboard");

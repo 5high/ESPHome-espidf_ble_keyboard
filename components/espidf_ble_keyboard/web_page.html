@@ -1771,10 +1771,17 @@ function pollMemory(){
   fetch('api/ble_keyboard/memory').then(r=>r.ok?r.json():null).then(m=>{
     if(!m||typeof m.free!=='number'){mem.hidden=true;return}
     // Kept short enough for one line; what each figure means is in the tooltip.
-    const kb=n=>Math.round(n/1024);
+    // The flash chip's size goes there too, and onto the line only when the
+    // firmware was built for less flash than the chip has — room left unused.
+    if(mem.dataset.tip===undefined)mem.dataset.tip=mem.title;
+    const kb=n=>Math.round(n/1024),mb=n=>Math.round(n/1048576)+' MB';
+    const spare=m.chip>0&&m.chip_set>0&&m.chip>m.chip_set;
     mem.textContent='RAM '+kb(m.free)+' KB free (lowest '+kb(m.min)+' KB, largest block '+kb(m.block)+' KB)'+
       (typeof m.store_free==='number'?' · Storage '+kb(m.store_free)+'/'+kb(m.store_total)+' KB free':'')+
-      (m.fw_total>0?' · Firmware '+kb(m.fw)+'/'+kb(m.fw_total)+' KB ('+Math.round(m.fw*100/m.fw_total)+'%)':'');
+      (m.fw_total>0?' · Firmware '+kb(m.fw)+'/'+kb(m.fw_total)+' KB ('+Math.round(m.fw*100/m.fw_total)+'%)':'')+
+      (spare?' · Flash chip '+mb(m.chip)+', '+mb(m.chip_set)+' used':'');
+    mem.title=mem.dataset.tip+(m.chip>0?'\n\nFlash chip: '+mb(m.chip)+(spare?'. The firmware is built for '+mb(m.chip_set)+
+      ' of it: give the board its real flash size in its YAML, and flash it once over USB, to use the rest.':', all of it in use.'):'');
     mem.hidden=false;
   }).catch(()=>{});
 }
