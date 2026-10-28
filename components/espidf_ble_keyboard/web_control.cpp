@@ -195,8 +195,7 @@ static bool host_ok(AsyncWebServerRequest *request, EspidfBleKeyboard *kb) {
   static std::string warned;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
   if (warned != name) {
     warned = name;
-    ESP_LOGW(TAG, "Refused a request addressed to '%s' — add it to web_allowed_hosts, "
-                  "or set web_host_check: false", name.c_str());
+    ESP_LOGW(TAG, "Refused request for host '%s'; add it to web_allowed_hosts", name.c_str());
   }
   return false;
 }
@@ -797,7 +796,7 @@ class BleKbWebHandler : public AsyncWebHandler {
         const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         if (block >= need + 1024)
           return false;
-        ESP_LOGW(TAG, "%s%s%s (%u B) deferred: largest free block %u B, heap %u B free", what, *name ? " " : "",
+        ESP_LOGW(TAG, "%s%s%s (%u B) deferred: largest block %u B, free %u B", what, *name ? " " : "",
                  name, (unsigned) need, (unsigned) block, (unsigned) heap_caps_get_free_size(MALLOC_CAP_8BIT));
         send_response(409, "text/plain", "Low on memory, try again shortly");
         return true;

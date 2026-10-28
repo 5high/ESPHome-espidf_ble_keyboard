@@ -19,6 +19,8 @@ web control page shows the matching version badge.
 - **A remote style can be up to 4000 characters**, up from 1500, so there is room for its
   groups. Styles are no longer copied into the keyboard's working memory (RAM) at start-up — they
   are read from its storage only when a page asks — which frees up to 12 KB of RAM.
+- **Shorter log messages.** The wordier ones now say what happened and leave the explanations to
+  the README, which frees about 2 KB of firmware space.
 
 ## v1.18.0 — 2026-10-23
 

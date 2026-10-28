@@ -316,7 +316,7 @@ static void maybe_reset_bonds_after_security_config_change() {
     }
 
     if (security_cfg_changed) {
-        ESP_LOGW(TAG, "Security config changed (passkey/mode). Clearing stored BLE bonds.");
+        ESP_LOGW(TAG, "Passkey or pairing mode changed; clearing bonds");
         // The removal is only queued to Bluedroid's task, so the list being walked
         // stays as read.
         const bool read = with_bond_list([](const esp_ble_bond_dev_t *list, int count) {
@@ -373,16 +373,16 @@ static void apply_security_params(bool use_static_passkey) {
         if (use_sc) {
 #if defined(ESP_LE_AUTH_REQ_SC_MITM_BOND)
             auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-            ESP_LOGI(TAG, "Pairing mode: Static passkey (secure-connections MITM bond)");
+            ESP_LOGI(TAG, "Pairing: static passkey (SC MITM bond)");
 #elif defined(ESP_LE_AUTH_REQ_MITM_BOND)
             auth_req = ESP_LE_AUTH_REQ_MITM_BOND;
-            ESP_LOGW(TAG, "Pairing mode secure_connections requested, but SC MITM constant unavailable; using legacy MITM bond");
+            ESP_LOGW(TAG, "secure_connections: no SC MITM here, using legacy MITM bond");
 #elif defined(ESP_LE_AUTH_REQ_MITM)
             auth_req = static_cast<esp_ble_auth_req_t>(ESP_LE_AUTH_BOND | ESP_LE_AUTH_REQ_MITM);
-            ESP_LOGW(TAG, "Pairing mode secure_connections requested, using MITM fallback");
+            ESP_LOGW(TAG, "secure_connections: using MITM fallback");
 #else
             auth_req = ESP_LE_AUTH_BOND;
-            ESP_LOGW(TAG, "Pairing mode secure_connections requested, but MITM unavailable; using bond-only mode");
+            ESP_LOGW(TAG, "secure_connections: no MITM here, bonding only");
 #endif
         } else {
 #if defined(ESP_LE_AUTH_REQ_MITM_BOND)
@@ -392,7 +392,7 @@ static void apply_security_params(bool use_static_passkey) {
 #else
             auth_req = ESP_LE_AUTH_BOND;
 #endif
-            ESP_LOGI(TAG, "Pairing mode: Static passkey (legacy MITM bond)");
+            ESP_LOGI(TAG, "Pairing: static passkey (legacy MITM bond)");
         }
         iocap = ESP_IO_CAP_OUT;
         uint32_t passkey = effective_passkey;
@@ -409,7 +409,7 @@ static void apply_security_params(bool use_static_passkey) {
 #endif
         s_use_static_passkey = false;
         s_require_mitm = false;
-        ESP_LOGI(TAG, "Pairing mode: Just Works / host-selected secure bonding");
+        ESP_LOGI(TAG, "Pairing: Just Works (host picks security)");
     }
 
     esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
@@ -469,7 +469,7 @@ static void do_start_advertising() {
         const uint16_t look = s_instance->get_host_slot_config(slot).appearance;
         raw_adv_data[ADV_APPEARANCE_AT] = look & 0xFF;
         raw_adv_data[ADV_APPEARANCE_AT + 1] = look >> 8;
-        ESP_LOGD(TAG, "ADV: Using slot %u addr %02X:%02X:%02X:%02X:%02X:%02X, appearance 0x%04X", slot,
+        ESP_LOGD(TAG, "ADV: slot %u %02X:%02X:%02X:%02X:%02X:%02X, appearance 0x%04X", slot,
                  laddr[0], laddr[1], laddr[2], laddr[3], laddr[4], laddr[5], look);
     }
 
@@ -477,7 +477,7 @@ static void do_start_advertising() {
     if (s_directed_adv_pending) {
         s_directed_adv_pending = false;
         s_directed_adv_start_ms = millis();
-        ESP_LOGI(TAG, "ADV: Directed advertising to %02X:%02X:%02X:%02X:%02X:%02X",
+        ESP_LOGI(TAG, "ADV: directed to %02X:%02X:%02X:%02X:%02X:%02X",
                  s_directed_addr[0], s_directed_addr[1], s_directed_addr[2],
                  s_directed_addr[3], s_directed_addr[4], s_directed_addr[5]);
         esp_ble_adv_params_t dir_params = adv_params;
@@ -647,8 +647,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                     if (kept) {
                         ESP_LOGI(TAG, "GAP: The bond was kept");
                     } else {
-                        ESP_LOGW(TAG, "GAP: The stack drops the bond after a failed pairing — "
-                                      "this host must be paired again from its own side");
+                        ESP_LOGW(TAG, "GAP: The bond was dropped; pair again from the host");
                         s_instance->queue_bond_log(BOND_LOSS_STACK, fail_reason,
                                                    fslot >= 0 ? (uint8_t) fslot : 0xFF, faddr);
                     }
@@ -661,7 +660,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                     s_use_static_passkey &&
                     !fb_sc &&
                     fail_reason == 0x51) {
-                    ESP_LOGW(TAG, "GAP: Static passkey rejected by peer (0x51), falling back to Just Works mode");
+                    ESP_LOGW(TAG, "GAP: Passkey rejected (0x51), falling back to Just Works");
                     apply_security_params(false);
                     esp_ble_remove_bond_device(param->ble_security.auth_cmpl.bd_addr);
                 }
@@ -677,7 +676,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             }
             break;
         case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-            ESP_LOGD(TAG, "GAP: Conn params updated (status=%d int=%u latency=%u timeout=%u)",
+            ESP_LOGD(TAG, "GAP: Conn params status=%d int=%u latency=%u timeout=%u",
                      param->update_conn_params.status,
                      param->update_conn_params.conn_int,
                      param->update_conn_params.latency,
@@ -995,7 +994,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
             // HID service and encrypts then. First-time pairing still asks, which is
             // the case that actually needs the request.
             if (s_instance != nullptr && s_instance->peer_is_bonded(param->connect.remote_bda)) {
-                ESP_LOGD(TAG, "GATTS: Peer is already bonded — leaving encryption to the host");
+                ESP_LOGD(TAG, "GATTS: Peer bonded; the host starts encryption");
             } else {
                 esp_ble_sec_act_t sec_act = s_require_mitm ? ESP_BLE_SEC_ENCRYPT_MITM : ESP_BLE_SEC_ENCRYPT_NO_MITM;
                 esp_ble_set_encryption(param->connect.remote_bda, sec_act);
@@ -1040,15 +1039,12 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
                 if (hit >= 0) {
                     uint8_t i = (uint8_t) hit;
                     if (dc_reason == 0x06) {
-                        ESP_LOGW(TAG, "GATTS: Host slot %u reports our key is missing "
-                                      "(reason 0x06) — removing the stale bond", i);
+                        ESP_LOGW(TAG, "GATTS: Slot %u lost our key (0x06); removing the bond", i);
                         esp_ble_remove_bond_device(s_instance->peer_addr_);
                         s_instance->queue_bond_log(BOND_LOSS_DISCONNECT, dc_reason, i,
                                                    s_instance->peer_addr_);
                     } else {
-                        ESP_LOGW(TAG, "GATTS: Encryption-related disconnect (reason 0x%02X) from "
-                                      "host slot %u — keeping the bond; it should re-encrypt on "
-                                      "the next connection", dc_reason, i);
+                        ESP_LOGW(TAG, "GATTS: Encryption disconnect 0x%02X, slot %u; bond kept", dc_reason, i);
                     }
                 }
             }
@@ -1286,7 +1282,7 @@ void EspidfBleKeyboard::bond_log_record(uint8_t cause, uint8_t reason, uint8_t s
         const BondLossRecord &p = bond_log_.rec[newest];
         if (p.cause == cause && p.boot_seq == bond_log_.boot_seq &&
             memcmp(p.addr, peer, sizeof(esp_bd_addr_t)) == 0) {
-            ESP_LOGW(TAG, "Bond log: cause=%u reason=0x%02X addr=%s again this boot — not re-recorded",
+            ESP_LOGW(TAG, "Bond log: cause=%u reason=0x%02X addr=%s seen this boot",
                      (unsigned) cause, (unsigned) reason, peer_str);
             return;
         }
@@ -1351,8 +1347,7 @@ void EspidfBleKeyboard::bond_census_() {
         if (!hosts_[slot].occupied || host_slot_bonded(slot)) continue;
         char addr_str[18];
         format_bd_addr(hosts_[slot].addr, addr_str);
-        ESP_LOGW(TAG, "Bond census: host slot %u (%s) is occupied but has no bond — "
-                      "that host must pair again", slot, addr_str);
+        ESP_LOGW(TAG, "Bond census: slot %u (%s) has no bond; pair it again", slot, addr_str);
 
         // The condition persists across reboots, so recording it every boot would
         // fill the ring with copies of itself and push the event that caused it
@@ -1528,8 +1523,7 @@ void EspidfBleKeyboard::set_host_slot_override(uint8_t slot, const std::string &
     // Compile-time configuration, so it is kept either way — but saying so beats
     // finding out when the web page refuses every save.
     if (override_text() > MAX_OVERRIDE_TEXT)
-        ESP_LOGW(TAG, "YAML overrides use %u characters, over the %u shared by all hosts — "
-                 "overrides saved from the web page will be refused",
+        ESP_LOGW(TAG, "YAML overrides: %u chars, over %u; page saves refused",
                  (unsigned) override_text(), (unsigned) MAX_OVERRIDE_TEXT);
 }
 
@@ -1615,7 +1609,7 @@ void EspidfBleKeyboard::load_overrides_() {
         snprintf(key, sizeof(key), "ovb%u", slot);
         if (nvs_get_blob(handle, key, nullptr, &len) == ESP_OK && len > 0) {
             if (len > cap) {
-                ESP_LOGW(TAG, "Override blob for slot %u is oversized (%u bytes) — ignoring",
+                ESP_LOGW(TAG, "Slot %u overrides too big (%u B), ignored",
                          (unsigned) slot, (unsigned) len);
                 continue;
             }
@@ -1729,7 +1723,7 @@ void EspidfBleKeyboard::publish_hidden_() {
         unsigned kept = 0;
         for (char c : csv) if (c == ',') kept++;
         if (!csv.empty()) kept++;
-        ESP_LOGW(TAG, "Hidden list for host %u exceeds the 255-char sensor limit — sent %u name(s)",
+        ESP_LOGW(TAG, "Host %u hidden list over 255 chars; sent %u name(s)",
                  (unsigned) style_slot(), kept);
     }
     hidden_sensor_->publish_state(csv);
@@ -1793,8 +1787,7 @@ void EspidfBleKeyboard::remember_host_identity_() {
 void EspidfBleKeyboard::reject_host_() {
     char addr_str[18];
     format_bd_addr(reject_addr_, addr_str);
-    ESP_LOGW(TAG, "Refused %s: host slot %u is already bonded. Forget the host first to pair a "
-                  "different device there.", addr_str, reject_slot_);
+    ESP_LOGW(TAG, "Refused %s: slot %u is bonded; forget it first", addr_str, reject_slot_);
     // Removes this peer's bond only — the slot owner's bond is a separate entry.
     esp_ble_remove_bond_device(reject_addr_);
     bond_log_record(BOND_LOSS_REJECT, 0, reject_slot_, reject_addr_);
@@ -1817,7 +1810,7 @@ void EspidfBleKeyboard::load_hidden_() {
         size_t len = 0;
         if (nvs_get_str(handle, key, nullptr, &len) != ESP_OK || len == 0) continue;
         if (len > MAX_HIDDEN * 33 + 1) {
-            ESP_LOGW(TAG, "Hidden list for slot %u is oversized (%u bytes) — ignoring",
+            ESP_LOGW(TAG, "Slot %u hidden list too big (%u B), ignored",
                      (unsigned) slot, (unsigned) len);
             continue;
         }
@@ -2152,8 +2145,7 @@ void EspidfBleKeyboard::rebuild_lcd_status_() {
     if (lost != last_lcd_drop_) {
         last_lcd_drop_ = lost;
         if (!lost.empty() && lcd_sensor_ != nullptr)
-            ESP_LOGW(TAG, "No room in the Home Assistant state (255 chars) for: %s. Shorten those "
-                          "source keys, or give the card its own entity for them.", lost.c_str());
+            ESP_LOGW(TAG, "HA state full (255 chars), left out: %s", lost.c_str());
     }
     // Braced because ESP_LOGV compiles to nothing below VERBOSE, which leaves an
     // empty if-body and a -Wempty-body warning in every normal build.
@@ -2344,7 +2336,7 @@ bool EspidfBleKeyboard::set_slot_typing(uint8_t slot, uint16_t delay_ms, uint8_t
     if (slot == active_slot_) apply_typing_(slot);
     edits_++;
     const TypingCfg def = get_slot_typing_default(slot);
-    ESP_LOGI(TAG, "Typing on host %u: %u ms a character%s, characters it lacks by %s%s", (unsigned) slot,
+    ESP_LOGI(TAG, "Typing on host %u: %u ms/char%s, missing chars by %s%s", (unsigned) slot,
              (unsigned) (delay_ms != 0 ? delay_ms : def.delay), delay_ms != 0 ? "" : " (default)",
              unicode_input_name(method != UNICODE_UNSET ? method : def.method),
              method != UNICODE_UNSET ? "" : " (default)");
@@ -2475,7 +2467,7 @@ EspidfBleKeyboard::TplSave EspidfBleKeyboard::commit_template(uint8_t index) {
     }
     clear_staging_();
     if (!ok) {
-        ESP_LOGW(TAG, "Could not save custom remote style %u — NVS write failed", (unsigned) index);
+        ESP_LOGW(TAG, "Style %u not saved: NVS write failed", (unsigned) index);
         return TplSave::WRITE_FAILED;
     }
     custom_template_sizes_[index] = (uint16_t) size;
@@ -2515,7 +2507,7 @@ void EspidfBleKeyboard::load_templates_() {
         }
         if (len == 0) continue;
         if (len > MAX_TEMPLATE_LEN) {
-            ESP_LOGW(TAG, "Custom remote style %u is oversized (%u bytes) — ignoring",
+            ESP_LOGW(TAG, "Style %u too big (%u B), ignored",
                      (unsigned) i, (unsigned) len);
             continue;
         }
@@ -2705,7 +2697,7 @@ static std::string clamp_csv_for_sensor(const char *what, unsigned slot, std::st
     if (csv.size() <= 255) return csv;
     size_t cut = csv.rfind(',', 255);
     csv = (cut == std::string::npos) ? "" : csv.substr(0, cut);
-    ESP_LOGW(TAG, "%s for host %u exceeds the 255-char sensor limit — truncated", what, slot);
+    ESP_LOGW(TAG, "%s for host %u over 255 chars, truncated", what, slot);
     return csv;
 }
 
@@ -2755,7 +2747,7 @@ void EspidfBleKeyboard::load_hold_() {
         size_t len = 0;
         if (nvs_get_str(handle, key, nullptr, &len) != ESP_OK || len == 0) continue;
         if (len > MAX_HOLD * 33 + 1) {
-            ESP_LOGW(TAG, "Hold list for slot %u is oversized (%u bytes) — ignoring",
+            ESP_LOGW(TAG, "Slot %u hold list too big (%u B), ignored",
                      (unsigned) slot, (unsigned) len);
             continue;
         }
@@ -2862,7 +2854,7 @@ void EspidfBleKeyboard::load_repeat_() {
         size_t len = 0;
         if (nvs_get_str(handle, key, nullptr, &len) != ESP_OK || len == 0) continue;
         if (len > MAX_REPEAT_BUTTONS * 33 + 16) {
-            ESP_LOGW(TAG, "Repeat list for slot %u is oversized (%u bytes) — ignoring",
+            ESP_LOGW(TAG, "Slot %u repeat list too big (%u B), ignored",
                      (unsigned) slot, (unsigned) len);
             continue;
         }
@@ -3023,8 +3015,7 @@ bool EspidfBleKeyboard::delete_macro(uint8_t index) {
     // holding one of those indices now points at a different macro. Say so here
     // — it's the moment the drift happens, and nothing else would show it.
     if (index < macros_.size())
-        ESP_LOGW(TAG, "Macros %u+ shifted down — index-based run_macro/execute_macro callers now "
-                      "point at a different macro; macro:<name> references are unaffected", index);
+        ESP_LOGW(TAG, "Macros %u+ shifted down; index callers now run other macros", index);
     save_macros_();
     return true;
 }
@@ -3179,8 +3170,8 @@ void EspidfBleKeyboard::switch_host(uint8_t slot, bool from_action) {
     // One line saying what this slot is and what is about to be done about it:
     // when a host does not come back, whether it was ever invited and whether
     // this keyboard still holds its pairing key is the whole question.
-    ESP_LOGI(TAG, "Switching to host slot %u (%s, bond %s) — %s advertising", slot,
-             !hosts_[slot].occupied ? "empty" : rpa ? "phone address, rotates" : "fixed address",
+    ESP_LOGI(TAG, "Switching to slot %u (%s, bond %s), %s advertising", slot,
+             !hosts_[slot].occupied ? "empty" : rpa ? "rotating address" : "fixed address",
              host_slot_bonded(slot) ? "yes" : "no",
              !slot_broadcasts(slot) ? "no" : s_directed_adv_pending ? "directed" : "undirected");
 
@@ -3271,7 +3262,7 @@ void EspidfBleKeyboard::register_api_services_() {
     register_service(&EspidfBleKeyboard::on_api_set_battery_level_, "set_battery_level", {"level"});
     register_service(&EspidfBleKeyboard::on_api_switch_host_, "switch_host", {"slot"});
     register_service(&EspidfBleKeyboard::on_api_forget_host_, "forget_host", {"slot"});
-    ESP_LOGI(TAG, "Registered Home Assistant API services (esphome.<node>_run_action, _mouse_move, ...)");
+    ESP_LOGI(TAG, "Registered HA services (esphome.<node>_run_action, ...)");
 }
 #endif
 
@@ -3306,10 +3297,8 @@ void EspidfBleKeyboard::setup() {
     // was waiting on. Refuse the configuration instead, and name the way out.
     if (esp_bt_controller_get_status() != ESP_BT_CONTROLLER_STATUS_IDLE ||
         esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-        ESP_LOGE(TAG, "Bluetooth is already running — another component (esp32_ble, "
-                      "esp32_ble_tracker or bluetooth_proxy) started it first.");
-        ESP_LOGE(TAG, "This component talks to the BLE stack directly and cannot share it. "
-                      "Remove that component from this device and run it on a separate ESP32.");
+        ESP_LOGE(TAG, "Bluetooth already started by another component (esp32_ble, esp32_ble_tracker or bluetooth_proxy)");
+        ESP_LOGE(TAG, "This component can't share the BLE stack: move that one to another ESP32");
         mark_failed();
         return;
     }
@@ -3341,7 +3330,7 @@ void EspidfBleKeyboard::setup() {
     load_broadcast_();
     for (uint8_t s = 0; s < MAX_HOST_SLOTS; s++) {
         if (host_slot_configs_[s].appearance != APPEARANCE_KEYBOARD)
-            ESP_LOGI(TAG, "Host slot %u advertises as appearance 0x%04X, not a keyboard", s,
+            ESP_LOGI(TAG, "Slot %u appearance 0x%04X, not a keyboard", s,
                      host_slot_configs_[s].appearance);
     }
 #ifdef USE_BLE_KB_PRESENCE
@@ -3376,7 +3365,7 @@ void EspidfBleKeyboard::setup() {
     if (hosts_[active_slot_].occupied && slot_broadcasts(active_slot_)) {
         uint8_t addr_top = hosts_[active_slot_].addr[0] >> 6;
         if (addr_top == 0x01) {
-            ESP_LOGI(TAG, "Startup: host slot %u has RPA address — using undirected advertising", active_slot_);
+            ESP_LOGI(TAG, "Startup: slot %u (RPA), undirected advertising", active_slot_);
         } else {
             s_directed_adv_pending = true;
             memcpy(s_directed_addr, hosts_[active_slot_].addr, sizeof(esp_bd_addr_t));
@@ -3400,7 +3389,7 @@ void EspidfBleKeyboard::setup() {
     if (api_services_enabled_) register_api_services_();
 #else
     if (api_services_enabled_)
-        ESP_LOGW(TAG, "api_services: true but the 'api:' component (with custom_services support) is missing — no HA services registered");
+        ESP_LOGW(TAG, "api_services: true needs api:; no HA services registered");
 #endif
 
 #ifdef USE_BLE_KEYBOARD_WEB_CONTROL
@@ -3418,7 +3407,7 @@ void EspidfBleKeyboard::setup() {
                     this, 2, &action_task_) != pdPASS) {
         // Not fatal: queue_action() falls back to running inline, which is what
         // it did before this task existed.
-        ESP_LOGW(TAG, "Could not start the action task; web actions will run on the web task");
+        ESP_LOGW(TAG, "No action task; web actions run on the web task");
         if (action_queue_ != nullptr) { vQueueDelete(action_queue_); action_queue_ = nullptr; }
     }
 }
@@ -3534,7 +3523,7 @@ void EspidfBleKeyboard::presence_loop_() {
         s_scan_stopped_ms = now;
         presence_pause_ms_ = SCAN_OFF_MS;
         if (const uint32_t dropped = s_seen_dropped.exchange(0))
-            ESP_LOGW(TAG, "Presence: %u scan report(s) dropped — more devices at once than the queue holds",
+            ESP_LOGW(TAG, "Presence: %u scan report(s) dropped, queue full",
                      (unsigned) dropped);
         // Gone is only worth saying once a host has stayed unheard a while.
         for (uint8_t i = 0; i < host_slots_; i++) {
@@ -3631,7 +3620,7 @@ void EspidfBleKeyboard::presence_refresh_() {
         list(by_mac, mac_s, sizeof(mac_s));
         list(unheard, deaf_s, sizeof(deaf_s));
         ESP_LOGI(TAG, "Presence: by IRK slot(s) %s, by MAC slot(s) %s%s%s", irk_s, mac_s,
-                 unheard ? "; not recognised as set: slot(s) " : "", unheard ? deaf_s : "");
+                 unheard ? "; can't recognise slot(s) " : "", unheard ? deaf_s : "");
     }
 }
 
@@ -3666,7 +3655,7 @@ void EspidfBleKeyboard::presence_heard_(const uint8_t *bda, int8_t rssi, uint32_
         if (presence_last_ms_[i] == 0 || ((presence_gone_logged_ >> i) & 1)) {
             ESP_LOGI(TAG, "Presence: heard %s (slot %u) by its %s, %d dBm", host_label(i).c_str(), i, how, rssi);
         } else {
-            ESP_LOGD(TAG, "Presence: heard %s (slot %u) again by its %s, #%u, %d dBm", host_label(i).c_str(), i,
+            ESP_LOGD(TAG, "Presence: %s (slot %u) again by %s, #%u, %d dBm", host_label(i).c_str(), i,
                      how, (unsigned) n, rssi);
         }
         presence_last_ms_[i] = now;
@@ -3764,8 +3753,7 @@ void EspidfBleKeyboard::loop() {
                     // Only when it is getting close. A healthy device says
                     // nothing; measured here it sits around 5.6 KB free.
                     if (left < 768)
-                        ESP_LOGW(TAG, "Main task stack down to %u bytes after an LCD rebuild — "
-                                      "raise CONFIG_ESP_MAIN_TASK_STACK_SIZE", (unsigned) left);
+                        ESP_LOGW(TAG, "Main stack %u B left after LCD rebuild; raise CONFIG_ESP_MAIN_TASK_STACK_SIZE", (unsigned) left);
                 }
             }
         }
@@ -3803,7 +3791,7 @@ void EspidfBleKeyboard::loop() {
     } else if (s_directed_adv_active) {
         if (millis() - s_directed_adv_start_ms > 2000) {
             s_directed_adv_active = false;
-            ESP_LOGW(TAG, "ADV: Directed advertising timeout. Falling back to undirected...");
+            ESP_LOGW(TAG, "ADV: Directed timed out; going undirected");
             esp_ble_gap_stop_advertising();
             do_start_advertising();
         }
@@ -3813,7 +3801,7 @@ void EspidfBleKeyboard::loop() {
         // completion event that would have started it never arrived. Nothing
         // else tries again, and a silent keyboard looks exactly like a host that
         // has not come back — so it is said out loud and tried again.
-        ESP_LOGW(TAG, "ADV: not advertising %ums after the last attempt — starting again",
+        ESP_LOGW(TAG, "ADV: idle %ums after last attempt; restarting",
                  (unsigned) (millis() - s_adv_attempt_ms.load()));
         esp_ble_gap_stop_advertising();
         do_start_advertising();
@@ -3823,7 +3811,7 @@ void EspidfBleKeyboard::loop() {
     // mid-press, a lost on_release) would otherwise stay down indefinitely.
     // Off by default — a push-to-talk key has no natural maximum.
     if (max_key_hold_ms_ > 0 && has_held() && millis() - hold_start_ms_ > max_key_hold_ms_) {
-        ESP_LOGW(TAG, "Held key exceeded max_key_hold_ms (%ums) — releasing",
+        ESP_LOGW(TAG, "Key held past max_key_hold_ms (%ums); released",
                  (unsigned) max_key_hold_ms_);
         release_held();
     }
@@ -3941,14 +3929,14 @@ bool EspidfBleKeyboard::tx_clear_(uint32_t now) {
     if (tx_room_max_ == 0 || (room >= 2 && room + 1 >= tx_room_max_) || (room >= 1 && waited > 500) ||
         waited > 3000) {
         if (tx_wait_logged_)
-            ESP_LOGI(TAG, "Typing goes on: the host's Bluetooth took what was waiting after %u ms", (unsigned) waited);
+            ESP_LOGI(TAG, "Typing resumed after %u ms", (unsigned) waited);
         tx_wait_ms_ = 0;
         tx_wait_logged_ = false;
         return true;
     }
     if (tx_wait_ms_ == 0) tx_wait_ms_ = now;
     else if (waited > 2000 && !tx_wait_logged_) {
-        ESP_LOGW(TAG, "Typing waits for the host's Bluetooth: room for %u of %u reports", (unsigned) room,
+        ESP_LOGW(TAG, "Typing paused: host has room for %u of %u reports", (unsigned) room,
                  (unsigned) tx_room_max_);
         tx_wait_logged_ = true;
     }
@@ -3983,7 +3971,7 @@ void EspidfBleKeyboard::num_lock_step_(uint32_t now, uint32_t next) {
         // guess sends Alt and arrow keys.
         if (num_wait_ms_ == 0) num_wait_ms_ = now;
         if (now - num_wait_ms_ < 1000) return;
-        ESP_LOGW(TAG, "The host hasn't reported Num Lock, so a character typed as an Alt code was left out");
+        ESP_LOGW(TAG, "Alt code left out: host hasn't reported Num Lock");
         type_queue_.pop_front();
         while (!type_queue_.empty()) {
             const bool last = !(type_queue_.front().flags & STROKE_KEEP_MOD);
@@ -4113,7 +4101,7 @@ static esp_err_t send_keyboard_input_report(uint16_t conn_id, const uint8_t *rep
         missed++;
         const uint32_t now = millis();
         if (last_ms == 0 || now - last_ms >= 1000) {
-            ESP_LOGW(TAG, "Keyboard report send failed on handle 0x%04X (%d), caller will retry — %u in the last second",
+            ESP_LOGW(TAG, "Report send failed, handle 0x%04X (%d), will retry; %u in last second",
                      primary_handle, ret, (unsigned) missed);
             last_ms = now;
             missed = 0;
@@ -4220,7 +4208,7 @@ void EspidfBleKeyboard::send_string(const std::string &str) {
     uint32_t now = millis();
     const size_t hash = std::hash<std::string>{}(str);
     if (hash == last_send_string_hash_ && (now - last_send_string_ms_) < 30) {
-        ESP_LOGD(TAG, "send_string dedup: \"%s\" (duplicate after %ums)", str.c_str(), (unsigned) (now - last_send_string_ms_));
+        ESP_LOGD(TAG, "send_string dedup: \"%s\" after %ums", str.c_str(), (unsigned) (now - last_send_string_ms_));
         return;
     }
     last_send_string_hash_ = hash;
@@ -4242,7 +4230,7 @@ void EspidfBleKeyboard::send_string(const std::string &str) {
         const uint32_t cp = decode_utf8_(str, i);
         const HidKeyMapping m = resolve_codepoint_(active_layout_, cp);
         if (i == str.size() && m.keycode != 0x00 && m.followup_keycode == 0x00 && is_key_held(m.keycode)) {
-            ESP_LOGD(TAG, "send_string: 0x%02X was still held — releasing so this press registers", m.keycode);
+            ESP_LOGD(TAG, "send_string: releasing held 0x%02X first", m.keycode);
             release_held();
             lift = true;
         }
@@ -4277,7 +4265,7 @@ void EspidfBleKeyboard::send_string(const std::string &str) {
     // Once per string rather than per character, and at INFO: text that arrives
     // with pieces missing is otherwise a mystery.
     if (skipped > 0)
-        ESP_LOGI(TAG, "send_string: %u character(s) this host can't type were left out (the first U+%04X)",
+        ESP_LOGI(TAG, "send_string: left out %u untypeable char(s), first U+%04X",
                  skipped, (unsigned) first_skipped);
     ESP_LOGD(TAG, "send_string: \"%s\" (len=%u, strokes=%u, queue=%u, layout=%s)",
              str.c_str(), str.size(), (unsigned) (queued - before), (unsigned) queued,
@@ -4412,7 +4400,7 @@ void EspidfBleKeyboard::load_layout_() {
         nvs_set_str(handle, "yaml_layout", yaml_layout_id_.c_str());
         nvs_erase_key(handle, "layout");
         nvs_commit(handle);
-        ESP_LOGI(TAG, "YAML keyboard_layout changed (%s -> %s); cleared NVS override",
+        ESP_LOGI(TAG, "YAML keyboard_layout %s -> %s; NVS override cleared",
                  (yaml_get == ESP_OK) ? saved_yaml : "<none>", yaml_layout_id_.c_str());
     } else {
         // 2) YAML unchanged — a keyboard-wide pick older firmware saved is the
@@ -4543,7 +4531,7 @@ void EspidfBleKeyboard::send_key_combo(uint8_t modifiers, uint8_t keycode) {
     uint32_t now = millis();
     uint16_t key_id = ((uint16_t) modifiers << 8) | keycode;
     if (key_id == last_send_key_id_ && (now - last_send_key_ms_) < 30) {
-        ESP_LOGD(TAG, "send_key_combo dedup: mod=0x%02X key=0x%02X (duplicate after %ums)",
+        ESP_LOGD(TAG, "send_key_combo dedup: mod=0x%02X key=0x%02X after %ums",
                  modifiers, keycode, (unsigned) (now - last_send_key_ms_));
         return;
     }
@@ -4611,7 +4599,7 @@ void EspidfBleKeyboard::send_consumer(uint16_t usage) {
     if (!is_connected_) return;
     uint32_t now = millis();
     if (usage == last_consumer_usage_ && (now - last_consumer_ms_) < 30) {
-        ESP_LOGD(TAG, "send_consumer dedup: 0x%04X (duplicate after %ums)", usage, (unsigned) (now - last_consumer_ms_));
+        ESP_LOGD(TAG, "send_consumer dedup: 0x%04X after %ums", usage, (unsigned) (now - last_consumer_ms_));
         return;
     }
     last_consumer_usage_ = usage;
@@ -4845,7 +4833,7 @@ bool EspidfBleKeyboard::execute_remote_action_(const std::string &action) {
     // reaching here means the button is genuinely unmapped on this host. That
     // is a normal state, not a fault, hence the hint rather than a warning.
     if (is_spare_action(action)) {
-        ESP_LOGI(TAG, "%s has no action on host %u — set one for it under Host Actions",
+        ESP_LOGI(TAG, "%s has no Host Action on host %u",
                  action.c_str(), (unsigned) active_slot_);
         return true;  // handled: swallow it, so it can't fall through to "unknown action"
     }
@@ -4867,7 +4855,7 @@ void EspidfBleKeyboard::cycle_host_(int delta) {
 void EspidfBleKeyboard::return_to_last_host_() {
     if (back_stays_) {
         back_stays_ = false;
-        ESP_LOGD(TAG, "Back: host slot %u was already active when this action switched to it",
+        ESP_LOGD(TAG, "Back: slot %u was already active",
                  (unsigned) active_slot_);
         return;
     }
@@ -4952,7 +4940,7 @@ bool EspidfBleKeyboard::run_valued_(uint8_t slot, const std::string &action) {
     const std::string *ovr = override_depth_ == 0 ? find_override_(slot, name) : nullptr;
     if (ovr == nullptr) {
         if (override_depth_ == 0)
-            ESP_LOGW(TAG, "%s: no Host Action for %s on this host to take the value", action.c_str(), name.c_str());
+            ESP_LOGW(TAG, "%s: no Host Action for %s on this host", action.c_str(), name.c_str());
         else
             ESP_LOGW(TAG, "%s: a Host Action cannot hand another one a value", action.c_str());
         return true;
@@ -5139,7 +5127,7 @@ void EspidfBleKeyboard::send_mouse_click_start(uint8_t buttons) {
     if (!is_connected_) return;
     uint32_t now = millis();
     if (buttons == last_mouse_click_ && (now - last_mouse_click_ms_) < 30) {
-        ESP_LOGD(TAG, "send_mouse_click dedup: 0x%02X (duplicate after %ums)", buttons, (unsigned) (now - last_mouse_click_ms_));
+        ESP_LOGD(TAG, "send_mouse_click dedup: 0x%02X after %ums", buttons, (unsigned) (now - last_mouse_click_ms_));
         return;
     }
     last_mouse_click_ = buttons;
@@ -5421,17 +5409,17 @@ void EspidfBleKeyboard::check_on_connect_() {
     // Not the slot's own host — a stranger in the moment before it is refused.
     if (find_slot_for_peer(peer_addr_) != (int8_t) slot) return;
     if (style_hold_.load() >= 0) {
-        ESP_LOGI(TAG, "Host slot %u connected during an action; its on-connect action is skipped",
+        ESP_LOGI(TAG, "Slot %u connected mid-action; on-connect skipped",
                  (unsigned) slot);
         return;
     }
     if (on_connect_ran_ms_[slot] != 0 && now - on_connect_ran_ms_[slot] < 30000) {
-        ESP_LOGW(TAG, "Host slot %u connected again within 30 s; its on-connect action is skipped",
+        ESP_LOGW(TAG, "Slot %u reconnected within 30 s; on-connect skipped",
                  (unsigned) slot);
         return;
     }
     on_connect_ran_ms_[slot] = now | 1;
-    ESP_LOGI(TAG, "Host slot %u connected — running its on-connect action", (unsigned) slot);
+    ESP_LOGI(TAG, "Slot %u connected; running on-connect", (unsigned) slot);
     queue_action(on_connect_[slot]);
 }
 
@@ -5452,7 +5440,7 @@ bool EspidfBleKeyboard::wait_host_ready_(uint32_t timeout_ms) {
             return true;
         }
     }
-    ESP_LOGW(TAG, "wait:connected gave up after %u ms; carrying on with the macro", (unsigned) timeout_ms);
+    ESP_LOGW(TAG, "wait:connected timed out after %u ms; continuing", (unsigned) timeout_ms);
     return false;
 }
 
@@ -5474,7 +5462,7 @@ void EspidfBleKeyboard::set_caps_lock_(const std::string &how) {
     } else if (how == "on" || how == "off") {
         want = how == "on" ? 1 : 0;
         if (now < 0) {
-            ESP_LOGW(TAG, "caps_lock:%s — the host hasn't reported its Caps Lock, so it is left alone", how.c_str());
+            ESP_LOGW(TAG, "caps_lock:%s skipped: host hasn't reported Caps Lock", how.c_str());
             return;
         }
         if (now == want) return;
@@ -5490,7 +5478,7 @@ void EspidfBleKeyboard::set_caps_lock_(const std::string &how) {
         if (on_loop) App.feed_wdt();
         if (host_caps() == want) return;
     }
-    ESP_LOGW(TAG, "caps_lock:%s — the host did not confirm it within 500 ms", how.c_str());
+    ESP_LOGW(TAG, "caps_lock:%s not confirmed within 500 ms", how.c_str());
 }
 
 // A delay: on the main loop is slept in slices with the watchdog fed between
@@ -5607,7 +5595,7 @@ __attribute__((noinline)) void EspidfBleKeyboard::run_after_(const std::string &
             name += c;
         }
         if (!ok) {
-            ESP_LOGW(TAG, "after: '%s' is not a timer name — a letter, then letters, digits or _, at most 15",
+            ESP_LOGW(TAG, "after: bad timer name '%s'",
                      field.c_str());
             return;
         }
@@ -5639,7 +5627,7 @@ __attribute__((noinline)) void EspidfBleKeyboard::run_after_(const std::string &
     }
     uint32_t ms = 0;
     if (colon == std::string::npos || !parse_after_time(field, ms)) {
-        ESP_LOGW(TAG, "after: needs a time such as 90s, 30m or 1h30m, then the action — got %s", action.c_str());
+        ESP_LOGW(TAG, "after: needs a time (90s, 30m, 1h30m) then an action, got %s", action.c_str());
         return;
     }
     std::string todo = after_trim(body.substr(colon + 1));
@@ -5677,7 +5665,7 @@ __attribute__((noinline)) void EspidfBleKeyboard::run_after_(const std::string &
     }
     xSemaphoreGive(timer_mutex_);
     if (at < 0) {
-        ESP_LOGW(TAG, "Timers: all %u in use — cancel one first; not set: %s", (unsigned) MAX_TIMERS, action.c_str());
+        ESP_LOGW(TAG, "Timers: all %u in use; not set: %s", (unsigned) MAX_TIMERS, action.c_str());
         return;
     }
     timers_changed_.store(true);
@@ -5877,8 +5865,7 @@ void EspidfBleKeyboard::action_task_entry_(void *arg) {
 
 void EspidfBleKeyboard::queue_macro_index_(int32_t index) {
     if (index < 0 || (size_t) index >= macros_.size()) {
-        ESP_LOGW(TAG, "run_macro: no macro at index %d — deleting one shifts every later index, "
-                      "which is why run_macro_name exists", (int) index);
+        ESP_LOGW(TAG, "run_macro: no macro at index %d (try run_macro_name)", (int) index);
         return;
     }
     queue_action(macros_[(size_t) index].action);
@@ -6052,8 +6039,7 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         if (sscanf(action.c_str(), "delay:%i", &ms) == 1 && ms > 0 && ms <= 10000)
             sleep_ms_((uint32_t) ms);
         else if (ms > 10000)
-            ESP_LOGW(TAG, "%s skipped: a delay stops at 10000 ms and holds every press behind it — "
-                          "after:<time>:<action> waits longer without that", action.c_str());
+            ESP_LOGW(TAG, "%s skipped: delay max 10000 ms; use after:<time>:<action>", action.c_str());
         return;
     }
     // wait:connected[:ms] — hold the macro until the host is ready for keys,
@@ -6212,7 +6198,7 @@ void EspidfBleKeyboard::execute_action(const std::string &action) {
         int slot = 0;
         std::string name;
         if (!split_host_action(action, slot, name) || slot >= host_slots_) {
-            ESP_LOGW(TAG, "host_action needs a configured slot and a name, e.g. host_action:3:spare1 — got %s",
+            ESP_LOGW(TAG, "host_action needs slot:name (host_action:3:spare1), got %s",
                      action.c_str());
             return;
         }
@@ -6391,8 +6377,7 @@ bool EspidfBleKeyboard::execute_macro(uint8_t index) {
     // return, so without this a macro deleted out from under an index-based
     // automation would do nothing with no trace of why.
     if (index >= macros_.size()) {
-        ESP_LOGW(TAG, "No macro at index %u (%u stored) — deleting a macro shifts the later ones; "
-                      "use execute_macro(\"<name>\") instead", index, (unsigned) macros_.size());
+        ESP_LOGW(TAG, "No macro at index %u (%u stored); try execute_macro(\"<name>\")", index, (unsigned) macros_.size());
         return false;
     }
     execute_action(macros_[index].action);
@@ -6486,7 +6471,7 @@ void EspidfBleKeyboard::press_external_button_(const std::string &object_id) {
 void EspidfBleKeyboard::do_ha_action_(const std::string &payload) {
 #if defined(USE_API) && defined(USE_API_HOMEASSISTANT_SERVICES)
     if (!ha_action_enabled_) {
-        ESP_LOGW(TAG, "ha_action ignored — enable it with `ha_action: true` in YAML");
+        ESP_LOGW(TAG, "ha_action ignored: set ha_action: true in YAML");
         return;
     }
     auto trim = [](const std::string &s) {
@@ -6513,7 +6498,7 @@ void EspidfBleKeyboard::do_ha_action_(const std::string &payload) {
         size_t eq = record.find('=');
         std::string key = eq == std::string::npos ? std::string() : trim(record.substr(0, eq));
         if (key.empty()) {
-            ESP_LOGW(TAG, "ha_action: skipping '%s' — data records are key=value", record.c_str());
+            ESP_LOGW(TAG, "ha_action: skipping '%s', not key=value", record.c_str());
             continue;
         }
         data[key] = trim(record.substr(eq + 1));
@@ -6521,7 +6506,7 @@ void EspidfBleKeyboard::do_ha_action_(const std::string &payload) {
     // Our own is_connected() is the BLE host, so ask the API server directly.
     // The call is not queued anywhere — an absent client just loses it.
     if (api::global_api_server == nullptr || !api::global_api_server->is_connected())
-        ESP_LOGW(TAG, "ha_action: no Home Assistant client connected — the call will be lost");
+        ESP_LOGW(TAG, "ha_action: HA not connected; call dropped");
     // Same rationale as press_external_button_: web handlers run on the
     // AsyncTCP task and the API send belongs on the main loop. One consequence:
     // `delay:` steps block the loop, so consecutive ha_action steps in a chain
@@ -6533,7 +6518,7 @@ void EspidfBleKeyboard::do_ha_action_(const std::string &payload) {
     });
 #else
     (void) payload;
-    ESP_LOGW(TAG, "ha_action needs the api component — set `ha_action: true` and add `api:` to the config");
+    ESP_LOGW(TAG, "ha_action needs api: and ha_action: true in YAML");
 #endif
 }
 

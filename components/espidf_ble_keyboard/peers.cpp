@@ -247,7 +247,7 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_resolve_(Peer &p, bool yie
   }
   ESP_LOGW(TAG, "Peer %s: nothing answered for %s", p.name.c_str(), p.host.c_str());
 #else
-  ESP_LOGW(TAG, "Peer %s: %s needs mDNS, which this config has turned off — give its address instead",
+  ESP_LOGW(TAG, "Peer %s: %s needs mDNS, which is off; use its IP address",
            p.name.c_str(), p.host.c_str());
 #endif
   return PEER_UNREACHABLE;
@@ -523,7 +523,7 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_request_(Peer &p, bool pos
   if (status == 409)
     return PEER_BUSY;  // it logs that itself, with its heap figures
   if (status == 401)
-    ESP_LOGW(TAG, "Peer %s refused the login — check username and password under peers:", p.name.c_str());
+    ESP_LOGW(TAG, "Peer %s refused the login; check peers: username/password", p.name.c_str());
   else
     ESP_LOGW(TAG, "Peer %s: %s %s answered HTTP %d", p.name.c_str(), post ? "POST" : "GET", path, status);
   return PEER_NO_REPLY;
@@ -534,7 +534,7 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_request_(Peer &p, bool pos
 void EspidfBleKeyboard::run_peer_action_(const std::string &action) {
   const size_t sep = action.find(':', 5);
   if (sep == std::string::npos || sep == 5 || sep + 1 >= action.size()) {
-    ESP_LOGW(TAG, "peer: needs a name and an action, e.g. peer:bedroom:volume_up — got %s", action.c_str());
+    ESP_LOGW(TAG, "peer: needs name:action, got %s", action.c_str());
     return;
   }
   Peer *p = nullptr;
@@ -545,7 +545,7 @@ void EspidfBleKeyboard::run_peer_action_(const std::string &action) {
     }
   }
   if (p == nullptr) {
-    ESP_LOGW(TAG, "No peer called '%s' — peers: in this keyboard's YAML names them",
+    ESP_LOGW(TAG, "No peer called '%s' in peers:",
              action.substr(5, sep - 5).c_str());
     return;
   }
@@ -583,12 +583,12 @@ void EspidfBleKeyboard::run_peer_action_(const std::string &action) {
 void EspidfBleKeyboard::run_to_peer_(const std::string &action) {
   const size_t sep = action.find(':', 3);
   if (sep == std::string::npos || sep == 3 || sep + 1 >= action.size()) {
-    ESP_LOGW(TAG, "to: needs a name and an action, e.g. to:bedroom:macro:Netflix — got %s", action.c_str());
+    ESP_LOGW(TAG, "to: needs name:action, got %s", action.c_str());
     return;
   }
   const int index = peer_index(action.substr(3, sep - 3));
   if (index < 0) {
-    ESP_LOGW(TAG, "No peer called '%s' — peers: in this keyboard's YAML names them",
+    ESP_LOGW(TAG, "No peer called '%s' in peers:",
              action.substr(3, sep - 3).c_str());
     return;
   }
@@ -739,7 +739,7 @@ EspidfBleKeyboard::PeerResult EspidfBleKeyboard::peer_post_(Peer &p, const std::
   // so, than the keyboard rebooting.
   const size_t block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
   if (block < PEER_PRESS_MIN_BLOCK) {
-    ESP_LOGW(TAG, "Peer %s: no memory to send %s just now (largest free block %u B); dropped", p.name.c_str(), what,
+    ESP_LOGW(TAG, "Peer %s: no memory for %s (largest block %u B), dropped", p.name.c_str(), what,
              (unsigned) block);
     return PEER_BUSY;
   }
@@ -1006,7 +1006,7 @@ void EspidfBleKeyboard::refresh_peers_() {
   if (starved != peer_starved_) {
     peer_starved_ = starved;
     if (starved)
-      ESP_LOGW(TAG, "Peer reads paused: largest free block %u B, heap %u B free", (unsigned) block,
+      ESP_LOGW(TAG, "Peer reads paused: largest block %u B, free %u B", (unsigned) block,
                (unsigned) free_now);
     else
       ESP_LOGI(TAG, "Peer reads resumed");
@@ -1023,7 +1023,7 @@ void EspidfBleKeyboard::refresh_peers_() {
       }
       xSemaphoreGive(peer_mutex_);
       if (!held.empty()) {
-        ESP_LOGW(TAG, "Peer %s: the page's read of %s waits for memory (largest free block %u B, heap %u B free)",
+        ESP_LOGW(TAG, "Peer %s: %s read waits for memory (largest block %u B, free %u B)",
                  p.name.c_str(), held.c_str(), (unsigned) block, (unsigned) free_now);
       }
     }
@@ -1048,8 +1048,8 @@ void EspidfBleKeyboard::refresh_peers_() {
     // says it was the page's read that failed, and catches a reply that is not
     // one JSON object.
     if (!ok) {
-      ESP_LOGW(TAG, "Peer %s: the page's read of %s failed%s", p.name.c_str(), path.c_str(),
-               r == PEER_OK ? " — the reply was not one JSON object" : "");
+      ESP_LOGW(TAG, "Peer %s: %s read failed%s", p.name.c_str(), path.c_str(),
+               r == PEER_OK ? ": reply not a JSON object" : "");
     } else {
       ESP_LOGD(TAG, "Peer %s: read %s for the page, %u B", p.name.c_str(), path.c_str(), (unsigned) body.size());
     }
