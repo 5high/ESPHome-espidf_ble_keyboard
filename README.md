@@ -1959,6 +1959,7 @@ mouse_acceleration: 0.2       # speed-based acceleration factor (default: 0.15)
 mouse_max_speed: 6.0          # max sensitivity cap (default: 4.5)
 scroll_sensitivity: 3         # faster scroll (default: 2)
 tap_to_click: false           # disable tap-to-click (default: true)
+show_forget_host: true        # Forget button beside the switcher (default: false)
 host_slots: 4                 # show host switcher (default: 0 = hidden)
 host_names:                   # custom names for each slot (optional)
   - TV
@@ -1983,6 +1984,7 @@ Optional configuration:
 | `host_names` | `[]` | Names for the hosts the switcher shows, in the order it shows them (e.g., `["TV", "Phone"]`). With a count that is slot 0, slot 1 and so on; with a list like `'1,5'` the first name is host 1 and the second host 5. Falls back to `switch_host` button names from the ESP32, then "Host N". |
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |
 | `show_mac` | `true` | Show the active host's MAC address to the left of the switcher. |
+| `show_forget_host` | `false` | Add a **Forget** button to the switcher: it drops the Bluetooth pairing for the host shown, in two taps — the first reads `Confirm?` and gives up after three seconds. Needs the `forget_host` service. |
 | `host_url` | Auto | Address of the ESP32 (e.g. `http://192.168.1.50`), used to read slot MACs. Auto-detected from the device's HA registry entry. |
 
 Features:
@@ -2731,6 +2733,7 @@ host_names:                   # custom names for each slot (optional)
   - Tablet
 active_host_entity: sensor.bluetooth_keyboard_active_host  # (auto-detected)
 show_mac: true                # show the host's MAC address (default: true)
+show_forget_host: true        # Forget button beside the switcher (default: false)
 ```
 
 Minimal UK layout example:
@@ -2755,6 +2758,7 @@ Optional configuration:
 | `host_names` | `[]` | Names for the hosts the switcher shows, in the order it shows them (e.g., `["TV", "Phone"]`). With a count that is slot 0, slot 1 and so on; with a list like `'1,5'` the first name is host 1 and the second host 5. Falls back to switch_host button names from the ESP32, then "Host N". |
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |
 | `show_mac` | `true` | Show the active host's MAC address to the left of the switcher. |
+| `show_forget_host` | `false` | Add a **Forget** button to the switcher: it drops the Bluetooth pairing for the host shown, in two taps — the first reads `Confirm?` and gives up after three seconds. Needs the `forget_host` service. |
 | `host_url` | Auto | Address of the ESP32 (e.g. `http://192.168.1.50`), used to read slot MACs. Auto-detected from the device's HA registry entry. |
 | `caps_lock_entity` | Auto | Entity ID of the [Caps Lock sensor](#led-state-sensors-num-lock--caps-lock--scroll-lock). Auto-detected by name pattern (`binary_sensor.*_caps_lock`). |
 
@@ -2767,7 +2771,7 @@ Features:
 - **Paste bar** — paste or type text in the field above the keys and send it as one piece, line breaks included (can be hidden with `show_paste: false`).
 - **Arrow keys** — Up, Down, Left, Right + Delete.
 - **Shift labels** — key labels update to show shifted characters when Shift is active.
-- **Host switcher** — prev/next buttons to switch hosts, shows current host name and MAC address (requires `host_slots` and the `switch_host` ESPHome service). Also available on the mouse and remote cards — see [Host switcher on the cards](#host-switcher-on-the-cards).
+- **Host switcher** — prev/next buttons to switch hosts, shows current host name and MAC address (requires `host_slots` and the `switch_host` ESPHome service, and `forget_host` for the Forget button). Also available on the mouse and remote cards — see [Host switcher on the cards](#host-switcher-on-the-cards).
 - **Auto device name** — card title is auto-detected from Home Assistant's device registry.
 - **Keyboard layouts** — `layout: us` (default), `layout: uk`, `layout: de`, or `layout: be` renders the matching ANSI/ISO/QWERTZ/AZERTY shape with the correct shifted labels.
 
@@ -2836,6 +2840,7 @@ host_names:                   # custom names for each slot (optional)
   - Laptop
   - Tablet
 show_host_switcher: true      # false hides the switcher, still following the host (default: true)
+show_forget_host: true        # Forget button beside the switcher (default: false)
 popout: on_top                # pop-out button: on_top, window or false (default: on_top)
 popout_border: false          # the card around the popped-out remote (default: false)
 popout_header: true           # the name and host switcher line in the pop-out (default: true)
@@ -2865,6 +2870,7 @@ Optional configuration:
 | `active_host_entity` | Auto | Entity ID of the [active host sensor](#active-host-sensor). Auto-detected by name pattern (`sensor.*_active_host`). Set explicitly if auto-detection fails. |
 | `show_host_switcher` | `true` | Show the host switcher. Off hides the arrows and the host's name, and the card still follows the active host: an `auto` style found through `/hosts`, and an [LCD panel](#lcd-panels)'s host readouts with your `host_names`. `host_slots: 0` hides the switcher too, but drops those as well. |
 | `show_mac` | `true` | Show the active host's MAC address to the left of the switcher. |
+| `show_forget_host` | `false` | Add a **Forget** button to the switcher: it drops the Bluetooth pairing for the host shown, in two taps — the first reads `Confirm?` and gives up after three seconds. Needs the `forget_host` service. |
 | `host_url` | Auto | Address of the ESP32 (e.g. `http://192.168.1.50`), used to read slot MACs. Auto-detected from the device's HA registry entry. |
 | `popout` | `on_top` | The pop-out button in the card's header, on desktop browsers. `on_top` opens the remote in a window that stays above the others where the browser can make one, and an ordinary window where it can't; `window` always opens an ordinary one; `false` removes the button. See [Popping the card out](#popping-the-card-out). |
 | `popout_border` | `false` | The card around the popped-out remote — its border, name and host switcher. Off, the window holds the remote and nothing else, as the device page's pop-out does; but while the host switcher shows, the border comes with it, since the name and switcher sit on the card. |
@@ -3005,6 +3011,14 @@ It stops being optional when the poll can't run — when Home Assistant is serve
 > **If the MAC doesn't appear:** the card reads it directly from the ESP32 over plain HTTP, so it needs firmware **v1.5.0 or newer** — earlier builds sent a duplicated CORS header that browsers reject, blocking the read. Beyond that, when Home Assistant itself is served over **HTTPS** (Nabu Casa remote access, or a TLS reverse proxy) the browser blocks the request as mixed content and the MAC line hides itself. The switcher works regardless — it goes through Home Assistant, not the browser. Set `show_mac: false` to hide the line deliberately.
 >
 > To check quickly, open `http://<device-ip>/api/ble_keyboard/hosts` in a browser tab: JSON means the device is fine, and anything else points at the firmware or the address.
+
+**Forgetting a host from a card.** Turn on **Show forget host button** (`show_forget_host: true`) and a **Forget** button joins the switcher:
+
+```
+🖱  Mouse Control          AA:BB:CC:DD:EE:FF  ◀  Office PC  ▶  Forget
+```
+
+It drops the Bluetooth pairing for the host the switcher is showing — the active one or not — and disconnects it if it is connected, as the web page's Forget Host does. Two taps: the first turns it red and reads `Confirm?`, the second does it, and it disarms itself after three seconds or if the host changes under it. It needs the `forget_host` service, and a linked keyboard's host is forgotten by that keyboard. Afterwards the host has to be paired again from the host itself.
 
 ---
 

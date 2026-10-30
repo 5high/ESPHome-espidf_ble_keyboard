@@ -34,6 +34,7 @@
  *   # active_host_entity: sensor.bluetooth_keyboard_active_host  # (auto-detected)
  *   # caps_lock_entity: binary_sensor.bluetooth_keyboard_caps_lock  # (auto-detected)
  *   # show_mac: true               # show the active host's MAC address (default true)
+ *   # show_forget_host: true       # Forget button beside the switcher (default false)
  *   # host_url: http://192.168.1.50  # ESP address (auto-detected from HA)
  *
  * Full example with overrides:
@@ -570,6 +571,9 @@ class BleKeyboardCard extends HTMLElement {
       active_host_entity: config.active_host_entity || null,
       caps_lock_entity: config.caps_lock_entity || null,
       show_mac: config.show_mac !== false,
+      // Dropping a host's pairing is not something to do by accident, so the
+      // button is off until it is asked for, and takes two taps once it is there.
+      show_forget_host: config.show_forget_host === true,
       host_url: config.host_url || null,
       zoom: this._parseZoom(config.zoom),
     };
@@ -690,6 +694,12 @@ class BleKeyboardCard extends HTMLElement {
         align-items: center;
         gap: 8px;
         flex: 0 0 auto;
+        /* Title, version, CAPS and the switcher on one line while they fit. The
+           switcher drops to a line of its own rather than off the card when they
+           do not -- a long host name or the Forget button can take it past a
+           narrow column, and nothing here shrinks. */
+        flex-wrap: wrap;
+        row-gap: 4px;
       }
       .paste-bar {
         display: ${this._config.show_paste ? 'flex' : 'none'};
@@ -926,6 +936,21 @@ class BleKeyboardCard extends HTMLElement {
         background: var(--primary-color, #03a9f4);
         color: #fff;
       }
+      /* Fixed at the width of its armed label, as on the device page, so the
+         swap to Confirm? cannot slide the arrows out from under a finger. */
+      .host-forget {
+        width: 62px;
+        margin-left: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #c44;
+      }
+      .host-forget.armed,
+      .host-forget:active {
+        background: #c44;
+        border-color: #c44;
+        color: #fff;
+      }
       .host-info {
         text-align: center;
         /* Fixed, not min-width:0: the arrows must not move as the name changes
@@ -1026,6 +1051,31 @@ class BleKeyboardCard extends HTMLElement {
       hostRight.appendChild(prevBtn);
       hostRight.appendChild(hostInfo);
       hostRight.appendChild(nextBtn);
+
+      // Forget host: two taps, as on the device page. A brush against it only
+      // arms, and the armed tap belongs to the host that was showing — stepping
+      // away disarms it, in _updateHostDisplay.
+      if (this._config.show_forget_host) {
+        const forgetBtn = document.createElement('button');
+        forgetBtn.className = 'host-btn host-forget';
+        forgetBtn.id = 'host-forget';
+        forgetBtn.textContent = 'Forget';
+        forgetBtn.title = 'Remove the Bluetooth pairing for the host shown and clear its stored address.\n'
+          + 'Disconnects it if it is the active host.\n\nTap once to arm, tap again to confirm.';
+        forgetBtn.addEventListener('click', () => {
+          if (!this._forgetArm) {
+            this._forgetArm = this._shownHost();
+            forgetBtn.textContent = 'Confirm?';
+            forgetBtn.classList.add('armed');
+            this._forgetTimer = setTimeout(() => this._disarmForget(), 3000);
+          } else {
+            this._disarmForget();
+            this._forgetHost();
+          }
+        });
+        this._forgetEl = forgetBtn;
+        hostRight.appendChild(forgetBtn);
+      }
       header.appendChild(hostRight);
 
       this._startHostPolling();
@@ -1587,6 +1637,36 @@ class BleKeyboardCard extends HTMLElement {
     this._updateHostDisplay();
   }
 
+  // The host the switcher is showing: a linked keyboard's comes from the
+  // target, this keyboard's from the slot it is really on.
+  _shownHost() {
+    const t = this._target;
+    return t && t.peer ? { peer: t.peer, slot: t.slot } : { peer: null, slot: this._activeSlot || 0 };
+  }
+
+  _disarmForget() {
+    clearTimeout(this._forgetTimer);
+    this._forgetArm = null;
+    if (!this._forgetEl) return;
+    this._forgetEl.textContent = 'Forget';
+    this._forgetEl.classList.remove('armed');
+  }
+
+  // Drops the pairing for the host shown — the service the device page's Forget
+  // Host posts to, and for a linked keyboard's host, that keyboard's own.
+  _forgetHost() {
+    if (!this._hass) return;
+    const h = this._shownHost();
+    if (h.peer) {
+      this._runAction(`forget_host:${h.slot}`);
+    } else {
+      const slug = this._config.device.replace(/-/g, '_');
+      this._hass.callService('esphome', `${slug}_forget_host`, { slot: h.slot });
+    }
+    // That slot is empty now; read it back rather than wait out the 30s poll.
+    setTimeout(() => this._pollHosts(), 1000);
+  }
+
   // Slot metadata (MAC, ESP-side name, occupied) comes straight from the device.
   // /hosts returns every slot at once, so a host switch repaints from this cache
   // with no refetch — the poll only exists to notice new or forgotten bonds,
@@ -1665,6 +1745,9 @@ class BleKeyboardCard extends HTMLElement {
   _updateHostDisplay() {
     if (!this._hostNameEl) return;
     this._fitHostInfo();
+    // An armed Forget belonged to the host it was armed on, never the new one.
+    const armed = this._forgetArm, now = this._shownHost();
+    if (armed && (armed.peer !== now.peer || armed.slot !== now.slot)) this._disarmForget();
     const peerLabel = this._peerHostLabel();
     if (peerLabel !== null) {
       this._hostNameEl.textContent = peerLabel;
@@ -1774,6 +1857,7 @@ const KB_EDITOR_SCHEMA = [
   { name: 'active_host_entity', selector: { entity: { domain: 'sensor' } } },
   { name: 'caps_lock_entity', selector: { entity: { domain: 'binary_sensor' } } },
   { name: 'show_mac', selector: { boolean: {} } },
+  { name: 'show_forget_host', selector: { boolean: {} } },
   { name: 'host_url', selector: { text: {} } },
 ];
 
@@ -1790,12 +1874,14 @@ const KB_EDITOR_LABELS = {
   active_host_entity: 'Active-host sensor (optional)',
   caps_lock_entity: 'Caps Lock sensor (optional, auto-detected)',
   show_mac: 'Show host MAC address',
+  show_forget_host: 'Show forget host button (two taps to confirm)',
   host_url: 'Device URL (optional, auto-detected)',
 };
 
 class BleKeyboardCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { layout: 'us', show_fkeys: true, show_paste: true, host_slots: 0, show_mac: true, zoom: 1, ...config };
+    this._config = { layout: 'us', show_fkeys: true, show_paste: true, host_slots: 0, show_mac: true,
+                     show_forget_host: false, zoom: 1, ...config };
     // host_names is a YAML list but edits as one comma-separated field; show it
     // as text here and turn it back into a list in _emit().
     if (Array.isArray(this._config.host_names)) {

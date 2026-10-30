@@ -14,6 +14,10 @@ web control page shows the matching version badge.
 - **The memory line in Host Actions shows the firmware too**: how much of its space the program
   takes, so you can see how close an update is to not fitting — and, on a board with more flash
   than its YAML names, how much of the chip is going unused.
+- **Forget a host from the Home Assistant cards.** A button beside the host switcher drops the
+  pairing for the host it is showing, as the web page's does. It is off until switched on in the
+  card's settings, and takes two taps — the first only arms it, and it gives up after three
+  seconds — so a brush against a dashboard cannot unpair anything.
 
 ### Changed
 - **A remote style can be up to 4000 characters**, up from 1500, so there is room for its

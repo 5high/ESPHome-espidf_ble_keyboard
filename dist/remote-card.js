@@ -47,6 +47,7 @@
  *   # active_host_entity: sensor.bluetooth_keyboard_active_host  # (auto-detected)
  *   # show_host_switcher: false    # hide the switcher, still follow the host (default true)
  *   # show_mac: true               # show the active host's MAC address (default true)
+ *   # show_forget_host: true       # Forget button beside the switcher (default false)
  *   # host_url: http://192.168.1.50  # ESP address (auto-detected from HA)
  *   # lcd_entity: sensor.x_lcd      # values for ["lcd",…] panels (auto-detected)
  *   # lcd_entities:                 # read these keys from HA instead
@@ -370,6 +371,9 @@ class BleRemoteCard extends HTMLElement {
       // the active host, which host_slots: 0 would stop as well.
       show_host_switcher: config.show_host_switcher !== false,
       show_mac: config.show_mac !== false,
+      // Dropping a host's pairing is not something to do by accident, so the
+      // button is off until it is asked for, and takes two taps once it is there.
+      show_forget_host: config.show_forget_host === true,
       host_url: config.host_url || null,
       zoom: this._parseZoom(config.zoom),
       // Which remote layout to draw. 'auto' mirrors whatever style the device
@@ -738,6 +742,10 @@ class BleRemoteCard extends HTMLElement {
           touch-action: manipulation;
         }
         .host-btn:active { background: var(--primary-color, #03a9f4); color: #fff; }
+        /* Fixed at the width of its armed label, as on the device page, so the
+           swap to Confirm? cannot slide the arrows out from under a finger. */
+        .host-forget { width: 62px; margin-left: 6px; font-size: 11px; font-weight: 600; color: #c44; }
+        .host-forget.armed, .host-forget:active { background: #c44; border-color: #c44; color: #fff; }
         /* Both of these are variable width — a host name can be anything, and
            the address swaps between a 17-character MAC and "Empty" — so without
            a reserved width the prev/next arrows slid sideways on every step and
@@ -992,6 +1000,7 @@ class BleRemoteCard extends HTMLElement {
             <button class="host-btn" id="host-prev">&#9664;</button>
             <div class="host-info"><div class="host-name"></div></div>
             <button class="host-btn" id="host-next">&#9654;</button>
+            <button class="host-btn host-forget" id="host-forget" style="display:none" title="Remove the Bluetooth pairing for the host shown and clear its stored address.&#10;Disconnects it if it is the active host.&#10;&#10;Tap once to arm, tap again to confirm.">Forget</button>
           </div>
         </div>
         <div class="pop-msg" id="pop-msg" hidden></div>
@@ -1480,6 +1489,25 @@ class BleRemoteCard extends HTMLElement {
       });
     }
 
+    // Forget host: two taps, as on the device page. A brush against it only
+    // arms, and the armed tap belongs to the host that was showing — stepping
+    // away disarms it, in _updateHostDisplay.
+    if (this._config.show_forget_host) {
+      this._forgetEl = shadow.getElementById('host-forget');
+      this._forgetEl.style.display = '';
+      this._forgetEl.addEventListener('click', () => {
+        if (!this._forgetArm) {
+          this._forgetArm = this._shownHost();
+          this._forgetEl.textContent = 'Confirm?';
+          this._forgetEl.classList.add('armed');
+          this._forgetTimer = setTimeout(() => this._disarmForget(), 3000);
+        } else {
+          this._disarmForget();
+          this._forgetHost();
+        }
+      });
+    }
+
     this._updateHostDisplay();
     this._startHostPolling();
   }
@@ -1634,6 +1662,36 @@ class BleRemoteCard extends HTMLElement {
     this._updateHostDisplay();
   }
 
+  // The host the switcher is showing: a linked keyboard's comes from the
+  // target, this keyboard's from the slot it is really on.
+  _shownHost() {
+    const t = this._target;
+    return t && t.peer ? { peer: t.peer, slot: t.slot } : { peer: null, slot: this._activeSlot || 0 };
+  }
+
+  _disarmForget() {
+    clearTimeout(this._forgetTimer);
+    this._forgetArm = null;
+    if (!this._forgetEl) return;
+    this._forgetEl.textContent = 'Forget';
+    this._forgetEl.classList.remove('armed');
+  }
+
+  // Drops the pairing for the host shown — the service the device page's Forget
+  // Host posts to, and for a linked keyboard's host, that keyboard's own.
+  _forgetHost() {
+    if (!this._hass) return;
+    const h = this._shownHost();
+    if (h.peer) {
+      this._runAction(`forget_host:${h.slot}`);
+    } else {
+      const slug = this._config.device.replace(/-/g, '_');
+      this._hass.callService('esphome', `${slug}_forget_host`, { slot: h.slot });
+    }
+    // That slot is empty now; read it back rather than wait out the 30s poll.
+    setTimeout(() => this._pollHosts(), 1000);
+  }
+
   // Slot metadata (MAC, ESP-side name, occupied) comes straight from the device.
   // /hosts returns every slot at once, so a host switch repaints from this cache
   // with no refetch — the poll only exists to notice new or forgotten bonds,
@@ -1725,6 +1783,9 @@ class BleRemoteCard extends HTMLElement {
   _updateHostDisplay() {
     if (!this._hostNameEl) return;
     this._fitHostInfo();
+    // An armed Forget belonged to the host it was armed on, never the new one.
+    const armed = this._forgetArm, now = this._shownHost();
+    if (armed && (armed.peer !== now.peer || armed.slot !== now.slot)) this._disarmForget();
     const t = this._target;
     if (t && t.peer) {
       const label = (t.entry && (t.entry.label || t.entry.peer)) || t.peer;
@@ -2381,6 +2442,7 @@ function remoteEditorSchema(config) {
     { name: 'active_host_entity', selector: { entity: { domain: 'sensor' } } },
     { name: 'show_host_switcher', selector: { boolean: {} } },
     { name: 'show_mac', selector: { boolean: {} } },
+    { name: 'show_forget_host', selector: { boolean: {} } },
     { name: 'host_url', selector: { text: {} } },
     { name: 'popout', selector: { select: { mode: 'dropdown', options: [
       { value: 'on_top', label: 'On top of other windows, where the browser can' },
@@ -2435,6 +2497,7 @@ const REMOTE_EDITOR_LABELS = {
   active_host_entity: 'Active-host sensor (optional)',
   show_host_switcher: 'Show host switcher',
   show_mac: 'Show host MAC address',
+  show_forget_host: 'Show forget host button (two taps to confirm)',
   host_url: 'Device URL (optional, auto-detected)',
   popout: 'Pop-out button (desktop browsers)',
   popout_border: 'Pop-out border (the card and its name around the remote; shown anyway with the host switcher)',
@@ -2453,6 +2516,7 @@ class BleRemoteCardEditor extends HTMLElement {
       host_slots: 0,
       show_host_switcher: true,
       show_mac: true,
+      show_forget_host: false,
       zoom: 1,
       remote_style: 'auto',
       popout: 'on_top',
